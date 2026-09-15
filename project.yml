@@ -1,0 +1,84 @@
+name: Foresight
+options:
+  minimumXcodeGenVersion: 2.44.0
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: 6.0
+    SWIFT_STRICT_CONCURRENCY: complete
+    IPHONEOS_DEPLOYMENT_TARGET: 26.0
+    TARGETED_DEVICE_FAMILY: "1,2"
+    ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+    CLANG_ENABLE_MODULES: YES
+    GENERATE_INFOPLIST_FILE: NO
+configs:
+  Debug: debug
+  Release: release
+targets:
+  Foresight:
+    type: application
+    platform: iOS
+    sources:
+      - path: ForesightApp
+      - path: Resources
+        buildPhase: resources
+    settings:
+      base:
+        INFOPLIST_FILE: ForesightApp/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        PRODUCT_MODULE_NAME: Foresight
+        SUPPORTS_MACCATALYST: NO
+        CODE_SIGN_ENTITLEMENTS: ""
+        CODE_SIGNING_ALLOWED: NO
+        CODE_SIGNING_REQUIRED: NO
+      configs:
+        Debug:
+          PRODUCT_BUNDLE_IDENTIFIER: com.foresight.journal.testing
+          PRODUCT_NAME: Foresight QA
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG ENABLE_DEVELOPMENT_FIXTURES
+        Release:
+          PRODUCT_BUNDLE_IDENTIFIER: com.foresight.journal
+          PRODUCT_NAME: Foresight
+  ForesightTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests
+    dependencies:
+      - target: Foresight
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Foresight QA.app/Foresight QA"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        CODE_SIGNING_ALLOWED: NO
+        CODE_SIGNING_REQUIRED: NO
+  ForesightUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: ForesightUITests
+    dependencies:
+      - target: Foresight
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: Foresight
+        CODE_SIGNING_ALLOWED: NO
+        CODE_SIGNING_REQUIRED: NO
+schemes:
+  Foresight QA:
+    build:
+      targets:
+        Foresight: all
+        ForesightTests: [test]
+        ForesightUITests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - ForesightTests
+        - ForesightUITests
+    archive:
+      config: Release

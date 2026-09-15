@@ -1,0 +1,569 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		09AFF20B9C7DAD9F0459333B /* ForesightApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0E4E2919FCA342C2E18F40 /* ForesightApp.swift */; };
+		213A3CE529A7B12ECC4A2DC6 /* JournalAnalytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B2896D2DF2121C4B3BEE737 /* JournalAnalytics.swift */; };
+		3A245569CBA697582E73B235 /* JournalAndCheckInViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = E93F38D9D00B3B76F24DE3ED /* JournalAndCheckInViews.swift */; };
+		3E68212BC00D986B84A261CF /* JournalEditorAndDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E8212BD570E34285056EE8D /* JournalEditorAndDetail.swift */; };
+		42BB45517EF55617DA2580C8 /* JournalDiscoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E64151CF82CC541C2D79BBE9 /* JournalDiscoveryTests.swift */; };
+		4F9F3836B0D9658BFC9B5A68 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 773F803C565E11B20DB24D8C /* Models.swift */; };
+		502029B44D763EE6269951FC /* ForesightUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 197FC228C457D92DA90C14ED /* ForesightUITests.swift */; };
+		53630CC794457EC16461C0FD /* JournalStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6479EDA6896C90F2ADFA8FEF /* JournalStore.swift */; };
+		7324D957BAAD1456AEFB66F0 /* OutcomeAnalyticsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1927C867B272D06942C594C4 /* OutcomeAnalyticsTests.swift */; };
+		96CB9BFD4C2145366DD40C85 /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10B87F469D44416920F26262 /* DesignSystem.swift */; };
+		99BA436717EBF14D3DDF9609 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 734C8C601F310EDE1716E584 /* Assets.xcassets */; };
+		C1380DEBF7916973EFA48D57 /* OutcomeAnalytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B72476742E3B4D6EF3FD38F /* OutcomeAnalytics.swift */; };
+		D95CC3DE4E718CB58E144852 /* JournalStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95D4CAEC6CAE2A2ED5872487 /* JournalStoreTests.swift */; };
+		FE9FD7CA63B2D3C3C643573B /* PatternsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC99037CB2AA40E3E71559CE /* PatternsView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		3932EC195948DE96FC8F1E27 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 1392CFA4AC06EB6207F3E4FF /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C3A0172CE188F8399BF7146E;
+			remoteInfo = Foresight;
+		};
+		BB54146F2E2C50F11BD85032 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 1392CFA4AC06EB6207F3E4FF /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C3A0172CE188F8399BF7146E;
+			remoteInfo = Foresight;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		10B87F469D44416920F26262 /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
+		1927C867B272D06942C594C4 /* OutcomeAnalyticsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutcomeAnalyticsTests.swift; sourceTree = "<group>"; };
+		197FC228C457D92DA90C14ED /* ForesightUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForesightUITests.swift; sourceTree = "<group>"; };
+		259E8AED706D0DBCB7A82482 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		2B2896D2DF2121C4B3BEE737 /* JournalAnalytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalAnalytics.swift; sourceTree = "<group>"; };
+		3B72476742E3B4D6EF3FD38F /* OutcomeAnalytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutcomeAnalytics.swift; sourceTree = "<group>"; };
+		5685A5F92F3E2408A5037702 /* ForesightTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = ForesightTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		6337D1B6270E2FE484A0FCAF /* Foresight.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Foresight.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		6479EDA6896C90F2ADFA8FEF /* JournalStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalStore.swift; sourceTree = "<group>"; };
+		6E8212BD570E34285056EE8D /* JournalEditorAndDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalEditorAndDetail.swift; sourceTree = "<group>"; };
+		734C8C601F310EDE1716E584 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		773F803C565E11B20DB24D8C /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		863337BCC02513520AC10C0E /* ForesightUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = ForesightUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		95D4CAEC6CAE2A2ED5872487 /* JournalStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalStoreTests.swift; sourceTree = "<group>"; };
+		BB0E4E2919FCA342C2E18F40 /* ForesightApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForesightApp.swift; sourceTree = "<group>"; };
+		E64151CF82CC541C2D79BBE9 /* JournalDiscoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalDiscoveryTests.swift; sourceTree = "<group>"; };
+		E93F38D9D00B3B76F24DE3ED /* JournalAndCheckInViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalAndCheckInViews.swift; sourceTree = "<group>"; };
+		EC99037CB2AA40E3E71559CE /* PatternsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatternsView.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		2310C20CDF731EFD00C0ABC1 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				734C8C601F310EDE1716E584 /* Assets.xcassets */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		2B9D309E64C12780C6137932 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				6337D1B6270E2FE484A0FCAF /* Foresight.app */,
+				5685A5F92F3E2408A5037702 /* ForesightTests.xctest */,
+				863337BCC02513520AC10C0E /* ForesightUITests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		39E067312588E8545FF0D9BB /* ForesightApp */ = {
+			isa = PBXGroup;
+			children = (
+				10B87F469D44416920F26262 /* DesignSystem.swift */,
+				BB0E4E2919FCA342C2E18F40 /* ForesightApp.swift */,
+				259E8AED706D0DBCB7A82482 /* Info.plist */,
+				2B2896D2DF2121C4B3BEE737 /* JournalAnalytics.swift */,
+				E93F38D9D00B3B76F24DE3ED /* JournalAndCheckInViews.swift */,
+				6E8212BD570E34285056EE8D /* JournalEditorAndDetail.swift */,
+				6479EDA6896C90F2ADFA8FEF /* JournalStore.swift */,
+				773F803C565E11B20DB24D8C /* Models.swift */,
+				3B72476742E3B4D6EF3FD38F /* OutcomeAnalytics.swift */,
+				EC99037CB2AA40E3E71559CE /* PatternsView.swift */,
+			);
+			path = ForesightApp;
+			sourceTree = "<group>";
+		};
+		429B07E6EC101AE18A85FB48 = {
+			isa = PBXGroup;
+			children = (
+				39E067312588E8545FF0D9BB /* ForesightApp */,
+				51A4E97654B9BF4AD812A6CF /* ForesightUITests */,
+				2310C20CDF731EFD00C0ABC1 /* Resources */,
+				7476A49CF1201D18AA12A9C6 /* Tests */,
+				2B9D309E64C12780C6137932 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		51A4E97654B9BF4AD812A6CF /* ForesightUITests */ = {
+			isa = PBXGroup;
+			children = (
+				197FC228C457D92DA90C14ED /* ForesightUITests.swift */,
+			);
+			path = ForesightUITests;
+			sourceTree = "<group>";
+		};
+		7476A49CF1201D18AA12A9C6 /* Tests */ = {
+			isa = PBXGroup;
+			children = (
+				E64151CF82CC541C2D79BBE9 /* JournalDiscoveryTests.swift */,
+				95D4CAEC6CAE2A2ED5872487 /* JournalStoreTests.swift */,
+				1927C867B272D06942C594C4 /* OutcomeAnalyticsTests.swift */,
+			);
+			path = Tests;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		070C3AE18882A3B36FBE3F66 /* ForesightTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B2B09C9A5E1098EF36726643 /* Build configuration list for PBXNativeTarget "ForesightTests" */;
+			buildPhases = (
+				FA9049EB3F4122BA96A1AE72 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				F107FA326ED5A25EDBF98563 /* PBXTargetDependency */,
+			);
+			name = ForesightTests;
+			packageProductDependencies = (
+			);
+			productName = ForesightTests;
+			productReference = 5685A5F92F3E2408A5037702 /* ForesightTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		C3A0172CE188F8399BF7146E /* Foresight */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = DD25E77D178BC2B1A92B0325 /* Build configuration list for PBXNativeTarget "Foresight" */;
+			buildPhases = (
+				CF0068DB57E545BFBB495CF1 /* Sources */,
+				96596B2F06BA9E938B728C98 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Foresight;
+			packageProductDependencies = (
+			);
+			productName = Foresight;
+			productReference = 6337D1B6270E2FE484A0FCAF /* Foresight.app */;
+			productType = "com.apple.product-type.application";
+		};
+		F930D4B250F76664C164E7A9 /* ForesightUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 727351B938134EB149F2A6C5 /* Build configuration list for PBXNativeTarget "ForesightUITests" */;
+			buildPhases = (
+				E4E8841CFC1335090E67C6AB /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A8E9FC2B5EAA88484A8BB5CC /* PBXTargetDependency */,
+			);
+			name = ForesightUITests;
+			packageProductDependencies = (
+			);
+			productName = ForesightUITests;
+			productReference = 863337BCC02513520AC10C0E /* ForesightUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		1392CFA4AC06EB6207F3E4FF /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					F930D4B250F76664C164E7A9 = {
+						TestTargetID = C3A0172CE188F8399BF7146E;
+					};
+				};
+			};
+			buildConfigurationList = B6DF32D28AB6207E02AEE512 /* Build configuration list for PBXProject "Foresight" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 429B07E6EC101AE18A85FB48;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 2B9D309E64C12780C6137932 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				C3A0172CE188F8399BF7146E /* Foresight */,
+				070C3AE18882A3B36FBE3F66 /* ForesightTests */,
+				F930D4B250F76664C164E7A9 /* ForesightUITests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		96596B2F06BA9E938B728C98 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				99BA436717EBF14D3DDF9609 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		CF0068DB57E545BFBB495CF1 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				96CB9BFD4C2145366DD40C85 /* DesignSystem.swift in Sources */,
+				09AFF20B9C7DAD9F0459333B /* ForesightApp.swift in Sources */,
+				213A3CE529A7B12ECC4A2DC6 /* JournalAnalytics.swift in Sources */,
+				3A245569CBA697582E73B235 /* JournalAndCheckInViews.swift in Sources */,
+				3E68212BC00D986B84A261CF /* JournalEditorAndDetail.swift in Sources */,
+				53630CC794457EC16461C0FD /* JournalStore.swift in Sources */,
+				4F9F3836B0D9658BFC9B5A68 /* Models.swift in Sources */,
+				C1380DEBF7916973EFA48D57 /* OutcomeAnalytics.swift in Sources */,
+				FE9FD7CA63B2D3C3C643573B /* PatternsView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E4E8841CFC1335090E67C6AB /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				502029B44D763EE6269951FC /* ForesightUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FA9049EB3F4122BA96A1AE72 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				42BB45517EF55617DA2580C8 /* JournalDiscoveryTests.swift in Sources */,
+				D95CC3DE4E718CB58E144852 /* JournalStoreTests.swift in Sources */,
+				7324D957BAAD1456AEFB66F0 /* OutcomeAnalyticsTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		A8E9FC2B5EAA88484A8BB5CC /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C3A0172CE188F8399BF7146E /* Foresight */;
+			targetProxy = 3932EC195948DE96FC8F1E27 /* PBXContainerItemProxy */;
+		};
+		F107FA326ED5A25EDBF98563 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C3A0172CE188F8399BF7146E /* Foresight */;
+			targetProxy = BB54146F2E2C50F11BD85032 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		45D2ADC8179181C4AB8E25C0 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Foresight QA.app/Foresight QA";
+			};
+			name = Debug;
+		};
+		4B8B68ACB8A5E9E0837E6768 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Foresight;
+			};
+			name = Debug;
+		};
+		806E4D9A7982B9C2ABF43CA8 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_ENTITLEMENTS = "";
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = ForesightApp/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.foresight.journal.testing;
+				PRODUCT_MODULE_NAME = Foresight;
+				PRODUCT_NAME = "Foresight QA";
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG ENABLE_DEVELOPMENT_FIXTURES";
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		C7DCC8592A5650FA7D8D4969 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = Foresight;
+			};
+			name = Release;
+		};
+		CD13DF9381D6D1CEDD5CDCAA /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Foresight QA.app/Foresight QA";
+			};
+			name = Release;
+		};
+		D1E7E744B5D451E389E6382D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		EBC673305E6476B68636E665 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_ENTITLEMENTS = "";
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = ForesightApp/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.foresight.journal;
+				PRODUCT_MODULE_NAME = Foresight;
+				PRODUCT_NAME = Foresight;
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		FB935FBB795E2FBDADF99361 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		727351B938134EB149F2A6C5 /* Build configuration list for PBXNativeTarget "ForesightUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4B8B68ACB8A5E9E0837E6768 /* Debug */,
+				C7DCC8592A5650FA7D8D4969 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		B2B09C9A5E1098EF36726643 /* Build configuration list for PBXNativeTarget "ForesightTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				45D2ADC8179181C4AB8E25C0 /* Debug */,
+				CD13DF9381D6D1CEDD5CDCAA /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		B6DF32D28AB6207E02AEE512 /* Build configuration list for PBXProject "Foresight" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D1E7E744B5D451E389E6382D /* Debug */,
+				FB935FBB795E2FBDADF99361 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		DD25E77D178BC2B1A92B0325 /* Build configuration list for PBXNativeTarget "Foresight" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				806E4D9A7982B9C2ABF43CA8 /* Debug */,
+				EBC673305E6476B68636E665 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 1392CFA4AC06EB6207F3E4FF /* Project object */;
+}
