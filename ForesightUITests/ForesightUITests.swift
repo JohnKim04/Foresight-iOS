@@ -95,7 +95,7 @@ final class ForesightUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Add history"].waitForExistence(timeout: 3))
         app.buttons["Add history"].tap()
         app.tabBars.buttons["Patterns"].tap()
-        XCTAssertTrue(app.staticTexts["Patterns"].firstMatch.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["See what repeats."].firstMatch.waitForExistence(timeout: 3))
         app.buttons["Choose category"].tap()
         app.buttons["Workout"].tap()
         XCTAssertTrue(app.staticTexts["Source logs"].waitForExistence(timeout: 3))
