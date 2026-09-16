@@ -41,40 +41,42 @@ struct JournalEditorView: View {
             ScrollView {
                 ContentColumn {
                     VStack(alignment: .leading, spacing: 20) {
-                        VStack(alignment: .leading, spacing: 6) {
-                            SectionKicker(text: isEditing ? "Editing log" : "New log")
-                            Text(isEditing ? "Edit log" : "Write a log")
-                                .font(.system(.largeTitle, design: .serif).weight(.semibold))
-                        }
+                        ForesightPageHeader(
+                            kicker: isEditing ? "Editing log" : "Private reflection",
+                            title: isEditing ? "Refine the moment." : "What happened?",
+                            subtitle: isEditing ? "Keep the record true to what you remember." : "Capture the choice, activity, or moment while it is still clear."
+                        )
                         ForesightCard {
                             VStack(alignment: .leading, spacing: 18) {
                                 VStack(alignment: .leading, spacing: 8) {
-                                    Text("What happened?").font(.headline)
+                                    Text("Your note").font(.headline).foregroundStyle(Color.foresightInk)
                                     TextEditor(text: $bodyText)
                                         .focused($isWriting)
                                         .onChange(of: bodyText) { _, _ in limitBodyText() }
                                         .frame(minHeight: 180)
                                         .padding(8)
-                                        .background(.fill.tertiary, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                        .scrollContentBackground(.hidden)
+                                        .background(Color.foresightRaised, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                                        .overlay { RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.foresightLine, lineWidth: 1) }
                                         .accessibilityLabel("What happened?")
                                     Text("\(bodyText.count) of 5,000 characters")
                                         .font(.caption).foregroundStyle(bodyText.count > 5_000 ? .red : .secondary)
                                 }
                                 VStack(alignment: .leading, spacing: 8) {
-                                    Text("When did it happen?").font(.headline)
+                                    Text("When did it happen?").font(.headline).foregroundStyle(Color.foresightInk)
                                     DatePicker("Event time", selection: $eventAt, displayedComponents: [.date, .hourAndMinute])
                                         .datePickerStyle(.compact)
                                         .accessibilityLabel("Event time")
                                 }
                                 VStack(alignment: .leading, spacing: 10) {
-                                    Text("Categories").font(.headline)
+                                    Text("Categories").font(.headline).foregroundStyle(Color.foresightInk)
                                     CategoryPickerGrid(categories: store.activeCategories, selected: $categoryIDs)
                                     HStack(spacing: 8) {
                                         TextField("Create a category", text: $newCategory)
                                             .textFieldStyle(.roundedBorder)
                                             .submitLabel(.done)
                                             .onSubmit(addCategory)
-                                        Button("Add", action: addCategory).buttonStyle(.bordered)
+                                        Button("Add", action: addCategory).buttonStyle(ForesightSecondaryButtonStyle())
                                     }
                                     let archived = entry?.categories.filter(\.isArchived) ?? []
                                     if !archived.isEmpty {
@@ -83,7 +85,7 @@ struct JournalEditorView: View {
                                     }
                                 }
                                 Button(isEditing ? "Update log" : "Save log", action: save)
-                                    .buttonStyle(.borderedProminent)
+                                    .buttonStyle(ForesightPrimaryButtonStyle())
                                     .disabled(bodyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || bodyText.count > 5_000)
                                     .frame(maxWidth: .infinity, alignment: .trailing)
                             }
@@ -97,22 +99,23 @@ struct JournalEditorView: View {
                                     HStack {
                                         Text(category.name)
                                         Spacer()
-                                        Button("Archive", role: .destructive) {
+                                        Button("Archive") {
                                             categoryToArchive = category
                                             archiveConfirmation = true
                                         }
-                                        .font(.subheadline.weight(.semibold))
+                                        .buttonStyle(ForesightQuietButtonStyle(tone: .foresightWarning))
                                     }
                                     .padding(.vertical, 4)
                                 }
                             }
                         }
-                        if let message { Text(message).font(.footnote).foregroundStyle(.red) }
+                        if let message { Text(message).font(.footnote).foregroundStyle(Color.foresightWarning) }
                     }
                     .padding()
                 }
             }
             .scrollDismissesKeyboard(.interactively)
+            .background(Color.foresightCanvas)
             .navigationTitle(isEditing ? "Edit log" : "New log")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -129,7 +132,7 @@ struct JournalEditorView: View {
                 Button("Discard changes", role: .destructive) { dismiss() }
             } message: { Text("Your changes have not been saved.") }
             .confirmationDialog("Archive \(categoryToArchive?.name ?? "this category")?", isPresented: $archiveConfirmation, titleVisibility: .visible) {
-                Button("Archive", role: .destructive) {
+                Button("Archive") {
                     guard let categoryToArchive else { return }
                     do { try store.archiveCategory(categoryToArchive) }
                     catch { message = error.localizedDescription }
@@ -178,9 +181,9 @@ struct CategoryPickerGrid: View {
                 } label: {
                     Text(category.name)
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(isSelected ? Color.white : Color.primary)
+                        .foregroundStyle(isSelected ? Color.white : Color.foresightInk)
                         .padding(.horizontal, 12).padding(.vertical, 8)
-                        .background(isSelected ? Color.foresightSage : Color.clear, in: Capsule())
+                        .background(isSelected ? Color.foresightAction : Color.clear, in: Capsule())
                         .overlay(Capsule().stroke(borderColor, lineWidth: 1))
                 }
                 .accessibilityLabel(category.name)
@@ -210,17 +213,17 @@ struct JournalDetailView: View {
                         VStack(alignment: .leading, spacing: 18) {
                             ForesightCard {
                                 VStack(alignment: .leading, spacing: 14) {
-                                    Text(ForesightFormat.detailDate(entry.eventAt)).font(.system(.title3, design: .serif))
+                                    Text(ForesightFormat.detailDate(entry.eventAt)).font(.headline)
                                         .foregroundStyle(Color.foresightSage)
                                     if !entry.categories.isEmpty {
                                         FlowLabels(labels: entry.categories.map { $0.name + ($0.isArchived ? " (archived)" : "") })
                                     }
-                                    Text(entry.body).font(.system(.title3, design: .serif)).fixedSize(horizontal: false, vertical: true)
+                                    Text(entry.body).font(.system(.title3, design: .serif)).foregroundStyle(Color.foresightInk).fixedSize(horizontal: false, vertical: true)
                                     Divider()
                                     Text("Created \(ForesightFormat.detailDate(entry.createdAt))\nUpdated \(ForesightFormat.detailDate(entry.updatedAt))")
                                         .font(.caption).foregroundStyle(.secondary)
                                     Button("Edit log") { editor = EditorRequest(entryID: entry.id) }
-                                        .buttonStyle(.borderedProminent)
+                                        .buttonStyle(ForesightPrimaryButtonStyle())
                                 }
                             }
                             CheckInDetailCard(
@@ -242,6 +245,7 @@ struct JournalDetailView: View {
                         .padding()
                     }
                 }
+                .background(Color.foresightCanvas)
                 .navigationTitle("Log")
                 .navigationBarTitleDisplayMode(.inline)
                 .fullScreenCover(item: $editor) { JournalEditorView(store: store, request: $0) }
@@ -292,7 +296,7 @@ struct CheckInDetailCard: View {
             VStack(alignment: .leading, spacing: 10) {
                 SectionKicker(text: title)
                 if let checkIn {
-                    Text(checkIn.status == .skipped ? "Skipped" : checkIn.responseSummary).font(.system(.title3, design: .serif))
+                    Text(checkIn.status == .skipped ? "Skipped" : checkIn.responseSummary).font(ForesightType.sectionTitle).foregroundStyle(Color.foresightInk)
                     if checkIn.phase == .delayed, checkIn.status == .pending, let dueAt = checkIn.dueAt {
                         Text("Due \(ForesightFormat.detailDate(dueAt))").foregroundStyle(.secondary)
                     } else if let answeredAt = checkIn.answeredAt {
@@ -301,20 +305,20 @@ struct CheckInDetailCard: View {
                     if !checkIn.note.isEmpty { Text(checkIn.note).italic() }
                     if checkIn.excludedFromAnalysis { Text("Left out of pattern summaries").font(.caption).foregroundStyle(.secondary) }
                     HStack {
-                        Button(checkIn.status == .skipped ? "Answer now" : "Update") { onAnswer(checkIn) }.buttonStyle(.bordered)
+                        Button(checkIn.status == .skipped ? "Answer now" : "Update") { onAnswer(checkIn) }.buttonStyle(ForesightSecondaryButtonStyle())
                         if !isImmediate && checkIn.status == .pending {
-                            Button("Reschedule") { onSchedule(checkIn) }.buttonStyle(.bordered)
+                            Button("Reschedule") { onSchedule(checkIn) }.buttonStyle(ForesightSecondaryButtonStyle())
                         } else if !isImmediate {
-                            Button("Check in again") { onSchedule(nil) }.buttonStyle(.bordered)
+                            Button("Check in again") { onSchedule(nil) }.buttonStyle(ForesightSecondaryButtonStyle())
                         }
-                        Button(isImmediate ? "Remove" : checkIn.status == .pending ? "Cancel" : "Remove", role: .destructive) { onRemove(checkIn) }.buttonStyle(.borderless)
+                        Button(isImmediate ? "Remove" : checkIn.status == .pending ? "Cancel" : "Remove") { onRemove(checkIn) }.buttonStyle(ForesightQuietButtonStyle(tone: .foresightWarning))
                     }
                 } else {
-                    Text(isImmediate ? "No check-in" : "No scheduled check-in").font(.system(.title3, design: .serif))
+                    Text(isImmediate ? "No check-in" : "No scheduled check-in").font(ForesightType.sectionTitle).foregroundStyle(Color.foresightInk)
                     Text(isImmediate ? "Add an overall rating." : "Choose a time to rate this log later.").foregroundStyle(.secondary)
                     Button(isImmediate ? "Check in now" : "Check in later") {
                         isImmediate ? onAnswer(nil) : onSchedule(nil)
-                    }.buttonStyle(.bordered)
+                    }.buttonStyle(ForesightSecondaryButtonStyle())
                 }
             }
         }
@@ -350,57 +354,90 @@ struct OutcomeAnswerSheet: View {
 
     private var entry: JournalEntry? { store.entries.first { $0.id == target.entryID } }
     private var existing: OutcomeCheckIn? { target.checkInID.flatMap { id in store.checkIns.first { $0.id == id } } }
+    private var ratingColumns: [GridItem] {
+        Array(
+            repeating: GridItem(.flexible(minimum: 0), spacing: 6),
+            count: OutcomeValue.allCases.count
+        )
+    }
+    private var ratingDescription: String {
+        if notSure { return "Not sure yet" }
+        return selectedValue?.title ?? "Choose a rating"
+    }
     private var isDirty: Bool {
         selectedValue != existing?.overall || notSure != (existing?.status == .notSure) || note != (existing?.note ?? "") || excluded != (existing?.excludedFromAnalysis ?? false)
     }
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                ContentColumn {
-                    VStack(alignment: .leading, spacing: 18) {
-                        VStack(alignment: .leading, spacing: 6) {
-                            SectionKicker(text: existing == nil ? "Check in" : "Update check-in")
-                            Text("How did this affect you?").font(.system(.title, design: .serif).weight(.semibold))
-                            Text(existing?.phase == .delayed ? "Think about the time since this happened." : "Compare how you feel now with how you felt before.")
-                                .foregroundStyle(.secondary)
-                        }
-                        if let entry { ForesightCard { VStack(alignment: .leading, spacing: 6) { Text(ForesightFormat.detailDate(entry.eventAt)).font(.caption.weight(.bold)).foregroundStyle(Color.foresightSage); Text(entry.body).font(.system(.body, design: .serif)).lineLimit(4) } } }
-                        ForesightCard {
-                            VStack(alignment: .leading, spacing: 16) {
-                                Text("Rating").font(.headline)
-                                Text("Worse                         Better").font(.caption).foregroundStyle(.secondary)
-                                LazyVGrid(columns: [GridItem(.adaptive(minimum: 88), spacing: 8)], spacing: 8) {
-                                    ForEach(OutcomeValue.allCases) { value in
-                                        Button {
-                                            selectedValue = value
-                                            notSure = false
-                                        } label: {
-                                            VStack(spacing: 3) { Text(value.shortTitle).font(.headline); Text(value.title.replacingOccurrences(of: " ", with: "\n")).font(.caption2).multilineTextAlignment(.center).lineLimit(2) }
-                                                .frame(maxWidth: .infinity, minHeight: 64)
-                                        }
-                                        .buttonStyle(.bordered)
-                                        .tint(selectedValue == value && !notSure ? Color.foresightSage : Color.secondary)
-                                        .accessibilityLabel(value.title)
+            GeometryReader { proxy in
+                ScrollView(.vertical) {
+                    ContentColumn {
+                        VStack(alignment: .leading, spacing: 18) {
+                            ForesightPageHeader(
+                                kicker: existing == nil ? "Check in" : "Update check-in",
+                                title: "How did this affect you?",
+                                subtitle: existing?.phase == .delayed ? "Think about the time since this happened." : "Compare how you feel now with how you felt before."
+                            )
+                            if let entry { ForesightCard { VStack(alignment: .leading, spacing: 6) { Text(ForesightFormat.detailDate(entry.eventAt)).font(.caption.weight(.bold)).foregroundStyle(Color.foresightSage); Text(entry.body).font(.system(.body, design: .serif)).lineLimit(4) } } }
+                            ForesightCard {
+                                VStack(alignment: .leading, spacing: 16) {
+                                    Text("Rating").font(.headline)
+                                    HStack {
+                                        Text("Worse")
+                                        Spacer()
+                                        Text("Same")
+                                        Spacer()
+                                        Text("Better")
                                     }
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(Color.foresightMuted)
+                                    LazyVGrid(columns: ratingColumns, spacing: 6) {
+                                        ForEach(OutcomeValue.allCases) { value in
+                                            Button {
+                                                selectedValue = value
+                                                notSure = false
+                                            } label: {
+                                                Text(value.shortTitle)
+                                                    .font(.headline)
+                                                    .lineLimit(1)
+                                                    .minimumScaleFactor(0.75)
+                                                    .frame(maxWidth: .infinity, minHeight: 48)
+                                            }
+                                            .buttonStyle(
+                                                ForesightChoiceButtonStyle(
+                                                    selected: selectedValue == value && !notSure,
+                                                    horizontalPadding: 0
+                                                )
+                                            )
+                                            .accessibilityLabel(value.title)
+                                            .accessibilityValue(selectedValue == value && !notSure ? "Selected" : "")
+                                        }
+                                    }
+                                    Text(ratingDescription)
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(selectedValue == nil ? Color.foresightMuted : Color.foresightSage)
+                                        .frame(maxWidth: .infinity)
+                                    Toggle("Not sure yet", isOn: $notSure)
+                                        .onChange(of: notSure) { _, active in if active { selectedValue = nil } }
+                                    VStack(alignment: .leading, spacing: 8) {
+                                        Text("Note (optional)").font(.headline)
+                                        TextField("What else was going on?", text: $note, axis: .vertical)
+                                            .onChange(of: note) { _, _ in limitNoteText() }
+                                            .lineLimit(3...7).textFieldStyle(.roundedBorder)
+                                        Text("\(note.count) of 5,000 characters").font(.caption).foregroundStyle(note.count > 5_000 ? .red : .secondary)
+                                    }
+                                    Toggle("Leave out of pattern summaries", isOn: $excluded)
                                 }
-                                Toggle("Not sure yet", isOn: $notSure)
-                                    .onChange(of: notSure) { _, active in if active { selectedValue = nil } }
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Text("Note (optional)").font(.headline)
-                                    TextField("What else was going on?", text: $note, axis: .vertical)
-                                        .onChange(of: note) { _, _ in limitNoteText() }
-                                        .lineLimit(3...7).textFieldStyle(.roundedBorder)
-                                    Text("\(note.count) of 5,000 characters").font(.caption).foregroundStyle(note.count > 5_000 ? .red : .secondary)
-                                }
-                                Toggle("Leave out of pattern summaries", isOn: $excluded)
                             }
+                            if let message { Text(message).font(.footnote).foregroundStyle(Color.foresightWarning) }
                         }
-                        if let message { Text(message).font(.footnote).foregroundStyle(.red) }
+                        .padding()
                     }
-                    .padding()
+                    .frame(width: proxy.size.width)
                 }
             }
+            .background(Color.foresightCanvas)
             .navigationTitle("Check in")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -450,17 +487,44 @@ struct ScheduleCheckInSheet: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section {
-                    Button("Later today") { dueAt = Calendar.current.date(byAdding: .hour, value: 2, to: .now)! }
-                    Button("Tomorrow morning") { dueAt = Calendar.current.date(bySettingHour: 9, minute: 0, second: 0, of: Calendar.current.date(byAdding: .day, value: 1, to: .now)!)! }
-                    Button("Tomorrow evening") { dueAt = Calendar.current.date(bySettingHour: 19, minute: 0, second: 0, of: Calendar.current.date(byAdding: .day, value: 1, to: .now)!)! }
-                } header: { Text("Quick schedule") }
-                Section("Custom time") {
-                    DatePicker("Check in", selection: $dueAt, in: Date.now..., displayedComponents: [.date, .hourAndMinute])
+            ScrollView {
+                ContentColumn {
+                    VStack(alignment: .leading, spacing: 18) {
+                        ForesightPageHeader(
+                            kicker: existing == nil ? "Future reflection" : "Adjust timing",
+                            title: existing == nil ? "Check in later." : "Choose a better time.",
+                            subtitle: "Give the outcome enough time to become clear, then return with fresh perspective."
+                        )
+                        ForesightCard {
+                            VStack(alignment: .leading, spacing: 14) {
+                                SectionKicker(text: "Quick schedule")
+                                VStack(spacing: 9) {
+                                    scheduleShortcut("Later today", detail: "In about two hours") {
+                                        Calendar.current.date(byAdding: .hour, value: 2, to: .now)!
+                                    }
+                                    scheduleShortcut("Tomorrow morning", detail: "At 9:00 AM") {
+                                        Calendar.current.date(bySettingHour: 9, minute: 0, second: 0, of: Calendar.current.date(byAdding: .day, value: 1, to: .now)!)!
+                                    }
+                                    scheduleShortcut("Tomorrow evening", detail: "At 7:00 PM") {
+                                        Calendar.current.date(bySettingHour: 19, minute: 0, second: 0, of: Calendar.current.date(byAdding: .day, value: 1, to: .now)!)!
+                                    }
+                                }
+                                Divider().overlay(Color.foresightLine)
+                                SectionKicker(text: "Custom time")
+                                DatePicker("Check in", selection: $dueAt, in: Date.now..., displayedComponents: [.date, .hourAndMinute])
+                                    .font(ForesightType.control)
+                                    .tint(Color.foresightSage)
+                                Text("Scheduled for \(ForesightFormat.detailDate(dueAt))")
+                                    .font(.caption)
+                                    .foregroundStyle(Color.foresightMuted)
+                            }
+                        }
+                        if let message { Text(message).font(.footnote).foregroundStyle(Color.foresightWarning) }
+                    }
+                    .padding()
                 }
-                if let message { Section { Text(message).foregroundStyle(.red) } }
             }
+            .background(Color.foresightCanvas)
             .navigationTitle(existing == nil ? "Schedule check-in" : "Reschedule")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel", action: requestDismiss) }
@@ -469,6 +533,29 @@ struct ScheduleCheckInSheet: View {
             .interactiveDismissDisabled(isDirty)
             .confirmationDialog("Discard schedule changes?", isPresented: $discardConfirmation) { Button("Discard", role: .destructive) { dismiss() } } message: { Text("Your schedule has not been saved.") }
         }
+    }
+
+    private func scheduleShortcut(_ title: String, detail: String, date: @escaping () -> Date) -> some View {
+        Button {
+            withAnimation(.snappy(duration: 0.2)) { dueAt = date() }
+        } label: {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(ForesightType.control).foregroundStyle(Color.foresightInk)
+                    Text(detail).font(.caption).foregroundStyle(Color.foresightMuted)
+                }
+                Spacer()
+                Image(systemName: "arrow.forward")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(Color.foresightSage)
+            }
+            .padding(.horizontal, 14)
+            .frame(minHeight: 54)
+            .background(Color.foresightRaised, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .accessibilityHint(detail)
     }
 
     private func requestDismiss() { if isDirty { discardConfirmation = true } else { dismiss() } }

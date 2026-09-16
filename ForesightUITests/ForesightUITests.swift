@@ -18,7 +18,7 @@ final class ForesightUITests: XCTestCase {
     }
 
     func testFreshLaunchShowsJournal() {
-        XCTAssertTrue(app.staticTexts["Journal"].firstMatch.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["Notice what follows."].firstMatch.waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["New log"].exists)
     }
 
