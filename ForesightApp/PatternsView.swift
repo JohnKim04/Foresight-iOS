@@ -19,22 +19,35 @@ struct PatternsRootView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                ContentColumn {
-                    VStack(alignment: .leading, spacing: 18) {
-                        VStack(alignment: .leading, spacing: 6) {
-                            SectionKicker(text: "Reflect, don’t conclude")
-                            Text("Patterns").font(.system(.largeTitle, design: .serif).weight(.semibold))
-                            Text("Foresight describes associations in your own logs. It does not claim causes.").foregroundStyle(.secondary)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    ContentColumn {
+                        VStack(alignment: .leading, spacing: 18) {
+                            ForesightPageHeader(
+                                kicker: "Reflect, don’t conclude",
+                                title: "See what repeats.",
+                                subtitle: "Foresight describes associations in your own logs. It does not claim causes."
+                            )
+                            ForesightSegmentedPicker(
+                                selection: $mode,
+                                options: PatternsMode.allCases.map { ($0, $0.title) }
+                            )
+                            if mode == .activity { activityView } else { outcomesView }
                         }
-                        Picker("Patterns view", selection: $mode) { ForEach(PatternsMode.allCases) { Text($0.title).tag($0) } }.pickerStyle(.segmented)
-                        if mode == .activity { activityView } else { outcomesView }
+                        .padding()
                     }
-                    .padding()
+                }
+                .background(Color.foresightCanvas)
+                .onChange(of: activityCategoryID) { oldValue, newValue in
+                    guard mode == .activity, oldValue != newValue else { return }
+                    withAnimation(.snappy) { proxy.scrollTo("activity-controls", anchor: .top) }
+                }
+                .onChange(of: outcomeCategoryID) { oldValue, newValue in
+                    guard mode == .outcomes, oldValue != newValue else { return }
+                    withAnimation(.snappy) { proxy.scrollTo("outcome-controls", anchor: .top) }
                 }
             }
-            .background(Color.foresightCream)
-            .navigationTitle("Patterns")
+            .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .navigationDestination(for: UUID.self) { JournalDetailView(store: store, entryID: $0) }
         }
@@ -44,15 +57,18 @@ struct PatternsRootView: View {
         VStack(alignment: .leading, spacing: 16) {
             ForesightCard {
                 VStack(alignment: .leading, spacing: 13) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 3) {
-                            SectionKicker(text: "Activity")
-                            Text(activityCategory?.name ?? "All logs").font(.system(.title3, design: .serif).weight(.semibold))
-                        }
-                        Spacer()
-                        Menu { activityCategoryMenu } label: { Label("Choose category", systemImage: "tag") }
+                    SectionKicker(text: "Activity")
+                    Text("Choose what to compare").font(ForesightType.sectionTitle).foregroundStyle(Color.foresightInk)
+                    Text("The chart and totals below follow this category.").font(.subheadline).foregroundStyle(Color.foresightMuted)
+                    Menu { activityCategoryMenu } label: {
+                        PatternCategoryMenuLabel(value: activityCategory?.name ?? "All logs")
                     }
-                    Picker("Period", selection: $activityGranularity) { ForEach(TrendGranularity.allCases) { Text($0.title).tag($0) } }.pickerStyle(.segmented)
+                    .accessibilityLabel("Choose category")
+                    .accessibilityValue(activityCategory?.name ?? "All logs")
+                    ForesightSegmentedPicker(
+                        selection: $activityGranularity,
+                        options: TrendGranularity.allCases.map { ($0, $0.title) }
+                    )
                     let comparison = periodComparison(store.entries, category: activityCategory, granularity: activityGranularity)
                     HStack(spacing: 10) {
                         MetricBox(value: "\(comparison.currentCount)", label: comparison.currentLabel)
@@ -70,10 +86,13 @@ struct PatternsRootView: View {
                     Text(activityGranularity == .week ? "Eight calendar-aligned weeks" : "Six calendar-aligned months").font(.caption).foregroundStyle(.secondary)
                 }
             }
+            .id("activity-controls")
             ForesightCard {
                 VStack(alignment: .leading, spacing: 10) {
-                    HStack { SectionKicker(text: "Category activity"); Spacer(); Picker("Range", selection: $activityRange) { ForEach(TrendRange.allCases) { Text($0.title).tag($0) } }.pickerStyle(.menu) }
+                    HStack { SectionKicker(text: "Explore another category"); Spacer(); Picker("Range", selection: $activityRange) { ForEach(TrendRange.allCases) { Text($0.title).tag($0) } }.pickerStyle(.menu) }
+                    Text("Tap a row to load that category in the chart above.").font(.caption).foregroundStyle(Color.foresightMuted)
                     let trends = categoryTrends(store.entries, categories: store.categories, range: activityRange)
+                        .filter { $0.category.id != activityCategoryID }
                     if trends.allSatisfy({ $0.currentCount == 0 && $0.previousCount == 0 }) {
                         Text("Tag logs to compare activity by category.").foregroundStyle(.secondary)
                     } else {
@@ -84,9 +103,12 @@ struct PatternsRootView: View {
                                     Spacer()
                                     Text("\(trend.currentCount)").font(.headline).foregroundStyle(Color.foresightSage)
                                     Text(trend.change == 0 ? "—" : "\(trend.change > 0 ? "+" : "")\(trend.change)").font(.caption.weight(.bold)).foregroundStyle(trend.change < 0 ? Color.secondary : Color.foresightSage)
+                                    Image(systemName: "chevron.up").font(.caption.weight(.bold)).foregroundStyle(Color.foresightMuted)
                                 }
                                 .padding(.vertical, 7)
-                            }.buttonStyle(.plain)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("View \(trend.category.name) activity")
                             if trend.id != trends.last?.id { Divider() }
                         }
                     }
@@ -104,18 +126,27 @@ struct PatternsRootView: View {
         VStack(alignment: .leading, spacing: 16) {
             ForesightCard {
                 VStack(alignment: .leading, spacing: 13) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 3) {
-                            SectionKicker(text: "Outcome evidence")
-                            Text(outcomeCategory?.name ?? "Choose a category").font(.system(.title3, design: .serif).weight(.semibold))
-                        }
-                        Spacer()
-                        Menu { outcomeCategoryMenu } label: { Label("Choose category", systemImage: "tag") }
+                    SectionKicker(text: "Outcome evidence")
+                    Text("Choose what to examine").font(ForesightType.sectionTitle).foregroundStyle(Color.foresightInk)
+                    Text("Every card below follows the category selected here.").font(.subheadline).foregroundStyle(Color.foresightMuted)
+                    Menu { outcomeCategoryMenu } label: {
+                        PatternCategoryMenuLabel(value: outcomeCategory?.name ?? "Select a category")
                     }
-                    Picker("Range", selection: $outcomeRange) { ForEach(OutcomeTrendRange.allCases) { Text($0.title).tag($0) } }.pickerStyle(.segmented)
-                    Picker("Timing", selection: $outcomePhase) { ForEach(OutcomePhase.allCases) { Text($0.title).tag($0) } }.pickerStyle(.segmented)
+                    .accessibilityLabel("Choose category")
+                    .accessibilityValue(outcomeCategory?.name ?? "No category selected")
+                    SectionKicker(text: "Time window")
+                    ForesightSegmentedPicker(
+                        selection: $outcomeRange,
+                        options: OutcomeTrendRange.allCases.map { ($0, $0.title) }
+                    )
+                    SectionKicker(text: "Reflection timing")
+                    ForesightSegmentedPicker(
+                        selection: $outcomePhase,
+                        options: OutcomePhase.allCases.map { ($0, $0.title) }
+                    )
                 }
             }
+            .id("outcome-controls")
             if let category = outcomeCategory { outcomeDetail(category) }
             else { EmptyState(title: "Choose a category", detail: "Select a category to see its outcome evidence and source logs.") }
             rankedInsights
@@ -123,7 +154,7 @@ struct PatternsRootView: View {
     }
 
     @ViewBuilder private var outcomeCategoryMenu: some View {
-        Button("No selection") { outcomeCategoryID = nil }
+        Button("Clear category") { outcomeCategoryID = nil }
         ForEach(store.categories, id: \.id) { category in Button(category.name + (category.isArchived ? " (archived)" : "")) { outcomeCategoryID = category.id } }
     }
 
@@ -138,7 +169,7 @@ struct PatternsRootView: View {
                     Text("\(trend.logCount) \(trend.logCount == 1 ? "log" : "logs") in the last \(outcomeRange.rawValue) days · \(outcomePhase == .immediate ? "right after" : "later")").font(.subheadline).foregroundStyle(.secondary)
                     if let insight {
                         VStack(alignment: .leading, spacing: 5) {
-                            Text(insight.headline).font(.system(.headline, design: .serif))
+                            Text(insight.headline).font(ForesightType.insight).foregroundStyle(Color.foresightInk)
                             Text(insight.detail).font(.caption).foregroundStyle(.secondary)
                         }.padding(13).background(insightBackground(insight.direction), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     } else if trend.scheduledCount == 0 {
@@ -165,7 +196,7 @@ struct PatternsRootView: View {
                 ForesightCard {
                     VStack(alignment: .leading, spacing: 10) {
                         SectionKicker(text: "Evidence")
-                        Text("Source logs").font(.system(.title3, design: .serif).weight(.semibold))
+                        Text("Source logs").font(ForesightType.sectionTitle).foregroundStyle(Color.foresightInk)
                         Text("Showing \(min(8, sourceEntries.count)) of \(sourceEntries.count) numeric responses.").font(.caption).foregroundStyle(.secondary)
                         ForEach(Array(sourceEntries.prefix(8)), id: \.id) { entry in
                             NavigationLink(value: entry.id) {
@@ -181,36 +212,85 @@ struct PatternsRootView: View {
 
     private var rankedInsights: some View {
         let insights = categoryOutcomeInsights(entries: store.entries, checkIns: store.checkIns, categories: store.categories, phase: outcomePhase, range: outcomeRange)
+        let shortcuts = insights.filter { $0.category.id != outcomeCategoryID }
         let progress = closestInsightProgress(entries: store.entries, checkIns: store.checkIns, categories: store.categories, phase: outcomePhase, range: outcomeRange)
         return ForesightCard {
             VStack(alignment: .leading, spacing: 11) {
-                SectionKicker(text: "Ranked observations")
+                SectionKicker(text: insights.isEmpty ? "What stands out" : "Explore another category")
                 if insights.isEmpty {
                     if let progress { Text("\(progress.category.name) is closest: \(progress.needed) more numeric \(progress.needed == 1 ? "response" : "responses") needed for a pattern.").foregroundStyle(.secondary) }
                     else { Text("Add tagged logs and check-ins to begin building evidence.").foregroundStyle(.secondary) }
+                } else if shortcuts.isEmpty {
+                    Text("You’re viewing the only category with a clear pattern in this time window.")
+                        .font(.subheadline)
+                        .foregroundStyle(Color.foresightMuted)
                 } else {
-                    ForEach(insights.prefix(5)) { insight in
+                    Text("These are shortcuts. Tap one to load its evidence above.")
+                        .font(.caption)
+                        .foregroundStyle(Color.foresightMuted)
+                    ForEach(shortcuts.prefix(5)) { insight in
                         Button { outcomeCategoryID = insight.category.id } label: {
                             HStack(alignment: .top, spacing: 10) {
                                 Capsule().fill(insightMarker(insight.direction)).frame(width: 5, height: 38)
                                 VStack(alignment: .leading, spacing: 3) { Text(insight.headline).font(.subheadline).multilineTextAlignment(.leading); Text("\(insight.evidenceDepth.rawValue) · \(insight.detail)").font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.leading) }
                                 Spacer()
+                                Image(systemName: "chevron.up")
+                                    .font(.caption.weight(.bold))
+                                    .foregroundStyle(Color.foresightMuted)
                             }
-                        }.buttonStyle(.plain)
+                            .padding(12)
+                            .background(Color.foresightRaised, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("View \(insight.category.name) outcome evidence")
                     }
                 }
             }
         }
     }
 
-    private func insightBackground(_ direction: OutcomeDirection) -> Color { switch direction { case .positive: .foresightSoftSage; case .negative: Color(red: 0.96, green: 0.91, blue: 0.88); case .neutral: Color(uiColor: .secondarySystemBackground); case .mixed: .foresightWarm } }
-    private func insightMarker(_ direction: OutcomeDirection) -> Color { switch direction { case .positive: .foresightSage; case .negative: Color(red: 0.65, green: 0.42, blue: 0.33); case .neutral: .secondary; case .mixed: Color(red: 0.65, green: 0.54, blue: 0.38) } }
+    private func insightBackground(_ direction: OutcomeDirection) -> Color { switch direction { case .positive: .foresightSoftSage; case .negative: .foresightNegative.opacity(0.14); case .neutral: .foresightRaised; case .mixed: .foresightWarm } }
+    private func insightMarker(_ direction: OutcomeDirection) -> Color { switch direction { case .positive: .foresightSageMid; case .negative: .foresightNegative; case .neutral: .foresightMuted; case .mixed: .foresightWarning } }
+}
+
+private struct PatternCategoryMenuLabel: View {
+    let value: String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "tag.fill")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Color.foresightSage)
+                .frame(width: 34, height: 34)
+                .background(Color.foresightSoftSage, in: Circle())
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Category")
+                    .font(.caption2.weight(.bold))
+                    .foregroundStyle(Color.foresightMuted)
+                    .textCase(.uppercase)
+                    .tracking(0.7)
+                Text(value)
+                    .font(ForesightType.control)
+                    .foregroundStyle(Color.foresightInk)
+                    .lineLimit(1)
+            }
+            Spacer()
+            Image(systemName: "chevron.down")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(Color.foresightSage)
+        }
+        .padding(.horizontal, 14)
+        .frame(maxWidth: .infinity, minHeight: 58)
+        .background(Color.foresightRaised, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay { RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.foresightLine, lineWidth: 1) }
+    }
 }
 
 struct MetricBox: View {
     let value: String
     let label: String
-    var body: some View { VStack(alignment: .leading, spacing: 3) { Text(value).font(.headline).foregroundStyle(Color.foresightSage).lineLimit(2); Text(label).font(.caption2).foregroundStyle(.secondary).lineLimit(2) }.frame(maxWidth: .infinity, minHeight: 54, alignment: .leading).padding(10).background(.fill.tertiary, in: RoundedRectangle(cornerRadius: 10, style: .continuous)) }
+    var body: some View { VStack(alignment: .leading, spacing: 3) { Text(value).font(.headline).foregroundStyle(Color.foresightSage).lineLimit(2); Text(label).font(.caption2).foregroundStyle(Color.foresightMuted).lineLimit(2) }.frame(maxWidth: .infinity, minHeight: 54, alignment: .leading).padding(10).background(Color.foresightRaised, in: RoundedRectangle(cornerRadius: 10, style: .continuous)) }
 }
 
 struct OutcomeDistribution: View {
@@ -222,8 +302,8 @@ struct OutcomeDistribution: View {
             GeometryReader { proxy in
                 HStack(spacing: 0) {
                     Color.foresightSage.frame(width: proxy.size.width * CGFloat(trend.betterCount) / CGFloat(total))
-                    Color.secondary.opacity(0.45).frame(width: proxy.size.width * CGFloat(trend.sameCount) / CGFloat(total))
-                    Color(red: 0.65, green: 0.42, blue: 0.33).frame(width: proxy.size.width * CGFloat(trend.worseCount) / CGFloat(total))
+                    Color.foresightMuted.opacity(0.45).frame(width: proxy.size.width * CGFloat(trend.sameCount) / CGFloat(total))
+                    Color.foresightNegative.frame(width: proxy.size.width * CGFloat(trend.worseCount) / CGFloat(total))
                 }
             }.frame(height: 10).clipShape(Capsule())
             Text("Better \(trend.betterCount) · Same \(trend.sameCount) · Worse \(trend.worseCount)").font(.caption).foregroundStyle(.secondary)
@@ -236,5 +316,5 @@ struct NarrativeCard: View {
     let headline: String
     let detail: String
     let color: Color
-    var body: some View { VStack(alignment: .leading, spacing: 7) { SectionKicker(text: kicker); Text(headline).font(.system(.headline, design: .serif)); Text(detail).font(.caption).foregroundStyle(.secondary) }.padding(18).frame(maxWidth: .infinity, alignment: .leading).background(color, in: RoundedRectangle(cornerRadius: 18, style: .continuous)) }
+    var body: some View { VStack(alignment: .leading, spacing: 7) { SectionKicker(text: kicker); Text(headline).font(ForesightType.insight).foregroundStyle(Color.foresightInk); Text(detail).font(.caption).foregroundStyle(Color.foresightMuted) }.padding(18).frame(maxWidth: .infinity, alignment: .leading).background(color, in: RoundedRectangle(cornerRadius: 18, style: .continuous)) }
 }
