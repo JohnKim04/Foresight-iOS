@@ -104,7 +104,7 @@ struct ForesightRootView: View {
                 .tabItem { Label("Patterns", systemImage: "chart.xyaxis.line") }
                 .tag(AppTab.patterns)
         }
-        .background(Color.foresightCream)
+        .background(Color.foresightCanvas)
     }
 }
 
@@ -116,20 +116,21 @@ struct StoreRecoveryView: View {
 
     var body: some View {
         VStack(spacing: 18) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 42))
-                .foregroundStyle(Color.foresightSage)
+            ForesightMark(size: 54)
             Text("Journal unavailable")
-                .font(.system(.title2, design: .serif).weight(.semibold))
+                .font(ForesightType.sectionTitle)
+                .foregroundStyle(Color.foresightInk)
             Text(message)
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
             Button("Try again", action: onRetry)
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(ForesightPrimaryButtonStyle())
             Button("Reset local journal", role: .destructive) { confirmReset = true }
-                .buttonStyle(.bordered)
+                .buttonStyle(ForesightSecondaryButtonStyle())
         }
         .padding(32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.foresightCanvas)
         .alert("Reset local journal?", isPresented: $confirmReset) {
             Button("Reset", role: .destructive, action: onReset)
             Button("Cancel", role: .cancel) { }
