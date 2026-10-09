@@ -11,6 +11,7 @@ struct PostLogCheckInView: View {
     @State private var chosenLater: CheckInLaterOption.Kind?
     @State private var scheduleTarget: CheckInTarget?
     @State private var message: String?
+    @Environment(CheckInReminderScheduler.self) private var reminders
 
     init(store: JournalStore, entryID: UUID, onDone: @escaping () -> Void, now: Date = .now) {
         self.store = store
@@ -163,6 +164,8 @@ struct PostLogCheckInView: View {
                 else { _ = try store.createCheckIn(for: entry, phase: .delayed, dueAt: option.dueAt) }
                 chosenLater = option.kind
                 UISelectionFeedbackGenerator().selectionChanged()
+                // Picking a later time is when a reminder starts to matter, so ask here, once.
+                Task { await reminders.requestAuthorizationIfNeeded() }
             }
             message = nil
         } catch { message = error.localizedDescription }
