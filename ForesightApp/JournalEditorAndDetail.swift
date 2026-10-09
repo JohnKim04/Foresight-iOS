@@ -18,6 +18,8 @@ struct JournalEditorView: View {
     @State private var discardConfirmation = false
     @State private var archiveConfirmation = false
     @State private var categoryToArchive: JournalCategory?
+    /// Set once a new log is saved; the editor then turns into the post-log check-in step.
+    @State private var savedEntryID: UUID?
     @FocusState private var isWriting: Bool
 
     init(store: JournalStore, request: EditorRequest) {
@@ -37,6 +39,15 @@ struct JournalEditorView: View {
     }
 
     var body: some View {
+        if let savedEntryID {
+            PostLogCheckInView(store: store, entryID: savedEntryID) { dismiss() }
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+        } else {
+            editor
+        }
+    }
+
+    private var editor: some View {
         NavigationStack {
             ScrollView {
                 ContentColumn {
@@ -159,10 +170,17 @@ struct JournalEditorView: View {
     }
 
     private func save() {
+        // The post-log step is animating in; a second tap must not save a duplicate log.
+        guard savedEntryID == nil else { return }
         do {
-            _ = try store.saveLog(id: entry?.id, body: bodyText, eventAt: eventAt, categoryIDs: categoryIDs)
+            let saved = try store.saveLog(id: entry?.id, body: bodyText, eventAt: eventAt, categoryIDs: categoryIDs)
             UINotificationFeedbackGenerator().notificationOccurred(.success)
-            dismiss()
+            if isEditing {
+                dismiss()
+            } else {
+                isWriting = false
+                withAnimation(.snappy(duration: 0.3)) { savedEntryID = saved.id }
+            }
         } catch { message = error.localizedDescription }
     }
 }

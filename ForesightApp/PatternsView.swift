@@ -13,6 +13,7 @@ struct PatternsRootView: View {
     @State private var outcomeCategoryID: UUID?
     @State private var outcomeRange: OutcomeTrendRange = .ninety
     @State private var outcomePhase: OutcomePhase = .delayed
+    @State private var helpReport: HelpSuggestionReport?
 
     private var activityCategory: JournalCategory? { activityCategoryID.flatMap { id in store.categories.first { $0.id == id } } }
     private var outcomeCategory: JournalCategory? { outcomeCategoryID.flatMap { id in store.categories.first { $0.id == id } } }
@@ -28,6 +29,7 @@ struct PatternsRootView: View {
                                 title: "See what repeats.",
                                 subtitle: "Foresight describes associations in your own logs. It does not claim causes."
                             )
+                            helpedCard
                             ForesightSegmentedPicker(
                                 selection: $mode,
                                 options: PatternsMode.allCases.map { ($0, $0.title) }
@@ -46,6 +48,9 @@ struct PatternsRootView: View {
                     guard mode == .outcomes, oldValue != newValue else { return }
                     withAnimation(.snappy) { proxy.scrollTo("outcome-controls", anchor: .top) }
                 }
+            }
+            .onChange(of: helpReportKey, initial: true) {
+                helpReport = helpSuggestions(entries: store.entries, checkIns: store.checkIns, categories: store.categories)
             }
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
@@ -214,6 +219,63 @@ struct PatternsRootView: View {
         }
     }
 
+    /// Changes whenever the data or the hour does, so suggestions are recomputed
+    /// on edits rather than on every render.
+    private var helpReportKey: HelpReportKey {
+        HelpReportKey(
+            entryCount: store.entries.count,
+            latestEntryEdit: store.entries.map(\.updatedAt).max(),
+            checkInCount: store.checkIns.count,
+            latestCheckInEdit: store.checkIns.map(\.updatedAt).max(),
+            categoryCount: store.categories.count,
+            archivedCount: store.categories.filter(\.isArchived).count,
+            hour: Int(Date.now.timeIntervalSince1970 / 3600)
+        )
+    }
+
+    @ViewBuilder private var helpedCard: some View {
+        if let report = helpReport { helpedCardContent(report) }
+    }
+
+    private func helpedCardContent(_ report: HelpSuggestionReport) -> some View {
+        ForesightCard {
+            VStack(alignment: .leading, spacing: 11) {
+                SectionKicker(text: HelpSuggestionCopy.title)
+                if report.suggestions.isEmpty {
+                    Text(HelpSuggestionCopy.emptyMessage(report)).font(.subheadline).foregroundStyle(Color.foresightMuted)
+                } else {
+                    ForEach(report.suggestions) { suggestion in
+                        Button { showHelpEvidence(suggestion.category) } label: {
+                            HStack(alignment: .top, spacing: 10) {
+                                Capsule().fill(Color.foresightSageMid).frame(width: 5, height: 38)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(suggestion.headline).font(.subheadline).foregroundStyle(Color.foresightInk).multilineTextAlignment(.leading)
+                                    Text(suggestion.evidence).font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.leading)
+                                    if let context = suggestion.context { Text(context).font(.caption).foregroundStyle(Color.foresightSage).multilineTextAlignment(.leading) }
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right").font(.caption.weight(.bold)).foregroundStyle(Color.foresightMuted)
+                            }
+                            .padding(12)
+                            .background(Color.foresightSoftSage, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("See \(suggestion.category.name) later evidence")
+                    }
+                    Text(HelpSuggestionCopy.footnote).font(.caption2).foregroundStyle(Color.foresightMuted)
+                }
+            }
+        }
+    }
+
+    private func showHelpEvidence(_ category: JournalCategory) {
+        mode = .outcomes
+        outcomePhase = .delayed
+        outcomeRange = helpSuggestionRange
+        outcomeCategoryID = category.id
+    }
+
     private var rankedInsights: some View {
         let insights = categoryOutcomeInsights(entries: store.entries, checkIns: store.checkIns, categories: store.categories, phase: outcomePhase, range: outcomeRange)
         let shortcuts = insights.filter { $0.category.id != outcomeCategoryID }
@@ -256,6 +318,16 @@ struct PatternsRootView: View {
 
     private func insightBackground(_ direction: OutcomeDirection) -> Color { switch direction { case .positive: .foresightSoftSage; case .negative: .foresightNegative.opacity(0.14); case .neutral: .foresightRaised; case .mixed: .foresightWarm } }
     private func insightMarker(_ direction: OutcomeDirection) -> Color { switch direction { case .positive: .foresightSageMid; case .negative: .foresightNegative; case .neutral: .foresightMuted; case .mixed: .foresightWarning } }
+}
+
+private struct HelpReportKey: Equatable {
+    let entryCount: Int
+    let latestEntryEdit: Date?
+    let checkInCount: Int
+    let latestCheckInEdit: Date?
+    let categoryCount: Int
+    let archivedCount: Int
+    let hour: Int
 }
 
 struct MetricBox: View {

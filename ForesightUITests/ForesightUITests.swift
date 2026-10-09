@@ -7,8 +7,16 @@ final class ForesightUITests: XCTestCase {
     override func setUpWithError() throws {
         continueAfterFailure = false
         app = XCUIApplication()
-        app.launchArguments = ["-in-memory-store"]
+        app.launchArguments = ["-in-memory-store", "-hasCompletedOnboarding", "YES"]
         app.launch()
+    }
+
+    /// Saves the new-log editor, then leaves the post-log check-in step without answering.
+    private func saveNewLog() {
+        app.buttons["Save"].firstMatch.tap()
+        let done = app.buttons["post-log.done"]
+        XCTAssertTrue(done.waitForExistence(timeout: 3))
+        done.tap()
     }
 
     private func openLog(named text: String) {
@@ -26,6 +34,7 @@ final class ForesightUITests: XCTestCase {
         app.terminate()
         app.launchArguments = [
             "-in-memory-store",
+            "-hasCompletedOnboarding", "YES",
             "-UIPreferredContentSizeCategoryName",
             "UICTContentSizeCategoryAccessibilityXXXL"
         ]
@@ -44,7 +53,7 @@ final class ForesightUITests: XCTestCase {
         XCTAssertTrue(editor.waitForExistence(timeout: 3))
         editor.tap()
         editor.typeText("A test journal log")
-        app.buttons["Save"].firstMatch.tap()
+        saveNewLog()
         openLog(named: "A test journal log")
         app.buttons["Edit log"].tap()
         let editEditor = app.textViews["What happened?"]
@@ -62,7 +71,7 @@ final class ForesightUITests: XCTestCase {
         XCTAssertTrue(editor.waitForExistence(timeout: 3))
         editor.tap()
         editor.typeText("Tap target test log")
-        app.buttons["Save"].firstMatch.tap()
+        saveNewLog()
 
         let log = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Tap target test log")).firstMatch
         XCTAssertTrue(log.waitForExistence(timeout: 3))
@@ -92,7 +101,7 @@ final class ForesightUITests: XCTestCase {
         app.textViews["What happened?"].tap()
         app.textViews["What happened?"].typeText("A tagged test")
         app.buttons["Testing"].tap()
-        app.buttons["Save"].firstMatch.tap()
+        saveNewLog()
         openLog(named: "A tagged test")
         app.buttons["Check in now"].tap()
         app.buttons["Much better"].tap()
@@ -104,7 +113,7 @@ final class ForesightUITests: XCTestCase {
         app.buttons["New log"].tap()
         app.textViews["What happened?"].tap()
         app.textViews["What happened?"].typeText("Schedule a reflection")
-        app.buttons["Save"].firstMatch.tap()
+        saveNewLog()
         openLog(named: "Schedule a reflection")
         app.buttons["Check in later"].tap()
         app.buttons["Later today"].tap()
@@ -134,6 +143,25 @@ final class ForesightUITests: XCTestCase {
         XCTAssertFalse(app.buttons["Edit log"].waitForExistence(timeout: 1))
         source.tap()
         XCTAssertTrue(app.buttons["Edit log"].waitForExistence(timeout: 3))
+    }
+
+    func testPatternsSuggestsWhatHasTendedToHelp() {
+        app.tabBars.buttons["Patterns"].tap()
+        XCTAssertTrue(app.staticTexts["OFTEN FOLLOWED BY FEELING BETTER"].firstMatch.waitForExistence(timeout: 3))
+        XCTAssertFalse(app.buttons["See Workout later evidence"].exists)
+        app.tabBars.buttons["Check In"].tap()
+        XCTAssertTrue(app.buttons["Add history"].waitForExistence(timeout: 3))
+        app.buttons["Add history"].tap()
+        app.tabBars.buttons["Patterns"].tap()
+        // Demo history: Workout, Sleep and Social were mostly better later. Alcohol felt
+        // better right after but worse later, and Scrolling and Work have no clear lift.
+        let suggestion = app.buttons["See Workout later evidence"]
+        XCTAssertTrue(suggestion.waitForExistence(timeout: 3))
+        for name in ["Sleep", "Social"] { XCTAssertTrue(app.buttons["See \(name) later evidence"].exists, name) }
+        for name in ["Alcohol", "Scrolling", "Work"] { XCTAssertFalse(app.buttons["See \(name) later evidence"].exists, name) }
+        suggestion.tap()
+        XCTAssertEqual(app.buttons["Choose category"].value as? String, "Workout")
+        XCTAssertTrue(app.staticTexts["Source logs"].waitForExistence(timeout: 3))
     }
 
     func testJournalDropdownsSelectAndDismissEachOther() {
@@ -169,12 +197,12 @@ final class ForesightUITests: XCTestCase {
         app.buttons["Add"].tap()
         app.textViews["What happened?"].tap()
         app.textViews["What happened?"].typeText("Only this category should match")
-        app.buttons["Save"].firstMatch.tap()
+        saveNewLog()
 
         app.buttons["New log"].tap()
         app.textViews["What happened?"].tap()
         app.textViews["What happened?"].typeText("Uncategorized log")
-        app.buttons["Save"].firstMatch.tap()
+        saveNewLog()
 
         let matching = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Only this category should match")).firstMatch
         let other = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Uncategorized log")).firstMatch
@@ -215,5 +243,68 @@ final class ForesightUITests: XCTestCase {
             .withOffset(CGVector(dx: 8, dy: source.frame.midY))
         outsideCard.tap()
         XCTAssertFalse(app.buttons["Edit log"].waitForExistence(timeout: 1))
+    }
+
+    func testFirstLaunchShowsOnboardingOnce() {
+        app.terminate()
+        app.launchArguments = ["-in-memory-store", "-reset-onboarding"]
+        app.launch()
+        XCTAssertTrue(app.buttons["Next"].waitForExistence(timeout: 3))
+        for _ in 0..<3 { app.buttons["Next"].tap() }
+        XCTAssertTrue(app.staticTexts["See what tends to help."].waitForExistence(timeout: 3))
+        app.buttons["Start journaling"].tap()
+        XCTAssertTrue(app.buttons["New log"].waitForExistence(timeout: 3))
+
+        app.terminate()
+        app.launchArguments = ["-in-memory-store"]
+        app.launch()
+        XCTAssertTrue(app.buttons["New log"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.buttons["Start journaling"].exists)
+        XCTAssertFalse(app.buttons["Next"].exists)
+    }
+
+    func testSavingALogAsksHowYouFeelAndSchedulesALaterCheckIn() {
+        app.buttons["New log"].tap()
+        app.textViews["What happened?"].tap()
+        app.textViews["What happened?"].typeText("Went for an evening run")
+        app.buttons["Save"].firstMatch.tap()
+
+        XCTAssertTrue(app.staticTexts["How do you feel right now?"].waitForExistence(timeout: 3))
+        app.buttons["A little better"].tap()
+        XCTAssertTrue(app.staticTexts["Saved: a little better"].waitForExistence(timeout: 2))
+        app.buttons["In 2 hours"].tap()
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Check-in set for")).firstMatch.waitForExistence(timeout: 2))
+        app.buttons["post-log.done"].tap()
+
+        openLog(named: "Went for an evening run")
+        XCTAssertTrue(app.staticTexts["A little better"].firstMatch.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Reschedule"].exists)
+        app.tabBars.buttons["Check In"].tap()
+        XCTAssertTrue(app.buttons["Answer early"].waitForExistence(timeout: 3))
+    }
+
+    func testTappingAChosenLaterTimeAgainCancelsIt() {
+        app.buttons["New log"].tap()
+        app.textViews["What happened?"].tap()
+        app.textViews["What happened?"].typeText("Changed my mind about later")
+        app.buttons["Save"].firstMatch.tap()
+        let inTwoHours = app.buttons["In 2 hours"]
+        XCTAssertTrue(inTwoHours.waitForExistence(timeout: 3))
+        inTwoHours.tap()
+        inTwoHours.tap()
+        app.buttons["post-log.done"].tap()
+        app.tabBars.buttons["Check In"].tap()
+        XCTAssertFalse(app.buttons["Answer early"].waitForExistence(timeout: 1))
+    }
+
+    func testCheckInTabShowsABadgeForDueCheckIns() {
+        let tab = app.tabBars.buttons["Check In"]
+        tab.tap()
+        app.buttons["Add history"].tap()
+        // Sample history has two later check-ins already past due.
+        // The tab bar exposes the badge as the button's value, e.g. "2 items".
+        let badged = NSPredicate(format: "value MATCHES %@", "^2( items?)?$")
+        expectation(for: badged, evaluatedWith: tab)
+        waitForExpectations(timeout: 3)
     }
 }

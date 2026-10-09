@@ -11,6 +11,8 @@ settings:
     ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
     CLANG_ENABLE_MODULES: YES
     GENERATE_INFOPLIST_FILE: NO
+    # Override in Config/Signing.local.xcconfig if these bundle IDs are taken by another Apple team.
+    BUNDLE_ID_PREFIX: com.foresight
 configs:
   Debug: debug
   Release: release
@@ -22,6 +24,11 @@ targets:
       - path: ForesightApp
       - path: Resources
         buildPhase: resources
+    # Device signing lives in Config/Signing.xcconfig, which includes a gitignored
+    # Config/Signing.local.xcconfig for the team ID. See "Run on your iPhone" in the README.
+    configFiles:
+      Debug: Config/Signing.xcconfig
+      Release: Config/Signing.xcconfig
     settings:
       base:
         INFOPLIST_FILE: ForesightApp/Info.plist
@@ -29,15 +36,13 @@ targets:
         PRODUCT_MODULE_NAME: Foresight
         SUPPORTS_MACCATALYST: NO
         CODE_SIGN_ENTITLEMENTS: ""
-        CODE_SIGNING_ALLOWED: NO
-        CODE_SIGNING_REQUIRED: NO
       configs:
         Debug:
-          PRODUCT_BUNDLE_IDENTIFIER: com.foresight.journal.testing
+          PRODUCT_BUNDLE_IDENTIFIER: $(BUNDLE_ID_PREFIX).journal.testing
           PRODUCT_NAME: Foresight QA
           SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG ENABLE_DEVELOPMENT_FIXTURES
         Release:
-          PRODUCT_BUNDLE_IDENTIFIER: com.foresight.journal
+          PRODUCT_BUNDLE_IDENTIFIER: $(BUNDLE_ID_PREFIX).journal
           PRODUCT_NAME: Foresight
   ForesightTests:
     type: bundle.unit-test
