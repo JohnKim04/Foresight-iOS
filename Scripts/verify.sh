@@ -24,16 +24,21 @@ fi
 cd "$project_root"
 xcodegen generate --spec project.yml
 
-devices_json="$(xcrun simctl list devices available --json)"
-simulator_udid="$(print -r -- "$devices_json" | jq -r '
-  .devices
-  | to_entries
-  | sort_by(.key)
-  | reverse
-  | map(.value[] | select(.isAvailable == true and (.name | startswith("iPhone"))))
-  | first
-  | .udid // empty
-')"
+# CI can pin a simulator with VERIFY_SIMULATOR_UDID, skip the final install/launch
+# with VERIFY_SKIP_LAUNCH=1, and keep test results with VERIFY_RESULT_BUNDLE_PATH.
+simulator_udid="${VERIFY_SIMULATOR_UDID:-}"
+if [[ -z "$simulator_udid" ]]; then
+  devices_json="$(xcrun simctl list devices available --json)"
+  simulator_udid="$(print -r -- "$devices_json" | jq -r '
+    .devices
+    | to_entries
+    | sort_by(.key)
+    | reverse
+    | map(.value[] | select(.isAvailable == true and (.name | startswith("iPhone"))))
+    | first
+    | .udid // empty
+  ')"
+fi
 
 if [[ -z "$simulator_udid" ]]; then
   print "No available iPhone simulator was found. Install an iOS simulator runtime in Xcode."
@@ -52,13 +57,25 @@ xcodebuild build \
   CODE_SIGNING_ALLOWED=NO \
   CODE_SIGNING_REQUIRED=NO
 
+result_bundle_args=()
+if [[ -n "${VERIFY_RESULT_BUNDLE_PATH:-}" ]]; then
+  rm -rf "$VERIFY_RESULT_BUNDLE_PATH"
+  result_bundle_args=(-resultBundlePath "$VERIFY_RESULT_BUNDLE_PATH")
+fi
+
 xcodebuild test \
   -project Foresight.xcodeproj \
   -scheme "$scheme" \
   -destination "platform=iOS Simulator,id=$simulator_udid" \
   -derivedDataPath "$derived_data" \
+  "${result_bundle_args[@]}" \
   CODE_SIGNING_ALLOWED=NO \
   CODE_SIGNING_REQUIRED=NO
+
+if [[ "${VERIFY_SKIP_LAUNCH:-}" == "1" ]]; then
+  print "Build and tests passed on $simulator_udid"
+  exit 0
+fi
 
 app_path="$derived_data/Build/Products/Debug-iphonesimulator/Foresight QA.app"
 xcrun simctl install "$simulator_udid" "$app_path"

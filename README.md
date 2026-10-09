@@ -39,6 +39,10 @@ Device signing is prepared in `Config/Signing.xcconfig` but switched off until a
 
 Installing a newer build over the old one keeps the journal. Deleting the app deletes it.
 
+## CI
+
+GitHub Actions (`.github/workflows/ci.yml`) runs `Scripts/verify.sh` on every pull request and push to `main`, on a `macos-26` runner with Xcode 26.6 and an iOS 26.5 simulator. It builds the Foresight QA scheme and runs the unit and UI tests; failed runs upload the `.xcresult` bundle. CI uses Xcode 26, so app code must stick to iOS 26 SDK APIs even when building locally with Xcode 27.
+
 ## Architecture
 
 - `ForesightApp/Models.swift` contains SwiftData entities: `JournalEntry`, `JournalCategory`, and `OutcomeCheckIn`, with UUID identities, typed states, relationships, and cascading entry deletion.
