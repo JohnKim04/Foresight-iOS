@@ -65,9 +65,10 @@ enum CheckInReminderPlan {
         }
     }
 
-    static func reminders(for sources: [ReminderSource], now: Date, limit: Int = pendingLimit) -> [CheckInReminder] {
+    /// A check-in that falls due in quiet hours is reminded about when they end.
+    static func reminders(for sources: [ReminderSource], now: Date, quietHours: QuietHours = .off, calendar: Calendar = .autoupdatingCurrent, limit: Int = pendingLimit) -> [CheckInReminder] {
         sources
-            .map { (source: $0, fireAt: fireDate(for: $0.dueAt)) }
+            .map { (source: $0, fireAt: fireDate(for: $0.dueAt, quietHours: quietHours, calendar: calendar)) }
             .filter { $0.fireAt > now }
             .sorted { ($0.fireAt, $0.source.checkInID.uuidString) < ($1.fireAt, $1.source.checkInID.uuidString) }
             .prefix(limit)
@@ -78,6 +79,10 @@ enum CheckInReminderPlan {
     /// before its check-in is due.
     static func fireDate(for dueAt: Date) -> Date {
         Date(timeIntervalSinceReferenceDate: dueAt.timeIntervalSinceReferenceDate.rounded(.up))
+    }
+
+    static func fireDate(for dueAt: Date, quietHours: QuietHours, calendar: Calendar) -> Date {
+        fireDate(for: quietHours.deferring(dueAt, calendar: calendar))
     }
 
     /// A check-in is due at an instant, not a wall-clock time. Components in UTC, with the
@@ -204,12 +209,25 @@ final class CheckInReminderScheduler {
     private(set) var authorization: ReminderAuthorization = .notDetermined
     @ObservationIgnored private let center: any ReminderNotificationCenter
     @ObservationIgnored private let now: () -> Date
+    @ObservationIgnored private let calendar: () -> Calendar
+    @ObservationIgnored private let isEnabled: () -> Bool
+    @ObservationIgnored private let quietHours: () -> QuietHours
     @ObservationIgnored private var sources: [ReminderSource] = []
     @ObservationIgnored private var syncTask: Task<Void, Never>?
 
-    init(center: any ReminderNotificationCenter, now: @escaping () -> Date = { .now }) {
+    /// The app passes the Settings choices in; the defaults (on, never quiet) keep tests plain.
+    init(
+        center: any ReminderNotificationCenter,
+        now: @escaping () -> Date = { .now },
+        calendar: @escaping () -> Calendar = { .autoupdatingCurrent },
+        isEnabled: @escaping () -> Bool = { true },
+        quietHours: @escaping () -> QuietHours = { .off }
+    ) {
         self.center = center
         self.now = now
+        self.calendar = calendar
+        self.isEnabled = isEnabled
+        self.quietHours = quietHours
     }
 
     func attach(to store: JournalStore) {
@@ -232,9 +250,11 @@ final class CheckInReminderScheduler {
         }
     }
 
-    /// Asks for permission only the first time; afterwards the user's choice stands.
-    func requestAuthorizationIfNeeded() async {
-        if await center.authorization() == .notDetermined {
+    /// Asks for permission only the first time; afterwards the user's choice stands. With
+    /// reminders turned off in Settings, scheduling a check-in doesn't ask; turning a
+    /// notification setting on does, through `evenWhenRemindersAreOff`.
+    func requestAuthorizationIfNeeded(evenWhenRemindersAreOff: Bool = false) async {
+        if evenWhenRemindersAreOff || isEnabled(), await center.authorization() == .notDetermined {
             _ = await center.requestAuthorization()
         }
         resync()
@@ -249,7 +269,8 @@ final class CheckInReminderScheduler {
     /// notification's own text so the nudge isn't lost. The next reconcile, which only runs
     /// once a store is attached, takes over from there.
     func snoozeWithoutStore(checkInID: UUID, body: String) async {
-        let fireAt = CheckInReminderPlan.fireDate(for: now().addingTimeInterval(CheckInReminderPlan.snoozeInterval))
+        guard isEnabled() else { return }
+        let fireAt = CheckInReminderPlan.fireDate(for: now().addingTimeInterval(CheckInReminderPlan.snoozeInterval), quietHours: quietHours(), calendar: calendar())
         let reminder = CheckInReminder(identifier: CheckInReminderPlan.identifier(for: checkInID), checkInID: checkInID, fireAt: fireAt, title: CheckInReminderPlan.title, body: body)
         try? await center.add(reminder)
     }
@@ -257,8 +278,12 @@ final class CheckInReminderScheduler {
     private func reconcile(_ sources: [ReminderSource]) async {
         authorization = await center.authorization()
         let delivered = await center.deliveredIdentifiers()
-        await center.removeDelivered(CheckInReminderPlan.staleDelivered(delivered, pendingCheckInIDs: Set(sources.map(\.checkInID))))
-        let desired = authorization == .allowed ? CheckInReminderPlan.reminders(for: sources, now: now()) : []
+        // With reminders turned off, delivered ones go too, as nudges do.
+        let pending = isEnabled() ? Set(sources.map(\.checkInID)) : []
+        await center.removeDelivered(CheckInReminderPlan.staleDelivered(delivered, pendingCheckInIDs: pending))
+        let desired = authorization == .allowed && isEnabled()
+            ? CheckInReminderPlan.reminders(for: sources, now: now(), quietHours: quietHours(), calendar: calendar())
+            : []
         let changes = CheckInReminderPlan.changes(desired: desired, scheduled: await center.scheduledReminders())
         await center.removeScheduled(changes.toRemove)
         for reminder in changes.toAdd {

@@ -20,7 +20,7 @@ struct ForesightApp: App {
         WindowGroup {
             Group {
                 if let store = database.store, let container = database.container {
-                    ForesightRootView(store: store, reminders: database.reminders, nudges: database.nudges, router: database.router)
+                    ForesightRootView(store: store, reminders: database.reminders, nudges: database.nudges, router: database.router, preferences: database.preferences)
                         .modelContainer(container)
                         .environment(database.reminders)
                 } else {
@@ -48,11 +48,22 @@ final class AppDatabase {
     let reminders: CheckInReminderScheduler
     let nudges: SuggestionNudgeScheduler
     let router: CheckInReminderRouter
+    let preferences: NotificationPreferences
 
     init(arguments: [String] = ProcessInfo.processInfo.arguments) {
         let inMemory = arguments.contains("-in-memory-store")
-        reminders = CheckInReminderScheduler(center: inMemory ? InertReminderNotificationCenter() : SystemReminderNotificationCenter())
-        nudges = SuggestionNudgeScheduler(center: inMemory ? InertReminderNotificationCenter() : SystemReminderNotificationCenter())
+        let preferences = NotificationPreferences.forLaunch(inMemory: inMemory)
+        self.preferences = preferences
+        reminders = CheckInReminderScheduler(
+            center: inMemory ? InertReminderNotificationCenter() : SystemReminderNotificationCenter(),
+            isEnabled: { preferences.remindersEnabled },
+            quietHours: { preferences.quietHours }
+        )
+        nudges = SuggestionNudgeScheduler(
+            center: inMemory ? InertReminderNotificationCenter() : SystemReminderNotificationCenter(),
+            isEnabled: { preferences.nudgesEnabled },
+            quietHours: { preferences.quietHours }
+        )
         router = CheckInReminderRouter(reminders: reminders)
         open(inMemory: inMemory)
     }
@@ -110,7 +121,9 @@ struct ForesightRootView: View {
     let reminders: CheckInReminderScheduler
     let nudges: SuggestionNudgeScheduler
     let router: CheckInReminderRouter
+    let preferences: NotificationPreferences
     @State private var tab: AppTab = .journal
+    @State private var showsSettings = false
     @AppStorage(OnboardingState.completedKey) private var hasCompletedOnboarding = false
     /// Advanced when the next check-in falls due, so the badge appears without any polling.
     @State private var badgeClock = Date.now
@@ -124,7 +137,7 @@ struct ForesightRootView: View {
     var body: some View {
         ForesightDropdownHost {
             TabView(selection: $tab) {
-                JournalRootView(store: store)
+                JournalRootView(store: store) { showsSettings = true }
                     .tabItem { Label("Journal", systemImage: "book.closed") }
                     .tag(AppTab.journal)
                 CheckInRootView(store: store, answerRequest: $checkInAnswerRequest)
@@ -152,7 +165,11 @@ struct ForesightRootView: View {
             nudges.resync()
         }
         // Significant time changes cover time zone changes, daylight saving and midnight.
-        .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification).receive(on: DispatchQueue.main)) { _ in nudges.resync() }
+        // Reminders move with them too, since quiet hours are local times.
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification).receive(on: DispatchQueue.main)) { _ in
+            reminders.resync()
+            nudges.resync()
+        }
         // Nudges share the reminders' permission; plan them as soon as it's granted.
         .onChange(of: reminders.authorization) { nudges.resync() }
         .task(id: router.destination) {
@@ -170,6 +187,9 @@ struct ForesightRootView: View {
                 }
                 try? await Task.sleep(for: .milliseconds(400))
             }
+        }
+        .sheet(isPresented: $showsSettings) {
+            SettingsView(store: store, reminders: reminders, nudges: nudges, preferences: preferences)
         }
         .fullScreenCover(isPresented: Binding(get: { !hasCompletedOnboarding }, set: { if !$0 { hasCompletedOnboarding = true } })) {
             OnboardingView { hasCompletedOnboarding = true }
