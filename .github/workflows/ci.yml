@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build and test (iOS simulator)
+    runs-on: macos-26
+    timeout-minutes: 45
+    env:
+      XCODE_VERSION: "26.6"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          ls -d /Applications/Xcode*.app
+          sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app"
+          xcodebuild -version
+          xcodebuild -showsdks | grep -i iphone
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Pick an iPhone simulator
+        run: |
+          # Newest iOS runtime this Xcode supports, first iPhone in it.
+          sdk="$(xcrun --sdk iphonesimulator --show-sdk-version)"
+          runtime="com.apple.CoreSimulator.SimRuntime.iOS-${sdk//./-}"
+          udid="$(xcrun simctl list devices available --json | jq -r --arg rt "$runtime" '
+            .devices[$rt] // [] | map(select(.name | startswith("iPhone"))) | first | .udid // empty')"
+          if [[ -z "$udid" ]]; then
+            echo "No iPhone simulator for $runtime; available runtimes:"
+            xcrun simctl list runtimes
+            exit 1
+          fi
+          echo "Using $udid on $runtime"
+          echo "SIMULATOR_UDID=$udid" >> "$GITHUB_ENV"
+
+      - name: Generate, build, and test
+        env:
+          VERIFY_SKIP_LAUNCH: "1"
+          RESULT_BUNDLE_PATH: ${{ github.workspace }}/build/TestResults.xcresult
+        run: ./Scripts/verify.sh
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: TestResults
+          path: build/TestResults.xcresult
+          if-no-files-found: ignore
