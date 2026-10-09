@@ -132,6 +132,15 @@ struct SuggestionNudgePlanTests {
         #expect(changes.toRemove == [stale.identifier])
     }
 
+    @Test("a real trigger built from a nudge's wall-clock time fires at its planned instant")
+    func realTriggerMatchesFireAt() throws {
+        // Floating triggers use the device's zone, so plan with the device's calendar.
+        let nudges = plan([candidate("Walk", hour: 18)], now: .now, calendar: .autoupdatingCurrent)
+        let nudge = try #require(nudges.first)
+        let trigger = UNCalendarNotificationTrigger(dateMatching: nudge.wallClock, repeats: false)
+        #expect(trigger.nextTriggerDate() == nudge.fireAt)
+    }
+
     @Test("parses a tapped nudge and ignores dismissals and reminders")
     func responses() {
         let id = UUID()
@@ -306,6 +315,21 @@ struct SuggestionNudgeSchedulerTests {
         subject.scheduler.resync()
         await subject.scheduler.waitForPendingWork()
         #expect(await subject.center.scheduledReminders().allSatisfy { SuggestionNudgePlan.categoryID(fromIdentifier: $0.identifier) == walkID })
+    }
+
+    @Test("a nudge already delivered today counts toward the one a day, even without a ledger entry")
+    func deliveredTodayCounts() async throws {
+        let subject = try makeSubject(setUp: { _, _ in })
+        await subject.scheduler.waitForPendingWork()
+        let today = SuggestionNudgePlan.identifier(day: "2024-08-30", categoryID: subject.walk.id)
+        await subject.center.removeScheduled(await subject.center.identifiers())
+        await subject.center.setDelivered([today])
+        subject.ledger.fireDates = []
+        subject.scheduler.resync()
+        await subject.scheduler.waitForPendingWork()
+        let dates = await fireDates(subject.center)
+        #expect(dates == [at(hour: 18, dayOffset: 1), at(hour: 18, dayOffset: 2)])
+        #expect(await subject.center.delivered == [today])
     }
 
     @Test("sample history never schedules a nudge")

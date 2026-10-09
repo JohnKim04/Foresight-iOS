@@ -74,6 +74,18 @@ struct CheckInReminderPlanTests {
         #expect(CheckInReminderPlan.triggerComponents(for: first) != CheckInReminderPlan.triggerComponents(for: second))
     }
 
+    @Test("a real trigger fires at the planned instant, including both passes of a repeated hour")
+    func realTriggerMatchesFireAt() throws {
+        // The next daylight-saving change in New York; around a fall-back it repeats an hour.
+        let newYork = try #require(TimeZone(identifier: "America/New_York"))
+        let transition = try #require(newYork.nextDaylightSavingTimeTransition(after: .now))
+        let base = Date(timeIntervalSinceReferenceDate: Date.now.timeIntervalSinceReferenceDate.rounded(.up))
+        for instant in [base.addingTimeInterval(3_600), transition.addingTimeInterval(-1_800), transition.addingTimeInterval(1_800)] {
+            let trigger = UNCalendarNotificationTrigger(dateMatching: CheckInReminderPlan.triggerComponents(for: instant), repeats: false)
+            #expect(trigger.nextTriggerDate() == instant)
+        }
+    }
+
     @Test("rounds the fire date up to a whole second")
     func roundsUp() {
         let reminder = CheckInReminderPlan.reminders(for: [source(in: 90.25)], now: now)[0]

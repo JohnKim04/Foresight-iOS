@@ -36,7 +36,8 @@ struct NudgeQuietHours: Equatable, Sendable {
     }
 }
 
-/// Where a Settings screen turns nudges off. Nudges are on by default.
+/// Where a Settings screen turns nudges off. Nudges are on by default. Nothing observes this
+/// key, so whatever flips it must call `SuggestionNudgeScheduler.resync()` afterwards.
 enum NudgePreferences {
     static let enabledKey = "suggestionNudgesEnabled"
 
@@ -101,8 +102,11 @@ enum SuggestionNudgePlan {
         }
     }
 
+    /// Always Gregorian in the plan's zone, so keys compare as dates whatever the system calendar.
     static func dayKey(_ date: Date, calendar: Calendar) -> String {
-        let parts = calendar.dateComponents([.year, .month, .day], from: date)
+        var gregorian = Calendar(identifier: .gregorian)
+        gregorian.timeZone = calendar.timeZone
+        let parts = gregorian.dateComponents([.year, .month, .day], from: date)
         return String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
     }
 
@@ -259,10 +263,14 @@ final class SuggestionNudgeScheduler {
     private func reconcile(_ candidates: [NudgeCandidate], now: Date, calendar: Calendar, enabled: Bool) async {
         // A nudge whose fire time has passed went out; keep those from today and yesterday.
         let fired = ledger.fireDates.filter { $0 <= now && $0 > now.addingTimeInterval(-2 * 24 * 60 * 60) }
-        let usedToday = fired.contains { calendar.isDate($0, inSameDayAs: now) }
         let allowed = await center.authorization() == .allowed
         let today = SuggestionNudgePlan.dayKey(now, calendar: calendar)
-        await center.removeDelivered(SuggestionNudgePlan.staleDelivered(await center.deliveredIdentifiers(), today: today, enabled: enabled && allowed))
+        let delivered = await center.deliveredIdentifiers()
+        // A nudge for today already in Notification Center also counts: it covers a floating
+        // trigger that fired early after travelling east, and a suspension before the ledger write.
+        let usedToday = fired.contains { calendar.isDate($0, inSameDayAs: now) }
+            || delivered.contains { $0.hasPrefix(SuggestionNudgePlan.identifierPrefix + today + ".") }
+        await center.removeDelivered(SuggestionNudgePlan.staleDelivered(delivered, today: today, enabled: enabled && allowed))
         let desired = allowed ? SuggestionNudgePlan.nudges(for: candidates, now: now, calendar: calendar, quietHours: quietHours(), usedToday: usedToday) : []
         let changes = SuggestionNudgePlan.changes(desired: desired, scheduled: await center.scheduledReminders())
         await center.removeScheduled(changes.toRemove)
