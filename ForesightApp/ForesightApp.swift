@@ -2,10 +2,12 @@ import Foundation
 import Observation
 import SwiftData
 import SwiftUI
+import UIKit
 
 @main
 struct ForesightApp: App {
-    @State private var database = AppDatabase()
+    @UIApplicationDelegateAdaptor(ForesightAppDelegate.self) private var appDelegate
+    @State private var database = AppDatabase.shared
 
     init() {
         if ProcessInfo.processInfo.arguments.contains(OnboardingState.resetArgument) {
@@ -17,8 +19,9 @@ struct ForesightApp: App {
         WindowGroup {
             Group {
                 if let store = database.store, let container = database.container {
-                    ForesightRootView(store: store)
+                    ForesightRootView(store: store, reminders: database.reminders, router: database.router)
                         .modelContainer(container)
+                        .environment(database.reminders)
                 } else {
                     StoreRecoveryView(message: database.errorMessage ?? "Your journal could not be opened.") {
                         database.open()
@@ -35,11 +38,21 @@ struct ForesightApp: App {
 @MainActor
 @Observable
 final class AppDatabase {
+    /// Shared so a notification response that launches the app reaches the same store as the UI.
+    static let shared = AppDatabase()
+
     private(set) var container: ModelContainer?
     private(set) var store: JournalStore?
     private(set) var errorMessage: String?
+    let reminders: CheckInReminderScheduler
+    let router: CheckInReminderRouter
 
-    init() { open() }
+    init(arguments: [String] = ProcessInfo.processInfo.arguments) {
+        let center: any ReminderNotificationCenter = arguments.contains("-in-memory-store") ? InertReminderNotificationCenter() : SystemReminderNotificationCenter()
+        reminders = CheckInReminderScheduler(center: center)
+        router = CheckInReminderRouter(reminders: reminders)
+        open(inMemory: arguments.contains("-in-memory-store"))
+    }
 
     func open(inMemory: Bool = ProcessInfo.processInfo.arguments.contains("-in-memory-store")) {
         do {
@@ -53,6 +66,8 @@ final class AppDatabase {
                 container = newContainer
                 store = newStore
                 errorMessage = nil
+                reminders.attach(to: newStore)
+                router.store = newStore
             }
         } catch {
             container = nil
@@ -88,10 +103,13 @@ enum AppTab: Hashable { case journal, checkIns, patterns }
 
 struct ForesightRootView: View {
     let store: JournalStore
+    let reminders: CheckInReminderScheduler
+    let router: CheckInReminderRouter
     @State private var tab: AppTab = .journal
     @AppStorage(OnboardingState.completedKey) private var hasCompletedOnboarding = false
     /// Advanced when the next check-in falls due, so the badge appears without any polling.
     @State private var badgeClock = Date.now
+    @State private var checkInAnswerRequest: CheckInTarget?
     @Environment(\.scenePhase) private var scenePhase
 
     private var dueCount: Int { dueCheckInCount(store.snapshot, now: badgeClock) }
@@ -103,7 +121,7 @@ struct ForesightRootView: View {
                 JournalRootView(store: store)
                     .tabItem { Label("Journal", systemImage: "book.closed") }
                     .tag(AppTab.journal)
-                CheckInRootView(store: store)
+                CheckInRootView(store: store, answerRequest: $checkInAnswerRequest)
                     .tabItem { Label("Check In", systemImage: "checkmark.circle") }
                     .badge(dueCount)
                     .tag(AppTab.checkIns)
@@ -119,12 +137,37 @@ struct ForesightRootView: View {
             if !Task.isCancelled { badgeClock = .now }
         }
         .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
             // Task.sleep pauses while the app is suspended, so catch up on return.
-            if phase == .active { badgeClock = .now }
+            badgeClock = .now
+            // Catches permission changed in Settings and reminders past the 64-request limit.
+            reminders.resync()
+        }
+        .task(id: router.destination) {
+            // A reminder tap waits until nothing is presented (onboarding, the editor, any
+            // sheet), so it never switches tabs under a modal or replaces unsaved work.
+            while let destination = router.destination, !Task.isCancelled {
+                if hasCompletedOnboarding && !Self.isPresentingModal() {
+                    tab = .checkIns
+                    if case .answer(let target) = destination { checkInAnswerRequest = target }
+                    router.destination = nil
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(400))
+            }
         }
         .fullScreenCover(isPresented: Binding(get: { !hasCompletedOnboarding }, set: { if !$0 { hasCompletedOnboarding = true } })) {
             OnboardingView { hasCompletedOnboarding = true }
         }
+    }
+}
+
+extension ForesightRootView {
+    static func isPresentingModal() -> Bool {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .contains { $0.isKeyWindow && $0.rootViewController?.presentedViewController != nil }
     }
 }
 
