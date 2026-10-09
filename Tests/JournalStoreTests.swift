@@ -8,9 +8,7 @@ struct JournalStoreTests {
     private let fixedNow = Date(timeIntervalSince1970: 1_725_000_000)
 
     private func makeStore(now: Date? = nil) throws -> JournalStore {
-        let schema = Schema([JournalEntry.self, JournalCategory.self, OutcomeCheckIn.self])
-        let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
-        let container = try ModelContainer(for: schema, configurations: [configuration])
+        let container = try ForesightPersistence.makeContainer(storeURL: nil)
         return JournalStore(modelContext: container.mainContext, modelContainer: container, now: { now ?? fixedNow })
     }
 

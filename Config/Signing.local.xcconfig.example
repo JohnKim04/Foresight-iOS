@@ -1,0 +1,8 @@
+// Copy to Signing.local.xcconfig (gitignored) to sign device builds with your Apple team.
+// Your team ID is shown in Xcode > Settings > Accounts.
+
+DEVELOPMENT_TEAM = YOURTEAMID
+CODE_SIGNING_ALLOWED = YES
+
+// Uncomment if com.foresight.journal(.testing) is already registered to another team.
+// BUNDLE_ID_PREFIX = com.yourname

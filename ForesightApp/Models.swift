@@ -47,92 +47,97 @@ enum OutcomeValue: Int, Codable, CaseIterable, Identifiable {
     }
 }
 
-@Model
-final class JournalCategory {
-    @Attribute(.unique) var id: UUID
-    var name: String
-    var archivedAt: Date?
-    var entries: [JournalEntry] = []
+// The persisted models live in the newest schema version. The top-level names the rest of the
+// app uses (JournalEntry, JournalCategory, OutcomeCheckIn) are typealiases in ForesightSchema.swift.
+// Read the notes there before adding, renaming or removing a stored property.
+extension ForesightSchemaV1 {
+    @Model
+    final class JournalCategory {
+        @Attribute(.unique) var id: UUID
+        var name: String
+        var archivedAt: Date?
+        var entries: [JournalEntry] = []
 
-    init(id: UUID = UUID(), name: String, archivedAt: Date? = nil) {
-        self.id = id
-        self.name = name
-        self.archivedAt = archivedAt
+        init(id: UUID = UUID(), name: String, archivedAt: Date? = nil) {
+            self.id = id
+            self.name = name
+            self.archivedAt = archivedAt
+        }
+
+        var isArchived: Bool { archivedAt != nil }
     }
 
-    var isArchived: Bool { archivedAt != nil }
-}
+    @Model
+    final class JournalEntry {
+        @Attribute(.unique) var id: UUID
+        var body: String
+        var eventAt: Date
+        var createdAt: Date
+        var updatedAt: Date
+        var isFixture: Bool
+        @Relationship(inverse: \JournalCategory.entries) var categories: [JournalCategory] = []
+        @Relationship(deleteRule: .cascade, inverse: \OutcomeCheckIn.entry) var checkIns: [OutcomeCheckIn] = []
 
-@Model
-final class JournalEntry {
-    @Attribute(.unique) var id: UUID
-    var body: String
-    var eventAt: Date
-    var createdAt: Date
-    var updatedAt: Date
-    var isFixture: Bool
-    @Relationship(inverse: \JournalCategory.entries) var categories: [JournalCategory] = []
-    @Relationship(deleteRule: .cascade, inverse: \OutcomeCheckIn.entry) var checkIns: [OutcomeCheckIn] = []
-
-    init(id: UUID = UUID(), body: String, eventAt: Date, createdAt: Date = .now, updatedAt: Date = .now, categories: [JournalCategory] = [], isFixture: Bool = false) {
-        self.id = id
-        self.body = body
-        self.eventAt = eventAt
-        self.createdAt = createdAt
-        self.updatedAt = updatedAt
-        self.categories = categories
-        self.isFixture = isFixture
-    }
-}
-
-@Model
-final class OutcomeCheckIn {
-    @Attribute(.unique) var id: UUID
-    var phase: OutcomePhase
-    var status: OutcomeStatus
-    var dueAt: Date?
-    var answeredAt: Date?
-    var overall: OutcomeValue?
-    var note: String
-    var excludedFromAnalysis: Bool
-    var createdAt: Date
-    var updatedAt: Date
-    var isFixture: Bool
-    var entry: JournalEntry?
-
-    init(
-        id: UUID = UUID(),
-        entry: JournalEntry,
-        phase: OutcomePhase,
-        status: OutcomeStatus = .pending,
-        dueAt: Date? = nil,
-        answeredAt: Date? = nil,
-        overall: OutcomeValue? = nil,
-        note: String = "",
-        excludedFromAnalysis: Bool = false,
-        createdAt: Date = .now,
-        updatedAt: Date = .now,
-        isFixture: Bool = false
-    ) {
-        self.id = id
-        self.entry = entry
-        self.phase = phase
-        self.status = status
-        self.dueAt = dueAt
-        self.answeredAt = answeredAt
-        self.overall = overall
-        self.note = note
-        self.excludedFromAnalysis = excludedFromAnalysis
-        self.createdAt = createdAt
-        self.updatedAt = updatedAt
-        self.isFixture = isFixture
+        init(id: UUID = UUID(), body: String, eventAt: Date, createdAt: Date = .now, updatedAt: Date = .now, categories: [JournalCategory] = [], isFixture: Bool = false) {
+            self.id = id
+            self.body = body
+            self.eventAt = eventAt
+            self.createdAt = createdAt
+            self.updatedAt = updatedAt
+            self.categories = categories
+            self.isFixture = isFixture
+        }
     }
 
-    var isNumericResponse: Bool { status == .answered && overall != nil && !excludedFromAnalysis }
-    var responseSummary: String {
-        if status == .notSure { return "Not sure yet" }
-        if status == .answered, let overall { return overall.title }
-        return "No response yet"
+    @Model
+    final class OutcomeCheckIn {
+        @Attribute(.unique) var id: UUID
+        var phase: OutcomePhase
+        var status: OutcomeStatus
+        var dueAt: Date?
+        var answeredAt: Date?
+        var overall: OutcomeValue?
+        var note: String
+        var excludedFromAnalysis: Bool
+        var createdAt: Date
+        var updatedAt: Date
+        var isFixture: Bool
+        var entry: JournalEntry?
+
+        init(
+            id: UUID = UUID(),
+            entry: JournalEntry,
+            phase: OutcomePhase,
+            status: OutcomeStatus = .pending,
+            dueAt: Date? = nil,
+            answeredAt: Date? = nil,
+            overall: OutcomeValue? = nil,
+            note: String = "",
+            excludedFromAnalysis: Bool = false,
+            createdAt: Date = .now,
+            updatedAt: Date = .now,
+            isFixture: Bool = false
+        ) {
+            self.id = id
+            self.entry = entry
+            self.phase = phase
+            self.status = status
+            self.dueAt = dueAt
+            self.answeredAt = answeredAt
+            self.overall = overall
+            self.note = note
+            self.excludedFromAnalysis = excludedFromAnalysis
+            self.createdAt = createdAt
+            self.updatedAt = updatedAt
+            self.isFixture = isFixture
+        }
+
+        var isNumericResponse: Bool { status == .answered && overall != nil && !excludedFromAnalysis }
+        var responseSummary: String {
+            if status == .notSure { return "Not sure yet" }
+            if status == .answered, let overall { return overall.title }
+            return "No response yet"
+        }
     }
 }
 
