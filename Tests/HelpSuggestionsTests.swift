@@ -73,7 +73,9 @@ struct HelpSuggestionsTests {
         ]
         #expect(Set(messages).count == 3)
         #expect(messages[1].contains("Workout needs 1 more later check-in "))
-        expectNonCausal([HelpSuggestionCopy.title, HelpSuggestionCopy.footnote] + messages)
+        expectNonCausal([HelpSuggestionCopy.title] + messages)
+        // The footnote is the disclaimer itself, so it names "causes" on purpose.
+        #expect(HelpSuggestionCopy.footnote.hasSuffix("These are patterns, not causes."))
     }
 
     @Test("qualifies at exactly 60 percent better but not at 40 percent")
