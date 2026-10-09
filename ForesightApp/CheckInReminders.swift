@@ -331,9 +331,17 @@ final class CheckInReminderNotificationDelegate: NSObject, UNUserNotificationCen
         [.banner, .list, .sound]
     }
 
-    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
+    // UIKit asserts that this completion handler runs on the main thread. The async form of this
+    // method finishes on a background thread and crashed the app when a reminder was tapped.
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
         let request = response.notification.request
-        await handle(requestIdentifier: request.identifier, actionIdentifier: response.actionIdentifier, body: request.content.body)
+        let (identifier, action, body) = (request.identifier, response.actionIdentifier, request.content.body)
+        // The SDK doesn't mark the handler Sendable; it is only called once, on the main actor.
+        nonisolated(unsafe) let completion = completionHandler
+        Task { @MainActor in
+            await handle(requestIdentifier: identifier, actionIdentifier: action, body: body)
+            completion()
+        }
     }
 
     /// The part of `didReceive` that doesn't need a system response object, so tests can drive it.
