@@ -220,6 +220,313 @@ struct ForesightMenuLabel: View {
     }
 }
 
+// MARK: - Anchored dropdowns
+
+/// The data shown by a Foresight dropdown. `ID` is intentionally separate from
+/// `Value`: selectors whose "all" state is `nil` still need a stable row ID.
+struct ForesightDropdownOption<Value: Hashable, ID: Hashable>: Identifiable {
+    let id: ID
+    let value: Value
+    let title: String
+    var badge: String?
+
+    init(id: ID, value: Value, title: String, badge: String? = nil) {
+        self.id = id
+        self.value = value
+        self.title = title
+        self.badge = badge
+    }
+}
+
+enum ForesightDropdownStyle {
+    case compact(systemImage: String)
+    case fullWidth(systemImage: String, label: String)
+}
+
+@MainActor
+final class ForesightDropdownCoordinator: ObservableObject {
+    struct Presentation {
+        let id: String
+        let style: ForesightDropdownStyle
+        let panel: AnyView
+        let preferredHeight: CGFloat
+        let contentWidth: CGFloat
+    }
+
+    @Published private(set) var active: Presentation?
+    private var ignoresNextOutsideTap = false
+
+    func toggle(_ presentation: Presentation) {
+        ignoresNextOutsideTap = true
+        active = active?.id == presentation.id ? nil : presentation
+    }
+
+    func dismiss() { active = nil }
+
+    func handleOutsideTap() {
+        if ignoresNextOutsideTap {
+            ignoresNextOutsideTap = false
+        } else {
+            dismiss()
+        }
+    }
+}
+
+private struct ForesightDropdownAnchorKey: PreferenceKey {
+    static let defaultValue: [String: Anchor<CGRect>] = [:]
+
+    static func reduce(value: inout [String: Anchor<CGRect>], nextValue: () -> [String: Anchor<CGRect>]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, latest in latest })
+    }
+}
+
+/// Installs a single screen-level presentation surface. Keeping the panel here
+/// avoids menu sheets and prevents a card or scroll view from clipping it.
+struct ForesightDropdownHost<Content: View>: View {
+    @StateObject private var coordinator = ForesightDropdownCoordinator()
+    @ViewBuilder let content: Content
+
+    init(@ViewBuilder content: () -> Content) { self.content = content() }
+
+    var body: some View {
+        content
+            .environmentObject(coordinator)
+            .simultaneousGesture(TapGesture().onEnded { coordinator.handleOutsideTap() }, including: .subviews)
+            .overlayPreferenceValue(ForesightDropdownAnchorKey.self) { anchors in
+                GeometryReader { proxy in
+                    if let active = coordinator.active, let anchor = anchors[active.id] {
+                        ForesightDropdownOverlay(
+                            active: active,
+                            triggerFrame: proxy[anchor],
+                            containerSize: proxy.size,
+                            safeAreaInsets: proxy.safeAreaInsets,
+                            dismiss: coordinator.dismiss
+                        )
+                    }
+                }
+            }
+    }
+}
+
+struct ForesightDropdown<Value: Hashable, ID: Hashable>: View {
+    @Binding private var selection: Value
+    private let id: String
+    private let options: [ForesightDropdownOption<Value, ID>]
+    private let style: ForesightDropdownStyle
+    private let accessibilityLabel: String
+    private let accessibilityValue: String
+    @EnvironmentObject private var coordinator: ForesightDropdownCoordinator
+
+    init(
+        id: String,
+        selection: Binding<Value>,
+        options: [ForesightDropdownOption<Value, ID>],
+        style: ForesightDropdownStyle,
+        accessibilityLabel: String,
+        accessibilityValue: String
+    ) {
+        self.id = id
+        _selection = selection
+        self.options = options
+        self.style = style
+        self.accessibilityLabel = accessibilityLabel
+        self.accessibilityValue = accessibilityValue
+    }
+
+    var body: some View {
+        Button {
+            withAnimation(.spring(duration: 0.22, bounce: 0.16)) {
+                coordinator.toggle(presentation)
+            }
+        } label: {
+            ForesightDropdownTrigger(
+                title: accessibilityValue,
+                style: style,
+                isExpanded: coordinator.active?.id == id
+            )
+        }
+        .buttonStyle(.plain)
+        .frame(minHeight: 44)
+        .accessibilityLabel(accessibilityLabel)
+        .accessibilityValue(accessibilityValue)
+        .anchorPreference(key: ForesightDropdownAnchorKey.self, value: .bounds) { [id: $0] }
+        .onDisappear { coordinator.dismiss() }
+    }
+
+    private var presentation: ForesightDropdownCoordinator.Presentation {
+        let rowHeight: CGFloat = 44
+        let rowSpacing: CGFloat = 2
+        let panelPadding: CGFloat = 12
+        let contentHeight = CGFloat(options.count) * rowHeight
+            + CGFloat(max(0, options.count - 1)) * rowSpacing
+            + panelPadding
+        return ForesightDropdownCoordinator.Presentation(
+            id: id,
+            style: style,
+            panel: AnyView(ForesightDropdownPanel(selection: $selection, options: options, dismiss: coordinator.dismiss)),
+            preferredHeight: contentHeight,
+            contentWidth: Self.measuredContentWidth(options)
+        )
+    }
+
+    /// Widest row (title + optional badge + reserved checkmark slot) so the panel
+    /// hugs short option lists instead of always padding out to a fixed minimum.
+    private static func measuredContentWidth(_ options: [ForesightDropdownOption<Value, ID>]) -> CGFloat {
+        // UIFontMetrics mirrors SwiftUI's own Dynamic Type scaling curve more closely
+        // than a plain systemFont(ofSize:), so the estimate stays accurate as text size changes.
+        let titleFont = UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: 17, weight: .medium))
+        let badgeFont = UIFontMetrics(forTextStyle: .caption2).scaledFont(for: .systemFont(ofSize: 11, weight: .bold))
+        let rowPadding: CGFloat = 28 // 14pt leading + 14pt trailing row padding
+        let itemSpacing: CGFloat = 10 // HStack(spacing: 10) in ForesightDropdownPanel
+        let spacerMin: CGFloat = 8 // Spacer(minLength: 8)
+        let badgeHorizontalPadding: CGFloat = 14 // 7pt + 7pt capsule padding
+        let checkmarkWidth: CGFloat = 18 // reserved so width doesn't shift when selection changes
+        let measurementSlack: CGFloat = 40 // covers kerning/rounding drift between NSString sizing and SwiftUI's Text layout
+
+        return options.reduce(CGFloat(0)) { widest, option in
+            var width = rowPadding + measurementSlack
+            width += (option.title as NSString).size(withAttributes: [.font: titleFont]).width
+            width += itemSpacing + spacerMin
+            if let badge = option.badge {
+                width += itemSpacing + badgeHorizontalPadding + (badge as NSString).size(withAttributes: [.font: badgeFont]).width
+            }
+            width += itemSpacing + checkmarkWidth
+            return max(widest, width.rounded(.up))
+        }
+    }
+}
+
+private struct ForesightDropdownTrigger: View {
+    let title: String
+    let style: ForesightDropdownStyle
+    let isExpanded: Bool
+
+    var body: some View {
+        switch style {
+        case let .compact(systemImage):
+            Label {
+                HStack(spacing: 6) {
+                    Text(title).lineLimit(1)
+                    chevron
+                }
+            } icon: {
+                Image(systemName: systemImage)
+            }
+            .font(ForesightType.control)
+            .foregroundStyle(Color.foresightSage)
+            .lineLimit(1)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .background(Color.foresightRaised, in: Capsule())
+            .overlay(Capsule().stroke(Color.foresightLine, lineWidth: 1))
+        case let .fullWidth(systemImage, label):
+            HStack(spacing: 12) {
+                Image(systemName: systemImage)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color.foresightSage)
+                    .frame(width: 34, height: 34)
+                    .background(Color.foresightSoftSage, in: Circle())
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(label).font(.caption2.weight(.bold)).foregroundStyle(Color.foresightMuted).textCase(.uppercase).tracking(0.7)
+                    Text(title).font(ForesightType.control).foregroundStyle(Color.foresightInk).lineLimit(1)
+                }
+                Spacer(minLength: 8)
+                chevron
+            }
+            .padding(.horizontal, 14)
+            .frame(maxWidth: .infinity, minHeight: 58)
+            .background(Color.foresightRaised, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay { RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.foresightLine, lineWidth: 1) }
+        }
+    }
+
+    private var chevron: some View {
+        Image(systemName: "chevron.down")
+            .font(.caption.weight(.bold))
+            .foregroundStyle(Color.foresightSage)
+            .rotationEffect(.degrees(isExpanded ? 180 : 0))
+            .animation(.spring(duration: 0.22, bounce: 0.16), value: isExpanded)
+    }
+}
+
+private struct ForesightDropdownOverlay: View {
+    let active: ForesightDropdownCoordinator.Presentation
+    let triggerFrame: CGRect
+    let containerSize: CGSize
+    let safeAreaInsets: EdgeInsets
+    let dismiss: () -> Void
+
+    var body: some View {
+        let margin: CGFloat = 12
+        let width = min(containerSize.width - safeAreaInsets.leading - safeAreaInsets.trailing - (margin * 2), preferredWidth)
+        let below = containerSize.height - safeAreaInsets.bottom - margin - triggerFrame.maxY - 6
+        let above = triggerFrame.minY - safeAreaInsets.top - margin - 6
+        let placeAbove = below < 220 && above > below
+        let available = placeAbove ? above : below
+        let height = max(44, min(active.preferredHeight, min(360, available)))
+        let left = min(max(triggerFrame.minX, safeAreaInsets.leading + margin), containerSize.width - safeAreaInsets.trailing - margin - width)
+        let centerY = placeAbove ? triggerFrame.minY - 6 - height / 2 : triggerFrame.maxY + 6 + height / 2
+
+        ZStack(alignment: .topLeading) {
+            active.panel
+                .frame(width: width, height: height)
+                .position(x: left + width / 2, y: centerY)
+                .transition(.opacity.combined(with: .scale(scale: 0.98, anchor: placeAbove ? .bottom : .top)))
+        }
+        .accessibilityAction(.escape, dismiss)
+        .animation(.spring(duration: 0.22, bounce: 0.16), value: active.id)
+    }
+
+    private var preferredWidth: CGFloat {
+        switch active.style {
+        case .compact: max(triggerFrame.width, active.contentWidth)
+        case .fullWidth: triggerFrame.width
+        }
+    }
+
+}
+
+private struct ForesightDropdownPanel<Value: Hashable, ID: Hashable>: View {
+    @Binding var selection: Value
+    let options: [ForesightDropdownOption<Value, ID>]
+    let dismiss: () -> Void
+
+    var body: some View {
+        ScrollView {
+            LazyVStack(spacing: 2) {
+                ForEach(options) { option in
+                    let selected = selection == option.value
+                    Button {
+                        selection = option.value
+                        UISelectionFeedbackGenerator().selectionChanged()
+                        dismiss()
+                    } label: {
+                        HStack(spacing: 10) {
+                            Text(option.title).font(.body.weight(.medium)).foregroundStyle(Color.foresightInk).lineLimit(1).multilineTextAlignment(.leading)
+                            Spacer(minLength: 8)
+                            if let badge = option.badge {
+                                Text(badge).font(.caption2.weight(.bold)).foregroundStyle(Color.foresightSage).padding(.horizontal, 7).padding(.vertical, 4).background(Color.foresightSoftSage, in: Capsule())
+                            }
+                            if selected { Image(systemName: "checkmark").font(.subheadline.weight(.bold)).foregroundStyle(Color.foresightSage) }
+                        }
+                        .padding(.horizontal, 14)
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .background(selected ? Color.foresightSoftSage : Color.clear, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(option.badge.map { "\(option.title) (\($0.lowercased()))" } ?? option.title)
+                    .accessibilityAddTraits(selected ? .isSelected : [])
+                }
+            }
+            .padding(6)
+        }
+        .scrollIndicators(.automatic)
+        .background(Color.foresightSurface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay { RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.foresightLine, lineWidth: 1) }
+        .shadow(color: .black.opacity(0.14), radius: 14, y: 7)
+    }
+}
+
 struct ForesightIconButton: View {
     let title: String
     let systemImage: String

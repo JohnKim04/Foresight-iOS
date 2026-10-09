@@ -266,7 +266,9 @@ struct JournalDetailView: View {
     }
 
     private func latestCheckIn(_ entry: JournalEntry, phase: OutcomePhase) -> OutcomeCheckIn? {
-        entry.checkIns.filter { $0.phase == phase }.sorted { $0.createdAt > $1.createdAt }.first
+        store.checkIns
+            .filter { $0.entry?.id == entry.id && $0.phase == phase }
+            .max { $0.createdAt < $1.createdAt }
     }
 }
 

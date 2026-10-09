@@ -15,6 +15,8 @@ struct JournalRootView: View {
     @State private var calendarMonth = Calendar.current.date(from: Calendar.current.dateComponents([.year, .month], from: .now))!
     @State private var selectedDay = localDayKey(.now)
     @State private var editor: EditorRequest?
+    @State private var navigationPath: [UUID] = []
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private var filters: JournalFilters { JournalFilters(query: query, categoryID: categoryID, checkIn: checkInFilter) }
     private var matching: [JournalEntry] { filterJournalEntries(store.entries, categories: store.categories, checkIns: store.checkIns, filters: filters) }
@@ -33,7 +35,7 @@ struct JournalRootView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navigationPath) {
             ScrollView {
                 ContentColumn {
                     VStack(alignment: .leading, spacing: 18) {
@@ -41,11 +43,7 @@ struct JournalRootView: View {
                             kicker: "Consequence journal",
                             title: "Notice what follows.",
                             subtitle: "Capture what happened now. Reflect on how it affected you later."
-                        ) {
-                            ForesightIconButton(title: "New log", systemImage: "plus") {
-                                editor = EditorRequest(entryID: nil)
-                            }
-                        }
+                        )
                         journalControls
                         if viewMode == .timeline { timeline } else { calendar }
                     }
@@ -56,10 +54,53 @@ struct JournalRootView: View {
             .background(Color.foresightCanvas)
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $query, prompt: "Search logs and categories")
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                journalBottomBar
+            }
             .navigationDestination(for: UUID.self) { JournalDetailView(store: store, entryID: $0) }
             .fullScreenCover(item: $editor) { JournalEditorView(store: store, request: $0) }
         }
+    }
+
+    private var journalBottomBar: some View {
+        HStack(spacing: 10) {
+            HStack(spacing: 10) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(Color.foresightMuted)
+                TextField("Search logs and categories", text: $query)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                if !query.isEmpty {
+                    Button("Clear search", systemImage: "xmark.circle.fill") { query = "" }
+                        .labelStyle(.iconOnly)
+                        .foregroundStyle(Color.foresightMuted)
+                }
+            }
+            .padding(.horizontal, 14)
+            .frame(minHeight: 48)
+            .glassEffect(.regular, in: Capsule())
+            .accessibilityElement(children: .contain)
+
+            Button {
+                editor = EditorRequest(entryID: nil)
+            } label: {
+                ZStack {
+                    Circle().fill(.clear)
+                    Image(systemName: "plus")
+                        .font(.system(size: 19, weight: .semibold))
+                }
+                .frame(width: 48, height: 48)
+                .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Color.foresightInk)
+            .glassEffect(.regular, in: Circle())
+            .accessibilityLabel("New log")
+            .zIndex(1)
+        }
+        .padding(.horizontal)
+        .padding(.top, 8)
+        .padding(.bottom, 8)
     }
 
     private var journalControls: some View {
@@ -69,18 +110,6 @@ struct JournalRootView: View {
                     selection: $viewMode,
                     options: JournalViewMode.allCases.map { ($0, $0.title) }
                 )
-                HStack {
-                    Menu {
-                        Button("All categories") { categoryID = nil }
-                        ForEach(store.categories, id: \.id) { category in
-                            Button(category.name + (category.isArchived ? " (archived)" : "")) { categoryID = category.id }
-                        }
-                    } label: { ForesightMenuLabel(title: categoryID.flatMap { id in store.categories.first { $0.id == id } }?.name ?? "All categories", systemImage: "tag") }
-                    Spacer()
-                    Menu {
-                        ForEach(JournalCheckInFilter.allCases) { filter in Button(filter.title) { checkInFilter = filter } }
-                    } label: { ForesightMenuLabel(title: checkInFilter.title, systemImage: "line.3.horizontal.decrease.circle") }
-                }
                 ForesightSegmentedPicker(
                     selection: $dateScope,
                     options: JournalDateScope.allCases.map { ($0, $0.title) }
@@ -89,6 +118,42 @@ struct JournalRootView: View {
                     DatePicker("From", selection: $customStart, displayedComponents: .date)
                     DatePicker("To", selection: $customEnd, displayedComponents: .date)
                 }
+                journalFilterDropdowns
+            }
+        }
+    }
+
+    @ViewBuilder private var journalFilterDropdowns: some View {
+        let categoryOptions = [ForesightDropdownOption<UUID?, String>(id: "all-categories", value: nil, title: "All categories")]
+            + store.categories.map { ForesightDropdownOption(id: "category-\($0.id.uuidString)", value: Optional($0.id), title: $0.name, badge: $0.isArchived ? "Archived" : nil) }
+        let checkInOptions = JournalCheckInFilter.allCases.map { ForesightDropdownOption(id: $0.rawValue, value: $0, title: $0.title) }
+        let categoryDropdown = ForesightDropdown(
+            id: "journal.category",
+            selection: $categoryID,
+            options: categoryOptions,
+            style: .compact(systemImage: "tag"),
+            accessibilityLabel: "Choose category",
+            accessibilityValue: categoryID.flatMap { id in store.categories.first { $0.id == id } }?.name ?? "All categories"
+        )
+        let checkInDropdown = ForesightDropdown(
+            id: "journal.check-in",
+            selection: $checkInFilter,
+            options: checkInOptions,
+            style: .compact(systemImage: "line.3.horizontal.decrease.circle"),
+            accessibilityLabel: "Choose check-in filter",
+            accessibilityValue: checkInFilter.title
+        )
+
+        if dynamicTypeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 8) {
+                categoryDropdown
+                checkInDropdown
+            }
+        } else {
+            HStack {
+                categoryDropdown
+                Spacer()
+                checkInDropdown
             }
         }
     }
@@ -98,15 +163,15 @@ struct JournalRootView: View {
             if entries.isEmpty {
                 EmptyState(title: matching.isEmpty ? "Start your journal" : "No matching logs", detail: matching.isEmpty ? "Write a short log about something that happened today." : "Try changing the search or filters.", actionTitle: matching.isEmpty ? "Write a log" : nil, action: matching.isEmpty ? { editor = EditorRequest(entryID: nil) } : nil)
             } else {
-                if olderCount > 0 {
-                    Button("Show \(olderCount) older \(olderCount == 1 ? "log" : "logs")") { dateScope = .all }
-                        .buttonStyle(ForesightSecondaryButtonStyle()).frame(maxWidth: .infinity)
-                }
                 ForEach(groupEntriesByDay(entries)) { group in
                     VStack(alignment: .leading, spacing: 8) {
                         Text(displayDay(group.day)).font(ForesightType.metadata).foregroundStyle(Color.foresightMuted)
-                        ForEach(group.entries, id: \.id) { entry in JournalEntryRow(entry: entry, label: entryCheckInLabel(entry: entry, checkIns: store.checkIns)) }
+                        ForEach(group.entries, id: \.id) { entry in JournalEntryRow(entry: entry, label: entryCheckInLabel(entry: entry, checkIns: store.checkIns)) { navigationPath.append(entry.id) } }
                     }
+                }
+                if olderCount > 0 {
+                    Button("Show \(olderCount) older \(olderCount == 1 ? "log" : "logs")") { dateScope = .all }
+                        .buttonStyle(ForesightSecondaryButtonStyle()).frame(maxWidth: .infinity)
                 }
             }
         }
@@ -147,7 +212,7 @@ struct JournalRootView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text(displayDay(selectedDay)).font(.headline).foregroundStyle(Color.foresightInk)
                 if selectedEntries.isEmpty { Text("No logs on this day.").foregroundStyle(Color.foresightMuted) }
-                ForEach(selectedEntries, id: \.id) { JournalEntryRow(entry: $0, label: entryCheckInLabel(entry: $0, checkIns: store.checkIns)) }
+                ForEach(selectedEntries, id: \.id) { entry in JournalEntryRow(entry: entry, label: entryCheckInLabel(entry: entry, checkIns: store.checkIns)) { navigationPath.append(entry.id) } }
             }
         }
     }
@@ -161,21 +226,32 @@ struct JournalRootView: View {
 struct JournalEntryRow: View {
     let entry: JournalEntry
     let label: String?
+    let onOpen: () -> Void
+    @State private var cardSize: CGSize = .zero
+
     var body: some View {
-        NavigationLink(value: entry.id) {
-            ForesightCard {
-                VStack(alignment: .leading, spacing: 7) {
-                    HStack {
-                        Text(ForesightFormat.listDate(entry.eventAt)).font(.caption.weight(.bold)).foregroundStyle(Color.foresightSage)
-                        Spacer()
-                        if let label { Text(label).font(.caption2.weight(.bold)).foregroundStyle(label == "Check-in due" ? Color.foresightWarning : Color.foresightSage).padding(.horizontal, 7).padding(.vertical, 4).background(label == "Check-in due" ? Color.foresightWarm : Color.foresightSoftSage, in: Capsule()) }
-                    }
-                    Text(entry.body).font(ForesightType.journalBody).foregroundStyle(Color.foresightInk).lineLimit(3).multilineTextAlignment(.leading)
-                    if !entry.categories.isEmpty { Text(entry.categories.map(\.name).joined(separator: " · ")).font(.caption).foregroundStyle(Color.foresightMuted) }
+        ForesightCard {
+            VStack(alignment: .leading, spacing: 7) {
+                HStack {
+                    Text(ForesightFormat.listDate(entry.eventAt)).font(.caption.weight(.bold)).foregroundStyle(Color.foresightSage)
+                    Spacer()
+                    if let label { Text(label).font(.caption2.weight(.bold)).foregroundStyle(label == "Check-in due" ? Color.foresightWarning : Color.foresightSage).padding(.horizontal, 7).padding(.vertical, 4).background(label == "Check-in due" ? Color.foresightWarm : Color.foresightSoftSage, in: Capsule()) }
                 }
+                Text(entry.body).font(ForesightType.journalBody).foregroundStyle(Color.foresightInk).lineLimit(3).multilineTextAlignment(.leading)
+                if !entry.categories.isEmpty { Text(entry.categories.map(\.name).joined(separator: " · ")).font(.caption).foregroundStyle(Color.foresightMuted) }
             }
         }
-        .buttonStyle(.plain)
+        .contentShape(.interaction, RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .onGeometryChange(for: CGSize.self) { $0.size } action: { cardSize = $0 }
+        .gesture(SpatialTapGesture().onEnded { tap in
+            // SwiftUI can deliver taps from just outside the drawn card.
+            let card = RoundedRectangle(cornerRadius: 18, style: .continuous)
+            guard card.path(in: CGRect(origin: .zero, size: cardSize)).contains(tap.location) else { return }
+            onOpen()
+        })
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { onOpen() }
     }
 }
 
