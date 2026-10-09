@@ -11,7 +11,7 @@ settings:
     ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
     CLANG_ENABLE_MODULES: YES
     GENERATE_INFOPLIST_FILE: NO
-    # Change this if the bundle IDs below are already registered to another Apple team.
+    # Override in Config/Signing.local.xcconfig if these bundle IDs are taken by another Apple team.
     BUNDLE_ID_PREFIX: com.foresight
 configs:
   Debug: debug
@@ -24,6 +24,11 @@ targets:
       - path: ForesightApp
       - path: Resources
         buildPhase: resources
+    # Device signing lives in Config/Signing.xcconfig, which includes a gitignored
+    # Config/Signing.local.xcconfig for the team ID. See "Run on your iPhone" in the README.
+    configFiles:
+      Debug: Config/Signing.xcconfig
+      Release: Config/Signing.xcconfig
     settings:
       base:
         INFOPLIST_FILE: ForesightApp/Info.plist
@@ -31,14 +36,6 @@ targets:
         PRODUCT_MODULE_NAME: Foresight
         SUPPORTS_MACCATALYST: NO
         CODE_SIGN_ENTITLEMENTS: ""
-        # Device signing. To install on an iPhone, set DEVELOPMENT_TEAM to your Apple team ID
-        # and CODE_SIGNING_ALLOWED to YES, then regenerate the project. Simulator builds and
-        # Scripts/verify.sh stay unsigned either way.
-        CODE_SIGN_STYLE: Automatic
-        DEVELOPMENT_TEAM: ""
-        CODE_SIGNING_ALLOWED: NO
-        CODE_SIGNING_REQUIRED: NO
-        "CODE_SIGNING_ALLOWED[sdk=iphonesimulator*]": NO
       configs:
         Debug:
           PRODUCT_BUNDLE_IDENTIFIER: $(BUNDLE_ID_PREFIX).journal.testing

@@ -19,6 +19,22 @@ struct ForesightSchemaTests {
         #expect(ForesightMigrationPlan.stages.count == ForesightMigrationPlan.schemas.count - 1)
     }
 
+    @Test("version 1 keeps its entity and property names")
+    func versionOneShape() {
+        // V1 freezes once it is installed on a device. Until then, update this list when you add a
+        // stored property to V1. After that, a failure here means V1 drifted: put the change in V2.
+        let schema = Schema(versionedSchema: ForesightSchemaV1.self)
+        var shape: [String: Set<String>] = [:]
+        for entity in schema.entities {
+            shape[entity.name] = Set(entity.properties.map { $0.name })
+        }
+        #expect(shape == [
+            "JournalCategory": ["id", "name", "archivedAt", "entries"],
+            "JournalEntry": ["id", "body", "eventAt", "createdAt", "updatedAt", "isFixture", "categories", "checkIns"],
+            "OutcomeCheckIn": ["id", "phase", "status", "dueAt", "answeredAt", "overall", "note", "excludedFromAnalysis", "createdAt", "updatedAt", "isFixture", "entry"],
+        ])
+    }
+
     @Test("a journal saved on disk is still there when the store is reopened")
     func reopensOnDiskStore() throws {
         let url = try temporaryStoreURL()

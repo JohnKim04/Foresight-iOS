@@ -30,11 +30,11 @@ Use the launch argument `-in-memory-store` for isolated UI tests or disposable s
 
 ## Run on your iPhone
 
-Device signing is prepared in `project.yml` but switched off until a team is set. To turn it on:
+Device signing is prepared in `Config/Signing.xcconfig` but switched off until a local team is set. To turn it on:
 
 1. Your iPhone must run iOS 26 or later. Turn on Developer Mode (Settings > Privacy & Security > Developer Mode) and connect it to the Mac.
 2. In Xcode > Settings > Accounts, sign in with your Apple ID. A free account works, but its installs expire after 7 days; TestFlight needs the paid Apple Developer Program.
-3. In `project.yml`, set `DEVELOPMENT_TEAM` to your team ID (Xcode shows it under the account's team) and `CODE_SIGNING_ALLOWED` to `YES` on the Foresight target. If Xcode reports that `com.foresight.journal.testing` is already in use, change `BUNDLE_ID_PREFIX` to something unique, such as `com.<yourname>`, and update the bundle ID in `Scripts/verify.sh`.
+3. Copy `Config/Signing.local.xcconfig.example` to `Config/Signing.local.xcconfig` and set `DEVELOPMENT_TEAM` to your team ID (Xcode shows it under the account's team). That file is gitignored, so the team ID stays out of the repo. If Xcode reports that `com.foresight.journal.testing` is already in use, set `BUNDLE_ID_PREFIX` there to something unique, such as `com.<yourname>`, and update the bundle ID in `Scripts/verify.sh`. For a one-off command-line build you can pass `DEVELOPMENT_TEAM=<id> CODE_SIGNING_ALLOWED=YES` to `xcodebuild` instead.
 4. Run `xcodegen generate --spec project.yml`, select the Foresight QA scheme and your iPhone, and Run. The first time, trust the developer profile on the phone under Settings > General > VPN & Device Management.
 
 Installing a newer build over the old one keeps the journal. Deleting the app deletes it.

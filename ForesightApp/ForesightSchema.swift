@@ -11,7 +11,8 @@ import SwiftData
 //
 // 1. While the newest version has not been installed on a real device yet (V1 is in this state
 //    until the first phone install), edit the model in Models.swift directly. Give the property a
-//    default value or make it optional. A simulator store made by an earlier build will no longer
+//    default value or make it optional, and add its name to `versionOneShape` in
+//    ForesightSchemaTests. A simulator store made by an earlier build will no longer
 //    match and opens on the recovery screen; "Reset local journal" clears it.
 // 2. Once the newest version has shipped to a device it is frozen. To change it:
 //    a. Copy the current model classes from Models.swift into a new `extension ForesightSchemaV1`
