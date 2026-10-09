@@ -302,7 +302,8 @@ final class ForesightUITests: XCTestCase {
         tab.tap()
         app.buttons["Add history"].tap()
         // Sample history has two later check-ins already past due.
-        let badged = NSPredicate(format: "value CONTAINS %@", "2")
+        // The tab bar exposes the badge as the button's value, e.g. "2 items".
+        let badged = NSPredicate(format: "value MATCHES %@", "^2( items?)?$")
         expectation(for: badged, evaluatedWith: tab)
         waitForExpectations(timeout: 3)
     }

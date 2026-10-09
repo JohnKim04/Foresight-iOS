@@ -94,8 +94,8 @@ struct ForesightRootView: View {
     @State private var badgeClock = Date.now
     @Environment(\.scenePhase) private var scenePhase
 
-    private var dueCount: Int { dueCheckInCount(store.checkIns, now: badgeClock) }
-    private var nextDue: Date? { nextCheckInDueDate(store.checkIns, after: badgeClock) }
+    private var dueCount: Int { dueCheckInCount(store.snapshot, now: badgeClock) }
+    private var nextDue: Date? { nextCheckInDueDate(store.snapshot, after: badgeClock) }
 
     var body: some View {
         ForesightDropdownHost {

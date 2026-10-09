@@ -42,18 +42,14 @@ struct CheckInLaterOption: Identifiable, Equatable {
     }
 }
 
-/// Later check-ins that are waiting for an answer right now. Matches the "Ready now" group on Check In.
-func dueCheckInCount(_ checkIns: [OutcomeCheckIn], now: Date) -> Int {
-    checkIns.filter { isWaitingLaterCheckIn($0) && $0.dueAt! <= now }.count
+/// Later check-ins that are waiting for an answer right now: the "Ready now" group on Check In.
+func dueCheckInCount(_ journal: JournalSnapshot, now: Date) -> Int {
+    delayedCheckInQueue(journal, now: now).filter(\.due).count
 }
 
 /// When the next waiting check-in becomes due, so the tab badge can update without polling.
-func nextCheckInDueDate(_ checkIns: [OutcomeCheckIn], after now: Date) -> Date? {
-    checkIns.filter { isWaitingLaterCheckIn($0) && $0.dueAt! > now }.compactMap(\.dueAt).min()
-}
-
-private func isWaitingLaterCheckIn(_ checkIn: OutcomeCheckIn) -> Bool {
-    checkIn.phase == .delayed && checkIn.status == .pending && checkIn.dueAt != nil && checkIn.entry != nil
+func nextCheckInDueDate(_ journal: JournalSnapshot, after now: Date) -> Date? {
+    delayedCheckInQueue(journal, now: now).first { !$0.due }?.checkIn.dueAt
 }
 
 enum OnboardingState {

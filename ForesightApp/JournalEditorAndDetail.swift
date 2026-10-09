@@ -170,6 +170,8 @@ struct JournalEditorView: View {
     }
 
     private func save() {
+        // The post-log step is animating in; a second tap must not save a duplicate log.
+        guard savedEntryID == nil else { return }
         do {
             let saved = try store.saveLog(id: entry?.id, body: bodyText, eventAt: eventAt, categoryIDs: categoryIDs)
             UINotificationFeedbackGenerator().notificationOccurred(.success)

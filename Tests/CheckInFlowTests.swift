@@ -14,6 +14,10 @@ struct CheckInFlowTests {
         calendar.date(from: DateComponents(year: 2026, month: 10, day: day, hour: hour, minute: minute))!
     }
 
+    private func snapshot(_ checkIns: [OutcomeCheckIn]) -> JournalSnapshot {
+        JournalSnapshot(entries: [], categories: [], checkIns: checkIns)
+    }
+
     @Test("offers two hours, tonight and tomorrow morning in the afternoon")
     func afternoonOptions() {
         let options = CheckInLaterOption.options(now: date(9, 14), calendar: calendar)
@@ -66,8 +70,8 @@ struct CheckInFlowTests {
             OutcomeCheckIn(entry: entry, phase: .delayed, status: .skipped, dueAt: date(9, 10)),
             OutcomeCheckIn(entry: entry, phase: .immediate)
         ]
-        #expect(dueCheckInCount(checkIns, now: now) == 2)
-        #expect(nextCheckInDueDate(checkIns, after: now) == date(9, 13))
+        #expect(dueCheckInCount(snapshot(checkIns), now: now) == 2)
+        #expect(nextCheckInDueDate(snapshot(checkIns), after: now) == date(9, 13))
     }
 
     @Test("has no next due date when nothing is waiting")
@@ -75,7 +79,7 @@ struct CheckInFlowTests {
         let now = date(9, 12)
         let entry = JournalEntry(body: "Log", eventAt: now)
         let checkIns = [OutcomeCheckIn(entry: entry, phase: .delayed, dueAt: date(9, 11))]
-        #expect(nextCheckInDueDate(checkIns, after: now) == nil)
-        #expect(dueCheckInCount([], now: now) == 0)
+        #expect(nextCheckInDueDate(snapshot(checkIns), after: now) == nil)
+        #expect(dueCheckInCount(snapshot([]), now: now) == 0)
     }
 }

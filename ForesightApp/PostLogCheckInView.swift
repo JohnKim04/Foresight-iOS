@@ -25,37 +25,33 @@ struct PostLogCheckInView: View {
     private var ratingColumns: [GridItem] { Array(repeating: GridItem(.flexible(minimum: 0), spacing: 6), count: OutcomeValue.allCases.count) }
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                ContentColumn {
-                    VStack(alignment: .leading, spacing: 18) {
-                        ForesightPageHeader(
-                            kicker: "Log saved",
-                            title: "How do you feel right now?",
-                            subtitle: "A quick rating now and another later show what this tends to lead to."
-                        )
-                        if let entry {
-                            Text(entry.body)
-                                .font(ForesightType.journalBody)
-                                .foregroundStyle(Color.foresightMuted)
-                                .lineLimit(2)
-                        }
-                        ratingCard
-                        laterCard
-                        if let message { Text(message).font(.footnote).foregroundStyle(Color.foresightWarning) }
-                        Button("Done", action: onDone)
-                            .buttonStyle(ForesightPrimaryButtonStyle())
-                            .frame(maxWidth: .infinity)
-                            .accessibilityIdentifier("post-log.done")
+        ScrollView {
+            ContentColumn {
+                VStack(alignment: .leading, spacing: 18) {
+                    ForesightPageHeader(
+                        kicker: "Log saved",
+                        title: "How do you feel right now?",
+                        subtitle: "A quick rating now and another later show what this tends to lead to."
+                    )
+                    if let entry {
+                        Text(entry.body)
+                            .font(ForesightType.journalBody)
+                            .foregroundStyle(Color.foresightMuted)
+                            .lineLimit(2)
                     }
-                    .padding()
+                    ratingCard
+                    laterCard
+                    if let message { Text(message).font(.footnote).foregroundStyle(Color.foresightWarning) }
+                    Button("Done", action: onDone)
+                        .buttonStyle(ForesightPrimaryButtonStyle())
+                        .frame(maxWidth: .infinity)
+                        .accessibilityIdentifier("post-log.done")
                 }
+                .padding()
             }
-            .background(Color.foresightCanvas)
-            .navigationTitle("")
-            .navigationBarTitleDisplayMode(.inline)
-            .sheet(item: $scheduleTarget, onDismiss: syncChosenLater) { ScheduleCheckInSheet(store: store, target: $0) }
         }
+        .background(Color.foresightCanvas)
+        .sheet(item: $scheduleTarget, onDismiss: syncChosenLater) { ScheduleCheckInSheet(store: store, target: $0) }
     }
 
     private var ratingCard: some View {
