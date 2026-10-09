@@ -303,8 +303,8 @@ final class ForesightUITests: XCTestCase {
         app.buttons["Add history"].tap()
         // Sample history has two later check-ins already past due.
         // iOS 27 exposes the badge as the tab button's value, e.g. "2 items". iOS 26.x
-        // (CI's iOS 26.5 simulator) draws the badge but leaves the button's value empty,
-        // so there the test checks the same due count on the Check In screen instead.
+        // (CI's iOS 26.5 simulator) leaves the button's value empty, so UI tests can't read the badge;
+        // there the test checks the same due count on the Check In screen instead.
         if ProcessInfo.processInfo.isOperatingSystemAtLeast(OperatingSystemVersion(majorVersion: 27, minorVersion: 0, patchVersion: 0)) {
             let badged = NSPredicate(format: "value MATCHES %@", "^2( items?)?$")
             expectation(for: badged, evaluatedWith: tab)
