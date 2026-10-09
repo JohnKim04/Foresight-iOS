@@ -37,15 +37,7 @@ final class AppDatabase {
 
     func open(inMemory: Bool = ProcessInfo.processInfo.arguments.contains("-in-memory-store")) {
         do {
-            let schema = Schema([JournalEntry.self, JournalCategory.self, OutcomeCheckIn.self])
-            let configuration: ModelConfiguration
-            if inMemory {
-                configuration = ModelConfiguration("Foresight", schema: schema, isStoredInMemoryOnly: true, allowsSave: true, cloudKitDatabase: .none)
-            } else {
-                try FileManager.default.createDirectory(at: Self.storeURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-                configuration = ModelConfiguration("Foresight", schema: schema, url: Self.storeURL, allowsSave: true, cloudKitDatabase: .none)
-            }
-            let newContainer = try ModelContainer(for: schema, configurations: [configuration])
+            let newContainer = try ForesightPersistence.makeContainer(storeURL: inMemory ? nil : Self.storeURL)
             let newStore = JournalStore(modelContext: newContainer.mainContext, modelContainer: newContainer)
             if let error = newStore.initializationError {
                 container = nil
