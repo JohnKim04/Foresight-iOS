@@ -275,6 +275,8 @@ enum QueueFilter: String, CaseIterable, Identifiable { case all, due, upcoming, 
 
 struct CheckInRootView: View {
     let store: JournalStore
+    /// Set when a reminder is tapped; opens that check-in's answer sheet.
+    @Binding var answerRequest: CheckInTarget?
     @State private var filter: QueueFilter = .all
     @State private var answerTarget: CheckInTarget?
     @State private var scheduleTarget: CheckInTarget?
@@ -323,6 +325,12 @@ struct CheckInRootView: View {
             .navigationDestination(for: UUID.self) { JournalDetailView(store: store, entryID: $0) }
             .sheet(item: $answerTarget) { OutcomeAnswerSheet(store: store, target: $0) }
             .sheet(item: $scheduleTarget) { ScheduleCheckInSheet(store: store, target: $0) }
+            .onChange(of: answerRequest, initial: true) { _, request in
+                guard let request else { return }
+                scheduleTarget = nil
+                answerTarget = request
+                answerRequest = nil
+            }
             .alert("Skip this check-in?", isPresented: Binding(get: { checkInToSkip != nil }, set: { if !$0 { checkInToSkip = nil } })) {
                 Button("Skip") { if let checkInToSkip { try? store.skip(checkInToSkip); message = "Check-in skipped." } }
                 Button("Cancel", role: .cancel) { }

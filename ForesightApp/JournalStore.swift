@@ -17,6 +17,8 @@ final class JournalStore {
     private(set) var checkIns: [OutcomeCheckIn] = []
     private(set) var initializationError: String?
     private(set) var ignoredRecords = 0
+    /// Called after every successful load, so reminders follow every check-in change.
+    @ObservationIgnored var onCheckInsChanged: (@MainActor ([OutcomeCheckIn]) -> Void)?
 
     init(modelContext: ModelContext, modelContainer: ModelContainer? = nil, now: @escaping () -> Date = { .now }, makeID: @escaping () -> UUID = UUID.init) {
         self.modelContext = modelContext
@@ -40,6 +42,7 @@ final class JournalStore {
                 categories = try modelContext.fetch(FetchDescriptor<JournalCategory>(sortBy: [SortDescriptor(\.name)]))
             }
             initializationError = nil
+            onCheckInsChanged?(checkIns)
         } catch {
             initializationError = "Your journal could not be opened. \(error.localizedDescription)"
         }

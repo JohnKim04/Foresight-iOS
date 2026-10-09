@@ -49,10 +49,11 @@ GitHub Actions (`.github/workflows/ci.yml`) runs `Scripts/verify.sh` on every pu
 - `ForesightApp/ForesightSchema.swift` versions the store with a SwiftData `VersionedSchema` and `ForesightMigrationPlan`, so a journal on a phone survives new builds. Read the notes at the top of that file before adding or changing a stored property.
 - `ForesightApp/JournalStore.swift` is the `@MainActor @Observable` dependency-injected mutation store. It validates text, category, scheduling, response, fixture, archive, and deletion rules.
 - Saving a new log turns the editor into a short check-in step (`PostLogCheckInView.swift`): rate how you feel right now and pick a one-tap later time. `CheckInFlow.swift` holds the pure rules for those times and for the Check In tab's due badge. `OnboardingView.swift` is the first-run walkthrough.
+- `CheckInReminders.swift` schedules a local notification for each pending later check-in. `CheckInReminderPlan` holds the pure rules (soonest 64 only, diffing against what's scheduled); `CheckInReminderScheduler` reconciles on every store change and app foreground; `CheckInReminderRouter` opens the answer sheet on tap and handles the "Remind me in an hour" action. Permission is asked the first time a later check-in is scheduled. `-in-memory-store` uses an inert notification center, so UI tests never see the prompt.
 - `JournalAnalytics.swift` and `OutcomeAnalytics.swift` are deterministic pure functions for discovery, queues, date/calendar grouping, activity trends, outcome aggregation, and non-causal insights.
 - The app uses native `TabView`, separate `NavigationStack`s, full-screen writing, native sheets for response/scheduling, Swift Charts, Dynamic Type-aware controls, system serif display type, SF Symbols, haptics, and system Liquid Glass navigation/tab/sheet surfaces.
 
-If SwiftData cannot initialize, the app offers retry and an explicit local reset. There are deliberately no notifications, accounts, AI, sync, Android support, or App Store submission workflow.
+If SwiftData cannot initialize, the app offers retry and an explicit local reset. There are deliberately no accounts, AI, sync, Android support, or App Store submission workflow.
 
 ## Parity checklist
 
