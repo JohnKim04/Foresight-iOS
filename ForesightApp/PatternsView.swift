@@ -6,6 +6,8 @@ enum PatternsMode: String, CaseIterable, Identifiable { case activity, outcomes;
 
 struct PatternsRootView: View {
     let store: JournalStore
+    /// Set when a suggestion nudge is tapped; opens that category's later evidence.
+    @Binding var evidenceRequest: UUID?
     @State private var mode: PatternsMode = .outcomes
     @State private var activityGranularity: TrendGranularity = .week
     @State private var activityRange: TrendRange = .thirty
@@ -48,6 +50,11 @@ struct PatternsRootView: View {
                     guard mode == .outcomes, oldValue != newValue else { return }
                     withAnimation(.snappy) { proxy.scrollTo("outcome-controls", anchor: .top) }
                 }
+            }
+            .onChange(of: evidenceRequest, initial: true) { _, request in
+                guard let request else { return }
+                if let category = store.categories.first(where: { $0.id == request }) { showHelpEvidence(category) }
+                evidenceRequest = nil
             }
             .onChange(of: helpReportKey, initial: true) {
                 helpReport = helpSuggestions(entries: store.entries, checkIns: store.checkIns, categories: store.categories)

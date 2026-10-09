@@ -19,6 +19,8 @@ final class JournalStore {
     private(set) var ignoredRecords = 0
     /// Called after every successful load, so reminders follow every check-in change.
     @ObservationIgnored var onCheckInsChanged: (@MainActor ([OutcomeCheckIn]) -> Void)?
+    /// Called after every successful load, so suggestion nudges follow every journal change.
+    @ObservationIgnored var onJournalChanged: (@MainActor (JournalStore) -> Void)?
 
     init(modelContext: ModelContext, modelContainer: ModelContainer? = nil, now: @escaping () -> Date = { .now }, makeID: @escaping () -> UUID = UUID.init) {
         self.modelContext = modelContext
@@ -43,6 +45,7 @@ final class JournalStore {
             }
             initializationError = nil
             onCheckInsChanged?(checkIns)
+            onJournalChanged?(self)
         } catch {
             initializationError = "Your journal could not be opened. \(error.localizedDescription)"
         }

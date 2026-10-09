@@ -14,6 +14,10 @@ struct HelpSuggestion: Identifiable {
     let daysSinceLastLog: Int?
     /// Right-after check-ins for the same logs leaned worse, so it may not feel good at first.
     let worseRightAfter: Bool
+    /// The hour most of the logs followed by feeling better cluster around, when they do.
+    let usualHour: Int?
+    /// How strong the later evidence is, before any adjustment for `now`.
+    let strength: Double
     let score: Double
 
     var id: UUID { category.id }
@@ -72,6 +76,7 @@ func helpSuggestions(entries: [JournalEntry], checkIns: [OutcomeCheckIn], catego
             .map { calendar.component(.hour, from: $0.eventAt) }
         let nearNow = helpedHours.filter { hourDistance($0, hour) <= helpSuggestionHourWindow }.count
         let usualTime = nearNow >= 3 && Double(nearNow) / Double(max(1, helpedHours.count)) >= 0.5
+        let usualHour = clusteredHour(helpedHours)
 
         let lastLog = entries.filter { $0.eventAt <= now && $0.categories.contains(where: { $0.id == category.id }) }.map(\.eventAt).max()
         let daysSince = lastLog.flatMap { calendar.dateComponents([.day], from: startOfDay($0, calendar: calendar), to: startOfDay(now, calendar: calendar)).day }
@@ -81,7 +86,8 @@ func helpSuggestions(entries: [JournalEntry], checkIns: [OutcomeCheckIn], catego
         let worseRightAfter = rightAfter.numericCount >= minimumPatternResponses && outcomeDirection(rightAfter) == .negative
 
         let rate = Double(later.betterCount) / Double(later.numericCount)
-        var score = rate * average * sqrt(Double(later.numericCount))
+        let strength = rate * average * sqrt(Double(later.numericCount))
+        var score = strength
         if usualTime { score *= 1.25 }
         if loggedToday { score *= 0.5 }
 
@@ -95,6 +101,8 @@ func helpSuggestions(entries: [JournalEntry], checkIns: [OutcomeCheckIn], catego
             loggedToday: loggedToday,
             daysSinceLastLog: daysSince,
             worseRightAfter: worseRightAfter,
+            usualHour: usualHour,
+            strength: strength,
             score: score
         ))
     }
@@ -112,6 +120,19 @@ func helpSuggestions(entries: [JournalEntry], checkIns: [OutcomeCheckIn], catego
 private func helpedEntries(entries: [JournalEntry], checkIns: [OutcomeCheckIn], category: JournalCategory, sourceIDs: Set<UUID>) -> [JournalEntry] {
     let helpedIDs = Set(checkIns.filter { $0.phase == .delayed && $0.isNumericResponse && ($0.overall?.rawValue ?? 0) > 0 }.compactMap { $0.entry?.id })
     return entries.filter { sourceIDs.contains($0.id) && helpedIDs.contains($0.id) }
+}
+
+/// The hour that at least three, and at least half, of `hours` fall within the window of.
+/// Among equally covered hours, the one closest to all of them wins, then the earliest.
+private func clusteredHour(_ hours: [Int]) -> Int? {
+    let candidates = Set(hours).sorted().map { hour in
+        (hour: hour,
+         covered: hours.filter { hourDistance($0, hour) <= helpSuggestionHourWindow }.count,
+         spread: hours.reduce(0) { $0 + hourDistance($1, hour) })
+    }
+    guard let best = candidates.min(by: { $0.covered != $1.covered ? $0.covered > $1.covered : $0.spread < $1.spread }),
+          best.covered >= 3, Double(best.covered) / Double(hours.count) >= 0.5 else { return nil }
+    return best.hour
 }
 
 private func hourDistance(_ first: Int, _ second: Int) -> Int {

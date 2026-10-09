@@ -57,8 +57,33 @@ struct CheckInReminderPlanTests {
     func respectsLimit() {
         let sources = (1...80).map { source(in: TimeInterval($0) * 60) }
         let reminders = CheckInReminderPlan.reminders(for: sources.shuffled(), now: now)
-        #expect(reminders.count == 64)
-        #expect(reminders.map(\.checkInID) == sources.prefix(64).map(\.checkInID))
+        #expect(reminders.count == CheckInReminderPlan.pendingLimit)
+        #expect(reminders.map(\.checkInID) == sources.prefix(CheckInReminderPlan.pendingLimit).map(\.checkInID))
+    }
+
+    @Test("trigger components name one instant, even in the repeated daylight-saving hour")
+    func triggerComponentsAcrossDST() throws {
+        // New York repeats 01:00-02:00 on Nov 3 2024: 01:30 EDT is 05:30 UTC, 01:30 EST is 06:30 UTC.
+        let first = Date(timeIntervalSince1970: 1_730_611_800)
+        let second = first.addingTimeInterval(3_600)
+        for instant in [first, second, now] {
+            let components = CheckInReminderPlan.triggerComponents(for: instant)
+            let calendar = try #require(components.calendar)
+            #expect(calendar.date(from: components) == instant)
+        }
+        #expect(CheckInReminderPlan.triggerComponents(for: first) != CheckInReminderPlan.triggerComponents(for: second))
+    }
+
+    @Test("a real trigger fires at the planned instant, including both passes of a repeated hour")
+    func realTriggerMatchesFireAt() throws {
+        // The next daylight-saving change in New York; around a fall-back it repeats an hour.
+        let newYork = try #require(TimeZone(identifier: "America/New_York"))
+        let transition = try #require(newYork.nextDaylightSavingTimeTransition(after: .now))
+        let base = Date(timeIntervalSinceReferenceDate: Date.now.timeIntervalSinceReferenceDate.rounded(.up))
+        for instant in [base.addingTimeInterval(3_600), transition.addingTimeInterval(-1_800), transition.addingTimeInterval(1_800)] {
+            let trigger = UNCalendarNotificationTrigger(dateMatching: CheckInReminderPlan.triggerComponents(for: instant), repeats: false)
+            #expect(trigger.nextTriggerDate() == instant)
+        }
     }
 
     @Test("rounds the fire date up to a whole second")
@@ -270,6 +295,17 @@ struct CheckInReminderSchedulerTests {
         await router.handle(try #require(ReminderResponse(requestIdentifier: CheckInReminderPlan.identifier(for: checkIn.id), actionIdentifier: UNNotificationDefaultActionIdentifier)))
         let entryID = try #require(checkIn.entry?.id)
         #expect(router.destination == .answer(CheckInTarget(entryID: entryID, checkInID: checkIn.id)))
+    }
+
+    @Test("tapping a reminder for an already answered check-in falls back to the Check In tab")
+    func tapAnsweredCheckIn() async throws {
+        let (store, scheduler, _) = try makeSubject()
+        let router = CheckInReminderRouter(reminders: scheduler, now: { fixedNow })
+        router.store = store
+        let checkIn = try scheduledCheckIn(store)
+        try store.answer(checkIn, response: .same, notSure: false, note: "", excludedFromAnalysis: false)
+        await router.handle(try #require(ReminderResponse(requestIdentifier: CheckInReminderPlan.identifier(for: checkIn.id), actionIdentifier: UNNotificationDefaultActionIdentifier)))
+        #expect(router.destination == .checkIns)
     }
 
     @Test("tapping a reminder for a deleted check-in falls back to the Check In tab")

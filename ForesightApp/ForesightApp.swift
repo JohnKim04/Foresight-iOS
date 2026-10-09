@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import Observation
 import SwiftData
@@ -19,7 +20,7 @@ struct ForesightApp: App {
         WindowGroup {
             Group {
                 if let store = database.store, let container = database.container {
-                    ForesightRootView(store: store, reminders: database.reminders, router: database.router)
+                    ForesightRootView(store: store, reminders: database.reminders, nudges: database.nudges, router: database.router)
                         .modelContainer(container)
                         .environment(database.reminders)
                 } else {
@@ -45,13 +46,15 @@ final class AppDatabase {
     private(set) var store: JournalStore?
     private(set) var errorMessage: String?
     let reminders: CheckInReminderScheduler
+    let nudges: SuggestionNudgeScheduler
     let router: CheckInReminderRouter
 
     init(arguments: [String] = ProcessInfo.processInfo.arguments) {
-        let center: any ReminderNotificationCenter = arguments.contains("-in-memory-store") ? InertReminderNotificationCenter() : SystemReminderNotificationCenter()
-        reminders = CheckInReminderScheduler(center: center)
+        let inMemory = arguments.contains("-in-memory-store")
+        reminders = CheckInReminderScheduler(center: inMemory ? InertReminderNotificationCenter() : SystemReminderNotificationCenter())
+        nudges = SuggestionNudgeScheduler(center: inMemory ? InertReminderNotificationCenter() : SystemReminderNotificationCenter())
         router = CheckInReminderRouter(reminders: reminders)
-        open(inMemory: arguments.contains("-in-memory-store"))
+        open(inMemory: inMemory)
     }
 
     func open(inMemory: Bool = ProcessInfo.processInfo.arguments.contains("-in-memory-store")) {
@@ -67,6 +70,7 @@ final class AppDatabase {
                 store = newStore
                 errorMessage = nil
                 reminders.attach(to: newStore)
+                nudges.attach(to: newStore)
                 router.store = newStore
             }
         } catch {
@@ -104,12 +108,14 @@ enum AppTab: Hashable { case journal, checkIns, patterns }
 struct ForesightRootView: View {
     let store: JournalStore
     let reminders: CheckInReminderScheduler
+    let nudges: SuggestionNudgeScheduler
     let router: CheckInReminderRouter
     @State private var tab: AppTab = .journal
     @AppStorage(OnboardingState.completedKey) private var hasCompletedOnboarding = false
     /// Advanced when the next check-in falls due, so the badge appears without any polling.
     @State private var badgeClock = Date.now
     @State private var checkInAnswerRequest: CheckInTarget?
+    @State private var evidenceRequest: UUID?
     @Environment(\.scenePhase) private var scenePhase
 
     private var dueCount: Int { dueCheckInCount(store.snapshot, now: badgeClock) }
@@ -125,7 +131,7 @@ struct ForesightRootView: View {
                     .tabItem { Label("Check In", systemImage: "checkmark.circle") }
                     .badge(dueCount)
                     .tag(AppTab.checkIns)
-                PatternsRootView(store: store)
+                PatternsRootView(store: store, evidenceRequest: $evidenceRequest)
                     .tabItem { Label("Patterns", systemImage: "chart.xyaxis.line") }
                     .tag(AppTab.patterns)
             }
@@ -142,14 +148,23 @@ struct ForesightRootView: View {
             badgeClock = .now
             // Catches permission changed in Settings and reminders past the 64-request limit.
             reminders.resync()
+            // Suggestions depend on the time of day, so re-plan nudges too.
+            nudges.resync()
         }
+        // Significant time changes cover time zone changes, daylight saving and midnight.
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification).receive(on: DispatchQueue.main)) { _ in nudges.resync() }
+        // Nudges share the reminders' permission; plan them as soon as it's granted.
+        .onChange(of: reminders.authorization) { nudges.resync() }
         .task(id: router.destination) {
             // A reminder tap waits until nothing is presented (onboarding, the editor, any
             // sheet), so it never switches tabs under a modal or replaces unsaved work.
             while let destination = router.destination, !Task.isCancelled {
                 if hasCompletedOnboarding && !Self.isPresentingModal() {
-                    tab = .checkIns
-                    if case .answer(let target) = destination { checkInAnswerRequest = target }
+                    switch destination {
+                    case .checkIns: tab = .checkIns
+                    case .answer(let target): tab = .checkIns; checkInAnswerRequest = target
+                    case .evidence(let categoryID): tab = .patterns; evidenceRequest = categoryID
+                    }
                     router.destination = nil
                     return
                 }

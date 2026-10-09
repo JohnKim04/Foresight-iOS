@@ -40,12 +40,14 @@ enum CheckInReminderPlan {
     static let snoozeActionIdentifier = "CHECK_IN_SNOOZE"
     static let threadIdentifier = "check-ins"
     static let title = "How did this affect you?"
-    /// The one switch for what a reminder says. With it on, the first line of the log shows
-    /// (on the lock screen too, when previews are allowed there); off, the text is generic.
+    /// The one switch for what a reminder, and a suggestion nudge, says. With it on, the first
+    /// line of the log (or the category and its counts) shows, on the lock screen too when
+    /// previews are allowed there; off, the text is generic.
     static let showsLogText = true
     static let genericBody = "A check-in is ready."
-    /// iOS keeps at most 64 pending local notifications per app, so only the soonest are scheduled.
-    static let pendingLimit = 64
+    /// iOS keeps at most 64 pending local notifications per app, so only the soonest are
+    /// scheduled, leaving room for suggestion nudges.
+    static let pendingLimit = 64 - SuggestionNudgePlan.daysAhead
     static let snoozeInterval: TimeInterval = 60 * 60
 
     static func identifier(for checkInID: UUID) -> String { identifierPrefix + checkInID.uuidString }
@@ -76,6 +78,15 @@ enum CheckInReminderPlan {
     /// before its check-in is due.
     static func fireDate(for dueAt: Date) -> Date {
         Date(timeIntervalSinceReferenceDate: dueAt.timeIntervalSinceReferenceDate.rounded(.up))
+    }
+
+    /// A check-in is due at an instant, not a wall-clock time. Components in UTC, with the
+    /// calendar attached, name exactly one instant: no repeated daylight-saving hour, and the
+    /// scheduled trigger's next date matches `fireAt`, so reconciling doesn't re-add it.
+    static func triggerComponents(for fireAt: Date) -> DateComponents {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        return calendar.dateComponents([.calendar, .timeZone, .year, .month, .day, .hour, .minute, .second], from: fireAt)
     }
 
     static func body(for entryBody: String, showsLogText: Bool = showsLogText) -> String {
@@ -153,8 +164,7 @@ struct SystemReminderNotificationCenter: ReminderNotificationCenter {
         content.sound = .default
         content.categoryIdentifier = CheckInReminderPlan.categoryIdentifier
         content.threadIdentifier = CheckInReminderPlan.threadIdentifier
-        let components = Calendar.current.dateComponents([.timeZone, .year, .month, .day, .hour, .minute, .second], from: reminder.fireAt)
-        let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
+        let trigger = UNCalendarNotificationTrigger(dateMatching: CheckInReminderPlan.triggerComponents(for: reminder.fireAt), repeats: false)
         try await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: reminder.identifier, content: content, trigger: trigger))
     }
 
@@ -280,6 +290,8 @@ struct ReminderResponse: Equatable, Sendable {
 enum ReminderDestination: Equatable {
     case checkIns
     case answer(CheckInTarget)
+    /// A category's later evidence on Patterns, from a tapped suggestion nudge.
+    case evidence(UUID)
 }
 
 /// Turns a tapped or snoozed reminder into app state. The root view consumes `destination`.
@@ -300,7 +312,9 @@ final class CheckInReminderRouter {
         let checkIn = store?.checkIns.first { $0.id == response.checkInID }
         switch response.action {
         case .open:
-            if let checkIn, let entry = checkIn.entry {
+            // Only a pending check-in opens its answer sheet; one already answered or skipped
+            // (say, from another reminder or on the Check In tab) falls back to the tab.
+            if let checkIn, checkIn.status == .pending, let entry = checkIn.entry {
                 destination = .answer(CheckInTarget(entryID: entry.id, checkInID: checkIn.id))
             } else {
                 destination = .checkIns
@@ -346,8 +360,11 @@ final class CheckInReminderNotificationDelegate: NSObject, UNUserNotificationCen
 
     /// The part of `didReceive` that doesn't need a system response object, so tests can drive it.
     @MainActor func handle(requestIdentifier: String, actionIdentifier: String, body: String) async {
-        guard let reminder = ReminderResponse(requestIdentifier: requestIdentifier, actionIdentifier: actionIdentifier, body: body) else { return }
-        await router().handle(reminder)
+        if let reminder = ReminderResponse(requestIdentifier: requestIdentifier, actionIdentifier: actionIdentifier, body: body) {
+            await router().handle(reminder)
+        } else if let nudge = NudgeResponse(requestIdentifier: requestIdentifier, actionIdentifier: actionIdentifier) {
+            router().handle(nudge)
+        }
     }
 }
 
