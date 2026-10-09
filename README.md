@@ -26,7 +26,7 @@ For a command-line build, unit/UI test pass, install, and launch on the newest a
 ./Scripts/verify.sh
 ```
 
-Use the launch argument `-in-memory-store` for isolated UI tests or disposable sessions.
+Use the launch argument `-in-memory-store` for isolated UI tests or disposable sessions. First-run onboarding shows once; pass `-reset-onboarding` to see it again, or `-hasCompletedOnboarding YES` to skip it.
 
 ## Run on your iPhone
 
@@ -44,6 +44,7 @@ Installing a newer build over the old one keeps the journal. Deleting the app de
 - `ForesightApp/Models.swift` contains SwiftData entities: `JournalEntry`, `JournalCategory`, and `OutcomeCheckIn`, with UUID identities, typed states, relationships, and cascading entry deletion.
 - `ForesightApp/ForesightSchema.swift` versions the store with a SwiftData `VersionedSchema` and `ForesightMigrationPlan`, so a journal on a phone survives new builds. Read the notes at the top of that file before adding or changing a stored property.
 - `ForesightApp/JournalStore.swift` is the `@MainActor @Observable` dependency-injected mutation store. It validates text, category, scheduling, response, fixture, archive, and deletion rules.
+- Saving a new log turns the editor into a short check-in step (`PostLogCheckInView.swift`): rate how you feel right now and pick a one-tap later time. `CheckInFlow.swift` holds the pure rules for those times and for the Check In tab's due badge. `OnboardingView.swift` is the first-run walkthrough.
 - `JournalAnalytics.swift` and `OutcomeAnalytics.swift` are deterministic pure functions for discovery, queues, date/calendar grouping, activity trends, outcome aggregation, and non-causal insights.
 - The app uses native `TabView`, separate `NavigationStack`s, full-screen writing, native sheets for response/scheduling, Swift Charts, Dynamic Type-aware controls, system serif display type, SF Symbols, haptics, and system Liquid Glass navigation/tab/sheet surfaces.
 

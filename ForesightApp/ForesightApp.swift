@@ -7,6 +7,12 @@ import SwiftUI
 struct ForesightApp: App {
     @State private var database = AppDatabase()
 
+    init() {
+        if ProcessInfo.processInfo.arguments.contains(OnboardingState.resetArgument) {
+            UserDefaults.standard.removeObject(forKey: OnboardingState.completedKey)
+        }
+    }
+
     var body: some Scene {
         WindowGroup {
             Group {
@@ -83,6 +89,13 @@ enum AppTab: Hashable { case journal, checkIns, patterns }
 struct ForesightRootView: View {
     let store: JournalStore
     @State private var tab: AppTab = .journal
+    @AppStorage(OnboardingState.completedKey) private var hasCompletedOnboarding = false
+    /// Advanced when the next check-in falls due, so the badge appears without any polling.
+    @State private var badgeClock = Date.now
+    @Environment(\.scenePhase) private var scenePhase
+
+    private var dueCount: Int { dueCheckInCount(store.snapshot, now: badgeClock) }
+    private var nextDue: Date? { nextCheckInDueDate(store.snapshot, after: badgeClock) }
 
     var body: some View {
         ForesightDropdownHost {
@@ -92,6 +105,7 @@ struct ForesightRootView: View {
                     .tag(AppTab.journal)
                 CheckInRootView(store: store)
                     .tabItem { Label("Check In", systemImage: "checkmark.circle") }
+                    .badge(dueCount)
                     .tag(AppTab.checkIns)
                 PatternsRootView(store: store)
                     .tabItem { Label("Patterns", systemImage: "chart.xyaxis.line") }
@@ -99,6 +113,18 @@ struct ForesightRootView: View {
             }
         }
         .background(Color.foresightCanvas)
+        .task(id: nextDue) {
+            guard let nextDue else { return }
+            try? await Task.sleep(for: .seconds(max(0, nextDue.timeIntervalSinceNow) + 0.5))
+            if !Task.isCancelled { badgeClock = .now }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            // Task.sleep pauses while the app is suspended, so catch up on return.
+            if phase == .active { badgeClock = .now }
+        }
+        .fullScreenCover(isPresented: Binding(get: { !hasCompletedOnboarding }, set: { if !$0 { hasCompletedOnboarding = true } })) {
+            OnboardingView { hasCompletedOnboarding = true }
+        }
     }
 }
 
