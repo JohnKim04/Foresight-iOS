@@ -53,9 +53,66 @@ struct HelpSuggestionsTests {
         #expect(suggestion.numericCount == 5)
         #expect(suggestion.headline == "Workout has tended to be followed by feeling better later.")
         #expect(suggestion.evidence.hasPrefix("Better in 4 of 5 later check-ins"))
-        let text = [suggestion.headline, suggestion.evidence, suggestion.context ?? ""].joined(separator: " ").lowercased()
-        for causal in ["because", "causes", "makes you", "will help", "helps you"] { #expect(!text.contains(causal)) }
+        expectNonCausal([suggestion.headline, suggestion.evidence, suggestion.context ?? ""])
         #expect(result.progress == nil)
+    }
+
+    private func expectNonCausal(_ strings: [String]) {
+        let text = strings.joined(separator: " ").lowercased()
+        for causal in ["help", "because", "causes", "makes you", "leads to"] { #expect(!text.contains(causal), "\(causal) in \(text)") }
+    }
+
+    @Test("keeps the card copy non-causal in every state")
+    func cardCopyIsNonCausal() {
+        let workout = JournalCategory(name: "Workout")
+        let progress = InsightProgress(category: workout, numericCount: 4, needed: 1)
+        let messages = [
+            HelpSuggestionCopy.emptyMessage(HelpSuggestionReport(suggestions: [], patternCount: 1, progress: nil)),
+            HelpSuggestionCopy.emptyMessage(HelpSuggestionReport(suggestions: [], patternCount: 0, progress: progress)),
+            HelpSuggestionCopy.emptyMessage(HelpSuggestionReport(suggestions: [], patternCount: 0, progress: nil))
+        ]
+        #expect(Set(messages).count == 3)
+        #expect(messages[1].contains("Workout needs 1 more later check-in "))
+        expectNonCausal([HelpSuggestionCopy.title, HelpSuggestionCopy.footnote] + messages)
+    }
+
+    @Test("qualifies at exactly 60 percent better but not at 40 percent")
+    func sixtyPercentBoundary() {
+        let workout = JournalCategory(name: "Workout")
+        let social = JournalCategory(name: "Social")
+        let workoutLogs = logs(workout, count: 5)
+        let socialLogs = logs(social, count: 5)
+        let checkIns = answers(workoutLogs, [.aLittleBetter, .aLittleBetter, .aLittleBetter, .same, .same])
+            + answers(socialLogs, [.muchBetter, .muchBetter, .same, .same, .same])
+        let result = report(workoutLogs + socialLogs, checkIns, [workout, social])
+        #expect(result.suggestions.map(\.category.name) == ["Workout"])
+        #expect(result.suggestions.first?.betterCount == 3)
+        #expect(result.patternCount == 2)
+    }
+
+    @Test("breaks equal scores by category name")
+    func tieBreaksByName() {
+        let beta = JournalCategory(name: "Beta")
+        let alpha = JournalCategory(name: "Alpha")
+        let betaLogs = logs(beta, count: 5, hourOffset: 12)
+        let alphaLogs = logs(alpha, count: 5, hourOffset: 12)
+        let result = report(betaLogs + alphaLogs, answers(betaLogs, [.aLittleBetter]) + answers(alphaLogs, [.aLittleBetter]), [beta, alpha])
+        #expect(result.suggestions.map(\.category.name) == ["Alpha", "Beta"])
+        #expect(result.suggestions[0].score == result.suggestions[1].score)
+    }
+
+    @Test("does not count skipped or pending later check-ins")
+    func ignoresSkippedAndPending() {
+        let workout = JournalCategory(name: "Workout")
+        let entries = logs(workout, count: 6)
+        let answered = answers(Array(entries.prefix(4)), [.muchBetter])
+        let skipped = OutcomeCheckIn(entry: entries[4], phase: .delayed, status: .skipped, dueAt: entries[4].eventAt, createdAt: entries[4].eventAt, updatedAt: entries[4].eventAt)
+        let pending = OutcomeCheckIn(entry: entries[5], phase: .delayed, dueAt: now.addingTimeInterval(3600), createdAt: entries[5].eventAt, updatedAt: entries[5].eventAt)
+        let result = report(entries, answered + [skipped, pending], [workout])
+        #expect(result.suggestions.isEmpty)
+        #expect(result.patternCount == 0)
+        #expect(result.progress?.numericCount == 4)
+        #expect(result.progress?.needed == 1)
     }
 
     @Test("ignores a category that felt better right after but worse later")

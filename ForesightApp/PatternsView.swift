@@ -13,6 +13,7 @@ struct PatternsRootView: View {
     @State private var outcomeCategoryID: UUID?
     @State private var outcomeRange: OutcomeTrendRange = .ninety
     @State private var outcomePhase: OutcomePhase = .delayed
+    @State private var helpReport: HelpSuggestionReport?
 
     private var activityCategory: JournalCategory? { activityCategoryID.flatMap { id in store.categories.first { $0.id == id } } }
     private var outcomeCategory: JournalCategory? { outcomeCategoryID.flatMap { id in store.categories.first { $0.id == id } } }
@@ -47,6 +48,9 @@ struct PatternsRootView: View {
                     guard mode == .outcomes, oldValue != newValue else { return }
                     withAnimation(.snappy) { proxy.scrollTo("outcome-controls", anchor: .top) }
                 }
+            }
+            .onChange(of: helpReportKey, initial: true) {
+                helpReport = helpSuggestions(entries: store.entries, checkIns: store.checkIns, categories: store.categories)
             }
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
@@ -215,13 +219,30 @@ struct PatternsRootView: View {
         }
     }
 
-    private var helpedCard: some View {
-        let report = helpSuggestions(entries: store.entries, checkIns: store.checkIns, categories: store.categories)
-        return ForesightCard {
+    /// Changes whenever the data or the hour does, so suggestions are recomputed
+    /// on edits rather than on every render.
+    private var helpReportKey: HelpReportKey {
+        HelpReportKey(
+            entryCount: store.entries.count,
+            latestEntryEdit: store.entries.map(\.updatedAt).max(),
+            checkInCount: store.checkIns.count,
+            latestCheckInEdit: store.checkIns.map(\.updatedAt).max(),
+            categoryCount: store.categories.count,
+            archivedCount: store.categories.filter(\.isArchived).count,
+            hour: Int(Date.now.timeIntervalSince1970 / 3600)
+        )
+    }
+
+    @ViewBuilder private var helpedCard: some View {
+        if let report = helpReport { helpedCardContent(report) }
+    }
+
+    private func helpedCardContent(_ report: HelpSuggestionReport) -> some View {
+        ForesightCard {
             VStack(alignment: .leading, spacing: 11) {
-                SectionKicker(text: "What’s tended to help")
+                SectionKicker(text: HelpSuggestionCopy.title)
                 if report.suggestions.isEmpty {
-                    Text(helpedEmptyMessage(report)).font(.subheadline).foregroundStyle(Color.foresightMuted)
+                    Text(HelpSuggestionCopy.emptyMessage(report)).font(.subheadline).foregroundStyle(Color.foresightMuted)
                 } else {
                     ForEach(report.suggestions) { suggestion in
                         Button { showHelpEvidence(suggestion.category) } label: {
@@ -242,16 +263,10 @@ struct PatternsRootView: View {
                         .buttonStyle(.plain)
                         .accessibilityLabel("See \(suggestion.category.name) later evidence")
                     }
-                    Text("From your later check-ins over the last 90 days. These are patterns, not causes.").font(.caption2).foregroundStyle(Color.foresightMuted)
+                    Text(HelpSuggestionCopy.footnote).font(.caption2).foregroundStyle(Color.foresightMuted)
                 }
             }
         }
-    }
-
-    private func helpedEmptyMessage(_ report: HelpSuggestionReport) -> String {
-        if report.patternCount > 0 { return "Nothing has a clear “better later” pattern yet. Keep checking in later and this will update." }
-        if let progress = report.progress { return "\(progress.category.name) needs \(progress.needed) more later \(progress.needed == 1 ? "check-in" : "check-ins") before Foresight can say what has tended to help." }
-        return "Tag your logs and check in later. Foresight will point out what has tended to be followed by feeling better."
     }
 
     private func showHelpEvidence(_ category: JournalCategory) {
@@ -303,6 +318,16 @@ struct PatternsRootView: View {
 
     private func insightBackground(_ direction: OutcomeDirection) -> Color { switch direction { case .positive: .foresightSoftSage; case .negative: .foresightNegative.opacity(0.14); case .neutral: .foresightRaised; case .mixed: .foresightWarm } }
     private func insightMarker(_ direction: OutcomeDirection) -> Color { switch direction { case .positive: .foresightSageMid; case .negative: .foresightNegative; case .neutral: .foresightMuted; case .mixed: .foresightWarning } }
+}
+
+private struct HelpReportKey: Equatable {
+    let entryCount: Int
+    let latestEntryEdit: Date?
+    let checkInCount: Int
+    let latestCheckInEdit: Date?
+    let categoryCount: Int
+    let archivedCount: Int
+    let hour: Int
 }
 
 struct MetricBox: View {

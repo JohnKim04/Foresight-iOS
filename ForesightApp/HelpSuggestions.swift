@@ -39,6 +39,18 @@ struct HelpSuggestionReport {
     let progress: InsightProgress?
 }
 
+/// Card copy, kept here so the non-causal wording is covered by tests.
+enum HelpSuggestionCopy {
+    static let title = "Often followed by feeling better"
+    static let footnote = "From your later check-ins over the last 90 days. These are patterns, not causes."
+
+    static func emptyMessage(_ report: HelpSuggestionReport) -> String {
+        if report.patternCount > 0 { return "No category has been followed by feeling better often enough yet. Keep checking in later and this will update." }
+        if let progress = report.progress { return "\(progress.category.name) needs \(progress.needed) more later \(progress.needed == 1 ? "check-in" : "check-ins") before Foresight can show what tends to be followed by feeling better." }
+        return "Tag your logs and check in later. Foresight will show what has tended to be followed by feeling better."
+    }
+}
+
 let helpSuggestionRange: OutcomeTrendRange = .ninety
 let helpSuggestionHourWindow = 2
 
