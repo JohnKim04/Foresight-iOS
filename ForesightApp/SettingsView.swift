@@ -186,6 +186,7 @@ private struct SettingLabel: View {
     let detail: String
     var systemImage: String?
     var tint: Color = .foresightInk
+    @Environment(\.isEnabled) private var isEnabled
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
@@ -200,5 +201,7 @@ private struct SettingLabel: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
+        // A disabled row (Export with nothing to export) should look it.
+        .opacity(isEnabled ? 1 : 0.45)
     }
 }
