@@ -62,7 +62,7 @@ struct HelpSuggestionsTests {
         for causal in ["help", "because", "causes", "makes you", "leads to"] { #expect(!text.contains(causal), "\(causal) in \(text)") }
     }
 
-    @Test("keeps the card copy non-causal in every state")
+    @Test("keeps the card and nudge copy non-causal in every state")
     func cardCopyIsNonCausal() {
         let workout = JournalCategory(name: "Workout")
         let progress = InsightProgress(category: workout, numericCount: 4, needed: 1)
@@ -74,8 +74,25 @@ struct HelpSuggestionsTests {
         #expect(Set(messages).count == 3)
         #expect(messages[1].contains("Workout needs 1 more later check-in "))
         expectNonCausal([HelpSuggestionCopy.title] + messages)
+        expectNonCausal([SuggestionNudgeCopy.title, SuggestionNudgeCopy.body(categoryName: "Workout", betterCount: 4, numericCount: 5, style: .specific), SuggestionNudgeCopy.body(categoryName: "Workout", betterCount: 4, numericCount: 5, style: .generic)])
         // The footnote is the disclaimer itself, so it names "causes" on purpose.
         #expect(HelpSuggestionCopy.footnote.hasSuffix("These are patterns, not causes."))
+    }
+
+    @Test("finds the hour most better-followed logs cluster around")
+    func usualHour() throws {
+        let walk = JournalCategory(name: "Walk")
+        let read = JournalCategory(name: "Read")
+        let day = calendar.startOfDay(for: now)
+        func log(_ category: JournalCategory, daysAgo: Int, hour: Int) -> JournalEntry {
+            let date = calendar.date(byAdding: .hour, value: hour - 24 * daysAgo, to: day)!
+            return JournalEntry(body: category.name, eventAt: date, createdAt: date, updatedAt: date, categories: [category])
+        }
+        let walks = [17, 18, 18, 19, 9].enumerated().map { log(walk, daysAgo: $0.offset + 1, hour: $0.element) }
+        let reads = [7, 12, 16, 20, 23].enumerated().map { log(read, daysAgo: $0.offset + 1, hour: $0.element) }
+        let result = report(walks + reads, answers(walks, [.aLittleBetter]) + answers(reads, [.aLittleBetter]), [walk, read])
+        #expect(try #require(result.suggestions.first { $0.category.id == walk.id }).usualHour == 18)
+        #expect(try #require(result.suggestions.first { $0.category.id == read.id }).usualHour == nil)
     }
 
     @Test("qualifies at exactly 60 percent better but not at 40 percent")

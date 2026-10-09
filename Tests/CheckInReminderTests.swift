@@ -57,8 +57,8 @@ struct CheckInReminderPlanTests {
     func respectsLimit() {
         let sources = (1...80).map { source(in: TimeInterval($0) * 60) }
         let reminders = CheckInReminderPlan.reminders(for: sources.shuffled(), now: now)
-        #expect(reminders.count == 64)
-        #expect(reminders.map(\.checkInID) == sources.prefix(64).map(\.checkInID))
+        #expect(reminders.count == CheckInReminderPlan.pendingLimit)
+        #expect(reminders.map(\.checkInID) == sources.prefix(CheckInReminderPlan.pendingLimit).map(\.checkInID))
     }
 
     @Test("rounds the fire date up to a whole second")

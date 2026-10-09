@@ -40,12 +40,14 @@ enum CheckInReminderPlan {
     static let snoozeActionIdentifier = "CHECK_IN_SNOOZE"
     static let threadIdentifier = "check-ins"
     static let title = "How did this affect you?"
-    /// The one switch for what a reminder says. With it on, the first line of the log shows
-    /// (on the lock screen too, when previews are allowed there); off, the text is generic.
+    /// The one switch for what a reminder, and a suggestion nudge, says. With it on, the first
+    /// line of the log (or the category and its counts) shows, on the lock screen too when
+    /// previews are allowed there; off, the text is generic.
     static let showsLogText = true
     static let genericBody = "A check-in is ready."
-    /// iOS keeps at most 64 pending local notifications per app, so only the soonest are scheduled.
-    static let pendingLimit = 64
+    /// iOS keeps at most 64 pending local notifications per app, so only the soonest are
+    /// scheduled, leaving room for suggestion nudges.
+    static let pendingLimit = 64 - SuggestionNudgePlan.daysAhead
     static let snoozeInterval: TimeInterval = 60 * 60
 
     static func identifier(for checkInID: UUID) -> String { identifierPrefix + checkInID.uuidString }
@@ -280,6 +282,8 @@ struct ReminderResponse: Equatable, Sendable {
 enum ReminderDestination: Equatable {
     case checkIns
     case answer(CheckInTarget)
+    /// A category's later evidence on Patterns, from a tapped suggestion nudge.
+    case evidence(UUID)
 }
 
 /// Turns a tapped or snoozed reminder into app state. The root view consumes `destination`.
@@ -346,8 +350,11 @@ final class CheckInReminderNotificationDelegate: NSObject, UNUserNotificationCen
 
     /// The part of `didReceive` that doesn't need a system response object, so tests can drive it.
     @MainActor func handle(requestIdentifier: String, actionIdentifier: String, body: String) async {
-        guard let reminder = ReminderResponse(requestIdentifier: requestIdentifier, actionIdentifier: actionIdentifier, body: body) else { return }
-        await router().handle(reminder)
+        if let reminder = ReminderResponse(requestIdentifier: requestIdentifier, actionIdentifier: actionIdentifier, body: body) {
+            await router().handle(reminder)
+        } else if let nudge = NudgeResponse(requestIdentifier: requestIdentifier, actionIdentifier: actionIdentifier) {
+            router().handle(nudge)
+        }
     }
 }
 
