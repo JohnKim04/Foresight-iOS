@@ -54,9 +54,6 @@ struct PostLogCheckInView: View {
             .background(Color.foresightCanvas)
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("Done", action: onDone) }
-            }
             .sheet(item: $scheduleTarget, onDismiss: syncChosenLater) { ScheduleCheckInSheet(store: store, target: $0) }
         }
     }
