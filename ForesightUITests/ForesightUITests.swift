@@ -136,6 +136,22 @@ final class ForesightUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Edit log"].waitForExistence(timeout: 3))
     }
 
+    func testPatternsSuggestsWhatHasTendedToHelp() {
+        app.tabBars.buttons["Patterns"].tap()
+        XCTAssertTrue(app.staticTexts["WHAT’S TENDED TO HELP"].firstMatch.waitForExistence(timeout: 3))
+        XCTAssertFalse(app.buttons["See Workout later evidence"].exists)
+        app.tabBars.buttons["Check In"].tap()
+        XCTAssertTrue(app.buttons["Add history"].waitForExistence(timeout: 3))
+        app.buttons["Add history"].tap()
+        app.tabBars.buttons["Patterns"].tap()
+        let suggestion = app.buttons["See Workout later evidence"]
+        XCTAssertTrue(suggestion.waitForExistence(timeout: 3))
+        XCTAssertFalse(app.buttons["See Alcohol later evidence"].exists)
+        suggestion.tap()
+        XCTAssertEqual(app.buttons["Choose category"].value as? String, "Workout")
+        XCTAssertTrue(app.staticTexts["Source logs"].waitForExistence(timeout: 3))
+    }
+
     func testJournalDropdownsSelectAndDismissEachOther() {
         let category = app.buttons["Choose category"]
         let checkIn = app.buttons["Choose check-in filter"]

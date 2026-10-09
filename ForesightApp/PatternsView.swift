@@ -28,6 +28,7 @@ struct PatternsRootView: View {
                                 title: "See what repeats.",
                                 subtitle: "Foresight describes associations in your own logs. It does not claim causes."
                             )
+                            helpedCard
                             ForesightSegmentedPicker(
                                 selection: $mode,
                                 options: PatternsMode.allCases.map { ($0, $0.title) }
@@ -212,6 +213,52 @@ struct PatternsRootView: View {
                 }
             }
         }
+    }
+
+    private var helpedCard: some View {
+        let report = helpSuggestions(entries: store.entries, checkIns: store.checkIns, categories: store.categories)
+        return ForesightCard {
+            VStack(alignment: .leading, spacing: 11) {
+                SectionKicker(text: "What’s tended to help")
+                if report.suggestions.isEmpty {
+                    Text(helpedEmptyMessage(report)).font(.subheadline).foregroundStyle(Color.foresightMuted)
+                } else {
+                    ForEach(report.suggestions) { suggestion in
+                        Button { showHelpEvidence(suggestion.category) } label: {
+                            HStack(alignment: .top, spacing: 10) {
+                                Capsule().fill(Color.foresightSageMid).frame(width: 5, height: 38)
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(suggestion.headline).font(.subheadline).foregroundStyle(Color.foresightInk).multilineTextAlignment(.leading)
+                                    Text(suggestion.evidence).font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.leading)
+                                    if let context = suggestion.context { Text(context).font(.caption).foregroundStyle(Color.foresightSage).multilineTextAlignment(.leading) }
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right").font(.caption.weight(.bold)).foregroundStyle(Color.foresightMuted)
+                            }
+                            .padding(12)
+                            .background(Color.foresightSoftSage, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("See \(suggestion.category.name) later evidence")
+                    }
+                    Text("From your later check-ins over the last 90 days. These are patterns, not causes.").font(.caption2).foregroundStyle(Color.foresightMuted)
+                }
+            }
+        }
+    }
+
+    private func helpedEmptyMessage(_ report: HelpSuggestionReport) -> String {
+        if report.patternCount > 0 { return "Nothing has a clear “better later” pattern yet. Keep checking in later and this will update." }
+        if let progress = report.progress { return "\(progress.category.name) needs \(progress.needed) more later \(progress.needed == 1 ? "check-in" : "check-ins") before Foresight can say what has tended to help." }
+        return "Tag your logs and check in later. Foresight will point out what has tended to be followed by feeling better."
+    }
+
+    private func showHelpEvidence(_ category: JournalCategory) {
+        mode = .outcomes
+        outcomePhase = .delayed
+        outcomeRange = helpSuggestionRange
+        outcomeCategoryID = category.id
     }
 
     private var rankedInsights: some View {
