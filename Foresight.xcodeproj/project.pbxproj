@@ -34,6 +34,9 @@
 		C1380DEBF7916973EFA48D57 /* OutcomeAnalytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B72476742E3B4D6EF3FD38F /* OutcomeAnalytics.swift */; };
 		D95CC3DE4E718CB58E144852 /* JournalStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95D4CAEC6CAE2A2ED5872487 /* JournalStoreTests.swift */; };
 		FE9FD7CA63B2D3C3C643573B /* PatternsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC99037CB2AA40E3E71559CE /* PatternsView.swift */; };
+		0845A3C55719678685F35BFF /* Settings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 014F03E627210915298B8D51 /* Settings.swift */; };
+		02280F2AE248526A2A428A75 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 344231C687A1F4BDC84AE838 /* SettingsView.swift */; };
+		80297EA007138CC5384950CD /* SettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09ABFE5A4897B36EED1B95E1 /* SettingsTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -86,6 +89,9 @@
 		EC99037CB2AA40E3E71559CE /* PatternsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatternsView.swift; sourceTree = "<group>"; };
 		F1390586D1606946E30209DE /* SuggestionNudgeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SuggestionNudgeTests.swift; sourceTree = "<group>"; };
 		F453BABA62D7B5A68F43EC3C /* CheckInReminderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CheckInReminderTests.swift; sourceTree = "<group>"; };
+		014F03E627210915298B8D51 /* Settings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Settings.swift; sourceTree = "<group>"; };
+		344231C687A1F4BDC84AE838 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		09ABFE5A4897B36EED1B95E1 /* SettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -127,6 +133,8 @@
 				3B72476742E3B4D6EF3FD38F /* OutcomeAnalytics.swift */,
 				EC99037CB2AA40E3E71559CE /* PatternsView.swift */,
 				12A952E8743081FB0642B503 /* PostLogCheckInView.swift */,
+				014F03E627210915298B8D51 /* Settings.swift */,
+				344231C687A1F4BDC84AE838 /* SettingsView.swift */,
 				D4301FD2AD81000DD04566C5 /* SuggestionNudges.swift */,
 			);
 			path = ForesightApp;
@@ -170,6 +178,7 @@
 				E64151CF82CC541C2D79BBE9 /* JournalDiscoveryTests.swift */,
 				95D4CAEC6CAE2A2ED5872487 /* JournalStoreTests.swift */,
 				1927C867B272D06942C594C4 /* OutcomeAnalyticsTests.swift */,
+				09ABFE5A4897B36EED1B95E1 /* SettingsTests.swift */,
 				F1390586D1606946E30209DE /* SuggestionNudgeTests.swift */,
 			);
 			path = Tests;
@@ -303,6 +312,8 @@
 				C1380DEBF7916973EFA48D57 /* OutcomeAnalytics.swift in Sources */,
 				FE9FD7CA63B2D3C3C643573B /* PatternsView.swift in Sources */,
 				1CCD41B4BE78A04EF7770FF8 /* PostLogCheckInView.swift in Sources */,
+				0845A3C55719678685F35BFF /* Settings.swift in Sources */,
+				02280F2AE248526A2A428A75 /* SettingsView.swift in Sources */,
 				58F0C9159A9DB16D0CEC9A81 /* SuggestionNudges.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -326,6 +337,7 @@
 				42BB45517EF55617DA2580C8 /* JournalDiscoveryTests.swift in Sources */,
 				D95CC3DE4E718CB58E144852 /* JournalStoreTests.swift in Sources */,
 				7324D957BAAD1456AEFB66F0 /* OutcomeAnalyticsTests.swift in Sources */,
+				80297EA007138CC5384950CD /* SettingsTests.swift in Sources */,
 				293FB060698E8E8D7D359D87 /* SuggestionNudgeTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

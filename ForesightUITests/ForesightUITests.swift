@@ -65,6 +65,31 @@ final class ForesightUITests: XCTestCase {
         app.buttons["Delete"].tap()
     }
 
+    func testSettingsShowsNotificationChoicesAndErasesTheJournal() {
+        app.buttons["New log"].tap()
+        let editor = app.textViews["What happened?"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 3))
+        editor.tap()
+        editor.typeText("A log to erase")
+        saveNewLog()
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "A log to erase")).firstMatch.waitForExistence(timeout: 3))
+
+        app.buttons["Settings"].tap()
+        for title in ["Check-in reminders", "Pattern nudges", "Quiet hours"] {
+            XCTAssertTrue(app.switches.matching(NSPredicate(format: "label BEGINSWITH %@", title)).firstMatch.waitForExistence(timeout: 3), "\(title) toggle is missing")
+        }
+        XCTAssertTrue(app.buttons["settings.export"].exists)
+        let erase = app.buttons["settings.erase"]
+        if !erase.isHittable { app.swipeUp() }
+        erase.tap()
+        let confirm = app.alerts.buttons["Erase"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 3))
+        confirm.tap()
+        XCTAssertTrue(app.staticTexts["Your journal was erased."].waitForExistence(timeout: 3))
+        app.buttons["Done"].tap()
+        XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "A log to erase")).firstMatch.waitForExistence(timeout: 1))
+    }
+
     func testJournalEntryOpensOnlyFromItsCard() {
         app.buttons["New log"].tap()
         let editor = app.textViews["What happened?"]

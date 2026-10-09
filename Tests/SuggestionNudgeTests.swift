@@ -30,7 +30,7 @@ actor FakeNudgeCenter: NudgeNotificationCenter {
 }
 
 final class MemoryNudgeLedger: NudgeLedger {
-    var fireDates: [Date] = []
+    var fireTimes: [DateComponents] = []
 }
 
 private func calendar(_ zone: String) -> Calendar {
@@ -101,11 +101,11 @@ struct SuggestionNudgePlanTests {
         let late = candidate("Late show", hour: 22)
         let early = candidate("Early run", hour: 6)
         #expect(plan([late, early]).isEmpty)
-        #expect(NudgeQuietHours.standard.contains(hour: 23))
-        #expect(NudgeQuietHours.standard.contains(hour: 7))
-        #expect(!NudgeQuietHours.standard.contains(hour: 8))
-        #expect(!NudgeQuietHours.standard.contains(hour: 21))
-        #expect(NudgeQuietHours(start: 1, end: 5).contains(hour: 3))
+        #expect(QuietHours.standard.contains(hour: 23))
+        #expect(QuietHours.standard.contains(hour: 7))
+        #expect(!QuietHours.standard.contains(hour: 8))
+        #expect(!QuietHours.standard.contains(hour: 21))
+        #expect(QuietHours(start: 1, end: 5).contains(hour: 3))
     }
 
     @Test("prefers the strongest pattern but alternates days when there is another")
@@ -271,7 +271,7 @@ struct SuggestionNudgeSchedulerTests {
         subject.scheduler.resync()
         await subject.scheduler.waitForPendingWork()
         #expect(await subject.center.identifiers().isEmpty)
-        #expect(subject.ledger.fireDates.isEmpty)
+        #expect(subject.ledger.fireTimes.isEmpty)
     }
 
     @Test("a preference can turn nudges off without touching check-in reminders")
@@ -317,6 +317,41 @@ struct SuggestionNudgeSchedulerTests {
         #expect(await subject.center.scheduledReminders().allSatisfy { SuggestionNudgePlan.categoryID(fromIdentifier: $0.identifier) == walkID })
     }
 
+    @Test("a nudge that fired early after travelling east still counts toward the one a day")
+    func firedAfterTravellingEastCounts() async throws {
+        // Walks at 18:00 UTC are 14:00 in New York, so today's nudge is planned for 14:00 there.
+        let subject = try makeSubject(setUp: { _, clock in clock.calendar = calendar("America/New_York") })
+        await subject.scheduler.waitForPendingWork()
+        let today = SuggestionNudgePlan.identifier(day: "2024-08-30", categoryID: subject.walk.id)
+        #expect(await subject.center.scheduledReminders().first { $0.identifier == today }?.fireAt == at(hour: 18))
+
+        // In London the floating trigger fires at 14:00 local (13:00 UTC), before the instant
+        // that was planned. It was swiped away, so nothing is pending or delivered for today.
+        subject.clock.calendar = calendar("Europe/London")
+        subject.clock.now = at(hour: 14)
+        await subject.center.removeScheduled([today])
+        subject.scheduler.resync()
+        await subject.scheduler.waitForPendingWork()
+        let london = calendar("Europe/London")
+        let dates = await fireDates(subject.center)
+        #expect(dates.count == 2)
+        #expect(dates.allSatisfy { !london.isDate($0, inSameDayAs: subject.clock.now) })
+    }
+
+    @Test("the stored ledger keeps wall-clock times")
+    func ledgerRoundTrip() throws {
+        let suite = "SuggestionNudgeTests.ledger"
+        UserDefaults.standard.removePersistentDomain(forName: suite)
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
+        defaults.set([1.0], forKey: "suggestionNudgeFireDates")
+        let ledger = UserDefaultsNudgeLedger(defaults: defaults)
+        let time = DateComponents(year: 2024, month: 8, day: 30, hour: 18, minute: 0, second: 0)
+        ledger.fireTimes = [time]
+        #expect(UserDefaultsNudgeLedger(defaults: defaults).fireTimes == [time])
+        #expect(defaults.object(forKey: "suggestionNudgeFireDates") == nil)
+    }
+
     @Test("a nudge already delivered today counts toward the one a day, even without a ledger entry")
     func deliveredTodayCounts() async throws {
         let subject = try makeSubject(setUp: { _, _ in })
@@ -324,7 +359,7 @@ struct SuggestionNudgeSchedulerTests {
         let today = SuggestionNudgePlan.identifier(day: "2024-08-30", categoryID: subject.walk.id)
         await subject.center.removeScheduled(await subject.center.identifiers())
         await subject.center.setDelivered([today])
-        subject.ledger.fireDates = []
+        subject.ledger.fireTimes = []
         subject.scheduler.resync()
         await subject.scheduler.waitForPendingWork()
         let dates = await fireDates(subject.center)
