@@ -24,9 +24,9 @@ fi
 cd "$project_root"
 xcodegen generate --spec project.yml
 
-# CI can pin a simulator with SIMULATOR_UDID, skip the final install/launch with
-# VERIFY_SKIP_LAUNCH=1, and keep test results with RESULT_BUNDLE_PATH.
-simulator_udid="${SIMULATOR_UDID:-}"
+# CI can pin a simulator with VERIFY_SIMULATOR_UDID, skip the final install/launch
+# with VERIFY_SKIP_LAUNCH=1, and keep test results with VERIFY_RESULT_BUNDLE_PATH.
+simulator_udid="${VERIFY_SIMULATOR_UDID:-}"
 if [[ -z "$simulator_udid" ]]; then
   devices_json="$(xcrun simctl list devices available --json)"
   simulator_udid="$(print -r -- "$devices_json" | jq -r '
@@ -58,9 +58,9 @@ xcodebuild build \
   CODE_SIGNING_REQUIRED=NO
 
 result_bundle_args=()
-if [[ -n "${RESULT_BUNDLE_PATH:-}" ]]; then
-  rm -rf "$RESULT_BUNDLE_PATH"
-  result_bundle_args=(-resultBundlePath "$RESULT_BUNDLE_PATH")
+if [[ -n "${VERIFY_RESULT_BUNDLE_PATH:-}" ]]; then
+  rm -rf "$VERIFY_RESULT_BUNDLE_PATH"
+  result_bundle_args=(-resultBundlePath "$VERIFY_RESULT_BUNDLE_PATH")
 fi
 
 xcodebuild test \
@@ -72,7 +72,7 @@ xcodebuild test \
   CODE_SIGNING_ALLOWED=NO \
   CODE_SIGNING_REQUIRED=NO
 
-if [[ -n "${VERIFY_SKIP_LAUNCH:-}" ]]; then
+if [[ "${VERIFY_SKIP_LAUNCH:-}" == "1" ]]; then
   print "Build and tests passed on $simulator_udid"
   exit 0
 fi
