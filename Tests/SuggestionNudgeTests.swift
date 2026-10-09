@@ -375,6 +375,8 @@ struct SuggestionNudgeSchedulerTests {
         #expect(!subject.ledger.fireTimes.isEmpty)
         let reminder = CheckInReminderPlan.identifier(for: UUID())
         await subject.center.setDelivered([SuggestionNudgePlan.identifier(day: "2024-08-30", categoryID: subject.walk.id), reminder])
+        // A nudge that already went out at 08:00 today, which an ordinary resync would keep.
+        subject.ledger.fireTimes.append(DateComponents(year: 2024, month: 8, day: 30, hour: 8, minute: 0, second: 0))
         subject.store.resetStore()
         await subject.scheduler.waitForPendingWork()
         #expect(await subject.center.identifiers().isEmpty)

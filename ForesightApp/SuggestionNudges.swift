@@ -260,11 +260,12 @@ final class SuggestionNudgeScheduler {
     /// After the journal is erased: forget which nudges went out and clear any still in
     /// Notification Center, since their categories no longer exist.
     func journalWasReset() {
-        ledger.fireTimes = []
         let previous = syncTask
         let center = self.center
         syncTask = Task {
+            // Clear after any sync already running, which would otherwise write old entries back.
             await previous?.value
+            ledger.fireTimes = []
             let delivered = await center.deliveredIdentifiers()
             await center.removeDelivered(delivered.filter { $0.hasPrefix(SuggestionNudgePlan.identifierPrefix) })
         }
