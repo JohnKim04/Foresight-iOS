@@ -304,6 +304,9 @@ final class ForesightUITests: XCTestCase {
         // Sample history has two later check-ins already past due.
         // The tab bar exposes the badge as the button's value, e.g. "2 items".
         let badged = NSPredicate(format: "value MATCHES %@", "^2( items?)?$")
+        sleep(3)
+        print("CIDEBUG value=<\(String(describing: tab.value))> label=<\(tab.label)>")
+        print("CIDEBUG tabbar=\(app.tabBars.firstMatch.debugDescription)")
         expectation(for: badged, evaluatedWith: tab)
         waitForExpectations(timeout: 3)
     }
