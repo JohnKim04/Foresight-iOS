@@ -93,16 +93,18 @@ struct ForesightRootView: View {
     @State private var tab: AppTab = .journal
 
     var body: some View {
-        TabView(selection: $tab) {
-            JournalRootView(store: store)
-                .tabItem { Label("Journal", systemImage: "book.closed") }
-                .tag(AppTab.journal)
-            CheckInRootView(store: store)
-                .tabItem { Label("Check In", systemImage: "checkmark.circle") }
-                .tag(AppTab.checkIns)
-            PatternsRootView(store: store)
-                .tabItem { Label("Patterns", systemImage: "chart.xyaxis.line") }
-                .tag(AppTab.patterns)
+        ForesightDropdownHost {
+            TabView(selection: $tab) {
+                JournalRootView(store: store)
+                    .tabItem { Label("Journal", systemImage: "book.closed") }
+                    .tag(AppTab.journal)
+                CheckInRootView(store: store)
+                    .tabItem { Label("Check In", systemImage: "checkmark.circle") }
+                    .tag(AppTab.checkIns)
+                PatternsRootView(store: store)
+                    .tabItem { Label("Patterns", systemImage: "chart.xyaxis.line") }
+                    .tag(AppTab.patterns)
+            }
         }
         .background(Color.foresightCanvas)
     }

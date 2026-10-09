@@ -60,11 +60,14 @@ struct PatternsRootView: View {
                     SectionKicker(text: "Activity")
                     Text("Choose what to compare").font(ForesightType.sectionTitle).foregroundStyle(Color.foresightInk)
                     Text("The chart and totals below follow this category.").font(.subheadline).foregroundStyle(Color.foresightMuted)
-                    Menu { activityCategoryMenu } label: {
-                        PatternCategoryMenuLabel(value: activityCategory?.name ?? "All logs")
-                    }
-                    .accessibilityLabel("Choose category")
-                    .accessibilityValue(activityCategory?.name ?? "All logs")
+                    ForesightDropdown(
+                        id: "patterns.activity.category",
+                        selection: $activityCategoryID,
+                        options: categoryOptions(firstTitle: "All logs", firstID: "all-logs"),
+                        style: .fullWidth(systemImage: "tag.fill", label: "Category"),
+                        accessibilityLabel: "Choose category",
+                        accessibilityValue: activityCategory?.name ?? "All logs"
+                    )
                     ForesightSegmentedPicker(
                         selection: $activityGranularity,
                         options: TrendGranularity.allCases.map { ($0, $0.title) }
@@ -117,11 +120,6 @@ struct PatternsRootView: View {
         }
     }
 
-    @ViewBuilder private var activityCategoryMenu: some View {
-        Button("All logs") { activityCategoryID = nil }
-        ForEach(store.categories, id: \.id) { category in Button(category.name + (category.isArchived ? " (archived)" : "")) { activityCategoryID = category.id } }
-    }
-
     private var outcomesView: some View {
         VStack(alignment: .leading, spacing: 16) {
             ForesightCard {
@@ -129,11 +127,15 @@ struct PatternsRootView: View {
                     SectionKicker(text: "Outcome evidence")
                     Text("Choose what to examine").font(ForesightType.sectionTitle).foregroundStyle(Color.foresightInk)
                     Text("Every card below follows the category selected here.").font(.subheadline).foregroundStyle(Color.foresightMuted)
-                    Menu { outcomeCategoryMenu } label: {
-                        PatternCategoryMenuLabel(value: outcomeCategory?.name ?? "Select a category")
-                    }
-                    .accessibilityLabel("Choose category")
-                    .accessibilityValue(outcomeCategory?.name ?? "No category selected")
+                    ForesightDropdown(
+                        id: "patterns.outcomes.category",
+                        selection: $outcomeCategoryID,
+                        options: categoryOptions(firstTitle: "Clear category", firstID: "clear-category"),
+                        style: .fullWidth(systemImage: "tag.fill", label: "Category"),
+                        title: outcomeCategory?.name ?? "Select a category",
+                        accessibilityLabel: "Choose category",
+                        accessibilityValue: outcomeCategory?.name ?? "No category selected"
+                    )
                     SectionKicker(text: "Time window")
                     ForesightSegmentedPicker(
                         selection: $outcomeRange,
@@ -153,9 +155,11 @@ struct PatternsRootView: View {
         }
     }
 
-    @ViewBuilder private var outcomeCategoryMenu: some View {
-        Button("Clear category") { outcomeCategoryID = nil }
-        ForEach(store.categories, id: \.id) { category in Button(category.name + (category.isArchived ? " (archived)" : "")) { outcomeCategoryID = category.id } }
+    private func categoryOptions(firstTitle: String, firstID: String) -> [ForesightDropdownOption<UUID?, String>] {
+        [ForesightDropdownOption(id: firstID, value: nil, title: firstTitle)]
+            + store.categories.map {
+                ForesightDropdownOption(id: "category-\($0.id.uuidString)", value: Optional($0.id), title: $0.name, badge: $0.isArchived ? "Archived" : nil)
+            }
     }
 
     private func outcomeDetail(_ category: JournalCategory) -> some View {
@@ -252,39 +256,6 @@ struct PatternsRootView: View {
 
     private func insightBackground(_ direction: OutcomeDirection) -> Color { switch direction { case .positive: .foresightSoftSage; case .negative: .foresightNegative.opacity(0.14); case .neutral: .foresightRaised; case .mixed: .foresightWarm } }
     private func insightMarker(_ direction: OutcomeDirection) -> Color { switch direction { case .positive: .foresightSageMid; case .negative: .foresightNegative; case .neutral: .foresightMuted; case .mixed: .foresightWarning } }
-}
-
-private struct PatternCategoryMenuLabel: View {
-    let value: String
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "tag.fill")
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(Color.foresightSage)
-                .frame(width: 34, height: 34)
-                .background(Color.foresightSoftSage, in: Circle())
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Category")
-                    .font(.caption2.weight(.bold))
-                    .foregroundStyle(Color.foresightMuted)
-                    .textCase(.uppercase)
-                    .tracking(0.7)
-                Text(value)
-                    .font(ForesightType.control)
-                    .foregroundStyle(Color.foresightInk)
-                    .lineLimit(1)
-            }
-            Spacer()
-            Image(systemName: "chevron.down")
-                .font(.caption.weight(.bold))
-                .foregroundStyle(Color.foresightSage)
-        }
-        .padding(.horizontal, 14)
-        .frame(maxWidth: .infinity, minHeight: 58)
-        .background(Color.foresightRaised, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay { RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.foresightLine, lineWidth: 1) }
-    }
 }
 
 struct MetricBox: View {
