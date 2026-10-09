@@ -16,10 +16,12 @@
 		42BB45517EF55617DA2580C8 /* JournalDiscoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E64151CF82CC541C2D79BBE9 /* JournalDiscoveryTests.swift */; };
 		4F9F3836B0D9658BFC9B5A68 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 773F803C565E11B20DB24D8C /* Models.swift */; };
 		502029B44D763EE6269951FC /* ForesightUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 197FC228C457D92DA90C14ED /* ForesightUITests.swift */; };
+		524B69852DF6C75A7505B5FD /* HelpSuggestionsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B737C2F3D390AD9744B2D88 /* HelpSuggestionsTests.swift */; };
 		53630CC794457EC16461C0FD /* JournalStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6479EDA6896C90F2ADFA8FEF /* JournalStore.swift */; };
 		7324D957BAAD1456AEFB66F0 /* OutcomeAnalyticsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1927C867B272D06942C594C4 /* OutcomeAnalyticsTests.swift */; };
 		96CB9BFD4C2145366DD40C85 /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10B87F469D44416920F26262 /* DesignSystem.swift */; };
 		99BA436717EBF14D3DDF9609 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 734C8C601F310EDE1716E584 /* Assets.xcassets */; };
+		AA2D3B8E0D5DEC6015FE26D3 /* HelpSuggestions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03E97A5FD61A0E57992E1B61 /* HelpSuggestions.swift */; };
 		B420662DC767719F855F1E48 /* ForesightSchemaTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7C928A6200DE13C4CC0E003 /* ForesightSchemaTests.swift */; };
 		C1380DEBF7916973EFA48D57 /* OutcomeAnalytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B72476742E3B4D6EF3FD38F /* OutcomeAnalytics.swift */; };
 		D95CC3DE4E718CB58E144852 /* JournalStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95D4CAEC6CAE2A2ED5872487 /* JournalStoreTests.swift */; };
@@ -44,6 +46,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		03E97A5FD61A0E57992E1B61 /* HelpSuggestions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelpSuggestions.swift; sourceTree = "<group>"; };
 		10B87F469D44416920F26262 /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
 		1927C867B272D06942C594C4 /* OutcomeAnalyticsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutcomeAnalyticsTests.swift; sourceTree = "<group>"; };
 		197FC228C457D92DA90C14ED /* ForesightUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForesightUITests.swift; sourceTree = "<group>"; };
@@ -56,6 +59,7 @@
 		5733647EA151C99FF90749AD /* ForesightSchema.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForesightSchema.swift; sourceTree = "<group>"; };
 		6337D1B6270E2FE484A0FCAF /* Foresight.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Foresight.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		6479EDA6896C90F2ADFA8FEF /* JournalStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalStore.swift; sourceTree = "<group>"; };
+		6B737C2F3D390AD9744B2D88 /* HelpSuggestionsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelpSuggestionsTests.swift; sourceTree = "<group>"; };
 		6E8212BD570E34285056EE8D /* JournalEditorAndDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalEditorAndDetail.swift; sourceTree = "<group>"; };
 		734C8C601F310EDE1716E584 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		773F803C565E11B20DB24D8C /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
@@ -94,6 +98,7 @@
 				10B87F469D44416920F26262 /* DesignSystem.swift */,
 				BB0E4E2919FCA342C2E18F40 /* ForesightApp.swift */,
 				5733647EA151C99FF90749AD /* ForesightSchema.swift */,
+				03E97A5FD61A0E57992E1B61 /* HelpSuggestions.swift */,
 				259E8AED706D0DBCB7A82482 /* Info.plist */,
 				2B2896D2DF2121C4B3BEE737 /* JournalAnalytics.swift */,
 				E93F38D9D00B3B76F24DE3ED /* JournalAndCheckInViews.swift */,
@@ -138,6 +143,7 @@
 			isa = PBXGroup;
 			children = (
 				A7C928A6200DE13C4CC0E003 /* ForesightSchemaTests.swift */,
+				6B737C2F3D390AD9744B2D88 /* HelpSuggestionsTests.swift */,
 				E64151CF82CC541C2D79BBE9 /* JournalDiscoveryTests.swift */,
 				95D4CAEC6CAE2A2ED5872487 /* JournalStoreTests.swift */,
 				1927C867B272D06942C594C4 /* OutcomeAnalyticsTests.swift */,
@@ -261,6 +267,7 @@
 				96CB9BFD4C2145366DD40C85 /* DesignSystem.swift in Sources */,
 				09AFF20B9C7DAD9F0459333B /* ForesightApp.swift in Sources */,
 				36B4F500C34F1A86187290E1 /* ForesightSchema.swift in Sources */,
+				AA2D3B8E0D5DEC6015FE26D3 /* HelpSuggestions.swift in Sources */,
 				213A3CE529A7B12ECC4A2DC6 /* JournalAnalytics.swift in Sources */,
 				3A245569CBA697582E73B235 /* JournalAndCheckInViews.swift in Sources */,
 				3E68212BC00D986B84A261CF /* JournalEditorAndDetail.swift in Sources */,
@@ -284,6 +291,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				B420662DC767719F855F1E48 /* ForesightSchemaTests.swift in Sources */,
+				524B69852DF6C75A7505B5FD /* HelpSuggestionsTests.swift in Sources */,
 				42BB45517EF55617DA2580C8 /* JournalDiscoveryTests.swift in Sources */,
 				D95CC3DE4E718CB58E144852 /* JournalStoreTests.swift in Sources */,
 				7324D957BAAD1456AEFB66F0 /* OutcomeAnalyticsTests.swift in Sources */,
