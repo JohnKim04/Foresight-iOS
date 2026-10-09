@@ -100,17 +100,16 @@ struct ForesightRootView: View {
     var body: some View {
         ForesightDropdownHost {
             TabView(selection: $tab) {
-                Tab("Journal", systemImage: "book.closed", value: AppTab.journal) {
-                    JournalRootView(store: store)
-                }
-                // A badge on the Tab itself (not its content) is what iOS 26 exposes on the tab bar button.
-                Tab("Check In", systemImage: "checkmark.circle", value: AppTab.checkIns) {
-                    CheckInRootView(store: store)
-                }
-                .badge(dueCount)
-                Tab("Patterns", systemImage: "chart.xyaxis.line", value: AppTab.patterns) {
-                    PatternsRootView(store: store)
-                }
+                JournalRootView(store: store)
+                    .tabItem { Label("Journal", systemImage: "book.closed") }
+                    .tag(AppTab.journal)
+                CheckInRootView(store: store)
+                    .tabItem { Label("Check In", systemImage: "checkmark.circle") }
+                    .badge(dueCount)
+                    .tag(AppTab.checkIns)
+                PatternsRootView(store: store)
+                    .tabItem { Label("Patterns", systemImage: "chart.xyaxis.line") }
+                    .tag(AppTab.patterns)
             }
         }
         .background(Color.foresightCanvas)
