@@ -105,6 +105,22 @@ struct ReminderPreferenceTests {
         #expect(await center.pending[CheckInReminderPlan.identifier(for: checkIn.id)]?.fireAt == utcDate(hour: 15))
     }
 
+    @Test("turning reminders off also clears delivered ones, and a snooze does nothing")
+    func offClearsDelivered() async throws {
+        let settings = Settings()
+        let (store, scheduler, center) = try makeSubject(settings: settings)
+        let checkIn = try schedule(store, at: utcDate(hour: 15))
+        let identifier = CheckInReminderPlan.identifier(for: checkIn.id)
+        let nudge = SuggestionNudgePlan.identifier(day: "2024-08-30", categoryID: UUID())
+        await center.setDelivered([identifier, nudge])
+        settings.enabled = false
+        scheduler.resync()
+        await scheduler.waitForPendingWork()
+        #expect(await center.delivered == [nudge])
+        await scheduler.snoozeWithoutStore(checkInID: checkIn.id, body: "Stayed up late")
+        #expect(await center.pending.isEmpty)
+    }
+
     @Test("changing quiet hours moves a scheduled reminder")
     func followsQuietHours() async throws {
         let settings = Settings()

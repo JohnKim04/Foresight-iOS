@@ -73,7 +73,7 @@ struct SettingsView: View {
                 Button("Erase", role: .destructive, action: erase)
                 Button("Cancel", role: .cancel) { }
             } message: {
-                Text("This deletes every log, check-in and category on this iPhone and can't be undone. Export first if you want a copy.")
+                Text("This deletes every log, check-in and category you added on this device and can't be undone. The starter categories come back. Export first if you want a copy.")
             }
         }
     }
@@ -122,14 +122,14 @@ struct SettingsView: View {
 
     private var dataSection: some View {
         Section {
-            let export = export
-            ShareLink(item: export, preview: SharePreview("Foresight journal")) {
-                SettingLabel(title: "Export journal", detail: "\(export.entries.count) \(export.entries.count == 1 ? "log" : "logs") and \(export.checkInCount) \(export.checkInCount == 1 ? "check-in" : "check-ins") as a JSON file.", systemImage: "square.and.arrow.up")
+            let current = export
+            ShareLink(item: current, preview: SharePreview("Foresight journal")) {
+                SettingLabel(title: "Export journal", detail: "\(current.entries.count) \(current.entries.count == 1 ? "log" : "logs") and \(current.checkInCount) \(current.checkInCount == 1 ? "check-in" : "check-ins") as a JSON file.", systemImage: "square.and.arrow.up")
             }
-            .disabled(export.entries.isEmpty)
+            .disabled(current.entries.isEmpty)
             .accessibilityIdentifier("settings.export")
             Button(role: .destructive) { confirmErase = true } label: {
-                SettingLabel(title: "Erase journal", detail: "Delete every log, check-in and category, and start over.", systemImage: "trash", tint: .red)
+                SettingLabel(title: "Erase journal", detail: "Delete every log, check-in and category you added, and start over with the starter categories.", systemImage: "trash", tint: .red)
             }
             .accessibilityIdentifier("settings.erase")
             if let message {
@@ -142,7 +142,7 @@ struct SettingsView: View {
 
     private var privacySection: some View {
         Section {
-            Text("Your journal stays on this iPhone. Foresight has no account and sends nothing anywhere; an export goes only where you share it.")
+            Text("Your journal stays on this device. Foresight has no account and sends nothing anywhere; an export goes only where you share it.")
                 .font(.subheadline)
                 .foregroundStyle(Color.foresightMuted)
             LabeledContent("Version", value: Self.version)

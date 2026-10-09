@@ -269,6 +269,7 @@ final class CheckInReminderScheduler {
     /// notification's own text so the nudge isn't lost. The next reconcile, which only runs
     /// once a store is attached, takes over from there.
     func snoozeWithoutStore(checkInID: UUID, body: String) async {
+        guard isEnabled() else { return }
         let fireAt = CheckInReminderPlan.fireDate(for: now().addingTimeInterval(CheckInReminderPlan.snoozeInterval), quietHours: quietHours(), calendar: calendar())
         let reminder = CheckInReminder(identifier: CheckInReminderPlan.identifier(for: checkInID), checkInID: checkInID, fireAt: fireAt, title: CheckInReminderPlan.title, body: body)
         try? await center.add(reminder)
@@ -277,7 +278,9 @@ final class CheckInReminderScheduler {
     private func reconcile(_ sources: [ReminderSource]) async {
         authorization = await center.authorization()
         let delivered = await center.deliveredIdentifiers()
-        await center.removeDelivered(CheckInReminderPlan.staleDelivered(delivered, pendingCheckInIDs: Set(sources.map(\.checkInID))))
+        // With reminders turned off, delivered ones go too, as nudges do.
+        let pending = isEnabled() ? Set(sources.map(\.checkInID)) : []
+        await center.removeDelivered(CheckInReminderPlan.staleDelivered(delivered, pendingCheckInIDs: pending))
         let desired = authorization == .allowed && isEnabled()
             ? CheckInReminderPlan.reminders(for: sources, now: now(), quietHours: quietHours(), calendar: calendar())
             : []

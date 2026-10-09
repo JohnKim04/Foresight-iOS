@@ -148,14 +148,20 @@ protocol NudgeLedger: AnyObject {
 final class UserDefaultsNudgeLedger: NudgeLedger {
     private let defaults: UserDefaults
     private let key = "suggestionNudgeWallClockTimes"
-    /// The earlier format stored instants; it only ever covered the last two days, so it is dropped.
+    /// The earlier format stored instants. It is read once, converted, and then removed.
     private let legacyKey = "suggestionNudgeFireDates"
 
     init(defaults: UserDefaults = .standard) { self.defaults = defaults }
 
     var fireTimes: [DateComponents] {
         get {
-            (defaults.array(forKey: key) as? [[Int]] ?? []).compactMap { parts in
+            // Upgrade day: read the old instants as wall-clock times here, so a nudge that
+            // already went out today still counts.
+            if defaults.object(forKey: key) == nil, let legacy = defaults.array(forKey: legacyKey) as? [Double] {
+                let calendar = Calendar.autoupdatingCurrent
+                return legacy.map { calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: Date(timeIntervalSinceReferenceDate: $0)) }
+            }
+            return (defaults.array(forKey: key) as? [[Int]] ?? []).compactMap { parts in
                 guard parts.count == 6 else { return nil }
                 return DateComponents(year: parts[0], month: parts[1], day: parts[2], hour: parts[3], minute: parts[4], second: parts[5])
             }
@@ -224,6 +230,7 @@ final class SuggestionNudgeScheduler {
     func attach(to store: JournalStore) {
         self.store = store
         store.onJournalChanged = { [weak self] _ in self?.resync() }
+        store.onReset = { [weak self] in self?.journalWasReset() }
         resync()
     }
 
@@ -248,6 +255,20 @@ final class SuggestionNudgeScheduler {
 
     func waitForPendingWork() async {
         await syncTask?.value
+    }
+
+    /// After the journal is erased: forget which nudges went out and clear any still in
+    /// Notification Center, since their categories no longer exist.
+    func journalWasReset() {
+        ledger.fireTimes = []
+        let previous = syncTask
+        let center = self.center
+        syncTask = Task {
+            await previous?.value
+            let delivered = await center.deliveredIdentifiers()
+            await center.removeDelivered(delivered.filter { $0.hasPrefix(SuggestionNudgePlan.identifierPrefix) })
+        }
+        resync()
     }
 
     private func reconcile(_ candidates: [NudgeCandidate], now: Date, calendar: Calendar, enabled: Bool) async {

@@ -108,6 +108,17 @@ struct SuggestionNudgePlanTests {
         #expect(QuietHours(start: 1, end: 5).contains(hour: 3))
     }
 
+    @Test("respects an edited quiet-hours window that doesn't cross midnight")
+    func daytimeQuietHours() {
+        let walk = candidate("Walk", hour: 18)
+        let read = candidate("Read", hour: 20)
+        let afternoon = QuietHours(start: 17, end: 19)
+        let nudges = SuggestionNudgePlan.nudges(for: [walk, read], now: morning, calendar: utc, quietHours: afternoon, usedToday: false)
+        #expect(nudges.count == SuggestionNudgePlan.daysAhead)
+        #expect(nudges.allSatisfy { $0.categoryID == read.categoryID })
+        #expect(SuggestionNudgePlan.nudges(for: [walk, read], now: morning, calendar: utc, quietHours: .off, usedToday: false).contains { $0.categoryID == walk.categoryID })
+    }
+
     @Test("prefers the strongest pattern but alternates days when there is another")
     func alternates() {
         let walk = candidate("Walk", hour: 18, strength: 3)
@@ -338,18 +349,37 @@ struct SuggestionNudgeSchedulerTests {
         #expect(dates.allSatisfy { !london.isDate($0, inSameDayAs: subject.clock.now) })
     }
 
-    @Test("the stored ledger keeps wall-clock times")
+    @Test("the stored ledger keeps wall-clock times, and upgrades the old instants")
     func ledgerRoundTrip() throws {
         let suite = "SuggestionNudgeTests.ledger"
         UserDefaults.standard.removePersistentDomain(forName: suite)
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { UserDefaults.standard.removePersistentDomain(forName: suite) }
-        defaults.set([1.0], forKey: "suggestionNudgeFireDates")
+        let instant = Date(timeIntervalSinceReferenceDate: 800_000_000)
+        defaults.set([instant.timeIntervalSinceReferenceDate], forKey: "suggestionNudgeFireDates")
         let ledger = UserDefaultsNudgeLedger(defaults: defaults)
+        let upgraded = try #require(ledger.fireTimes.first)
+        #expect(Calendar.autoupdatingCurrent.date(from: upgraded) == instant)
+
         let time = DateComponents(year: 2024, month: 8, day: 30, hour: 18, minute: 0, second: 0)
         ledger.fireTimes = [time]
         #expect(UserDefaultsNudgeLedger(defaults: defaults).fireTimes == [time])
         #expect(defaults.object(forKey: "suggestionNudgeFireDates") == nil)
+    }
+
+    @Test("erasing the journal clears scheduled and delivered nudges and the ledger")
+    func eraseClearsNudges() async throws {
+        let subject = try makeSubject()
+        await subject.scheduler.waitForPendingWork()
+        #expect(await subject.center.identifiers().count == 3)
+        #expect(!subject.ledger.fireTimes.isEmpty)
+        let reminder = CheckInReminderPlan.identifier(for: UUID())
+        await subject.center.setDelivered([SuggestionNudgePlan.identifier(day: "2024-08-30", categoryID: subject.walk.id), reminder])
+        subject.store.resetStore()
+        await subject.scheduler.waitForPendingWork()
+        #expect(await subject.center.identifiers().isEmpty)
+        #expect(await subject.center.delivered == [reminder])
+        #expect(subject.ledger.fireTimes.isEmpty)
     }
 
     @Test("a nudge already delivered today counts toward the one a day, even without a ledger entry")
