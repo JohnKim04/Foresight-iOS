@@ -2,6 +2,7 @@ import Foundation
 import Observation
 import SwiftData
 import SwiftUI
+import UIKit
 
 @main
 struct ForesightApp: App {
@@ -142,15 +143,31 @@ struct ForesightRootView: View {
             // Catches permission changed in Settings and reminders past the 64-request limit.
             reminders.resync()
         }
-        .onChange(of: router.destination, initial: true) { _, destination in
-            guard let destination else { return }
-            tab = .checkIns
-            if case .answer(let target) = destination { checkInAnswerRequest = target }
-            router.destination = nil
+        .task(id: router.destination) {
+            // A reminder tap waits until nothing is presented (onboarding, the editor, any
+            // sheet), so it never switches tabs under a modal or replaces unsaved work.
+            while let destination = router.destination, !Task.isCancelled {
+                if hasCompletedOnboarding && !Self.isPresentingModal() {
+                    tab = .checkIns
+                    if case .answer(let target) = destination { checkInAnswerRequest = target }
+                    router.destination = nil
+                    return
+                }
+                try? await Task.sleep(for: .milliseconds(400))
+            }
         }
         .fullScreenCover(isPresented: Binding(get: { !hasCompletedOnboarding }, set: { if !$0 { hasCompletedOnboarding = true } })) {
             OnboardingView { hasCompletedOnboarding = true }
         }
+    }
+}
+
+extension ForesightRootView {
+    static func isPresentingModal() -> Bool {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .contains { $0.isKeyWindow && $0.rootViewController?.presentedViewController != nil }
     }
 }
 

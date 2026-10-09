@@ -40,6 +40,10 @@ enum CheckInReminderPlan {
     static let snoozeActionIdentifier = "CHECK_IN_SNOOZE"
     static let threadIdentifier = "check-ins"
     static let title = "How did this affect you?"
+    /// The one switch for what a reminder says. With it on, the first line of the log shows
+    /// (on the lock screen too, when previews are allowed there); off, the text is generic.
+    static let showsLogText = true
+    static let genericBody = "A check-in is ready."
     /// iOS keeps at most 64 pending local notifications per app, so only the soonest are scheduled.
     static let pendingLimit = 64
     static let snoozeInterval: TimeInterval = 60 * 60
@@ -53,7 +57,8 @@ enum CheckInReminderPlan {
 
     static func sources(from checkIns: [OutcomeCheckIn]) -> [ReminderSource] {
         checkIns.compactMap { checkIn in
-            guard checkIn.phase == .delayed, checkIn.status == .pending, let dueAt = checkIn.dueAt, let entry = checkIn.entry else { return nil }
+            // Sample history is for looking around in Debug builds; it should never buzz a phone.
+            guard checkIn.phase == .delayed, checkIn.status == .pending, !checkIn.isFixture, let dueAt = checkIn.dueAt, let entry = checkIn.entry else { return nil }
             return ReminderSource(checkInID: checkIn.id, dueAt: dueAt, entryBody: entry.body)
         }
     }
@@ -73,7 +78,8 @@ enum CheckInReminderPlan {
         Date(timeIntervalSinceReferenceDate: dueAt.timeIntervalSinceReferenceDate.rounded(.up))
     }
 
-    static func body(for entryBody: String) -> String {
+    static func body(for entryBody: String, showsLogText: Bool = showsLogText) -> String {
+        guard showsLogText else { return genericBody }
         let firstLine = entryBody.split(whereSeparator: \.isNewline).first.map(String.init) ?? entryBody
         let line = firstLine.trimmingCharacters(in: .whitespaces)
         guard line.count > 80 else { return line }
@@ -229,6 +235,15 @@ final class CheckInReminderScheduler {
         await syncTask?.value
     }
 
+    /// Snooze for when the journal can't be read: re-post the reminder an hour out from the
+    /// notification's own text so the nudge isn't lost. The next reconcile, which only runs
+    /// once a store is attached, takes over from there.
+    func snoozeWithoutStore(checkInID: UUID, body: String) async {
+        let fireAt = CheckInReminderPlan.fireDate(for: now().addingTimeInterval(CheckInReminderPlan.snoozeInterval))
+        let reminder = CheckInReminder(identifier: CheckInReminderPlan.identifier(for: checkInID), checkInID: checkInID, fireAt: fireAt, title: CheckInReminderPlan.title, body: body)
+        try? await center.add(reminder)
+    }
+
     private func reconcile(_ sources: [ReminderSource]) async {
         authorization = await center.authorization()
         let delivered = await center.deliveredIdentifiers()
@@ -247,8 +262,10 @@ struct ReminderResponse: Equatable, Sendable {
 
     let checkInID: UUID
     let action: Action
+    /// The delivered notification's text, kept so a snooze can re-post it without the store.
+    let body: String
 
-    init?(requestIdentifier: String, actionIdentifier: String) {
+    init?(requestIdentifier: String, actionIdentifier: String, body: String = "") {
         guard let checkInID = CheckInReminderPlan.checkInID(fromIdentifier: requestIdentifier) else { return nil }
         switch actionIdentifier {
         case UNNotificationDefaultActionIdentifier: action = .open
@@ -256,6 +273,7 @@ struct ReminderResponse: Equatable, Sendable {
         default: return nil
         }
         self.checkInID = checkInID
+        self.body = body
     }
 }
 
@@ -288,7 +306,11 @@ final class CheckInReminderRouter {
                 destination = .checkIns
             }
         case .snooze:
-            guard let store, let checkIn, checkIn.status == .pending else { return }
+            guard let store else {
+                await reminders.snoozeWithoutStore(checkInID: response.checkInID, body: response.body.isEmpty ? CheckInReminderPlan.genericBody : response.body)
+                return
+            }
+            guard let checkIn, checkIn.status == .pending else { return }
             try? store.reschedule(checkIn, to: now().addingTimeInterval(CheckInReminderPlan.snoozeInterval))
             // A snooze can run with the app in the background; finish scheduling before returning.
             await reminders.waitForPendingWork()
@@ -297,19 +319,27 @@ final class CheckInReminderRouter {
 }
 
 final class CheckInReminderNotificationDelegate: NSObject, UNUserNotificationCenterDelegate, Sendable {
-    static let shared = CheckInReminderNotificationDelegate()
+    static let shared = CheckInReminderNotificationDelegate { AppDatabase.shared.router }
+
+    private let router: @MainActor @Sendable () -> CheckInReminderRouter
+
+    init(router: @escaping @MainActor @Sendable () -> CheckInReminderRouter) {
+        self.router = router
+    }
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
         [.banner, .list, .sound]
     }
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse) async {
-        guard let reminder = ReminderResponse(requestIdentifier: response.notification.request.identifier, actionIdentifier: response.actionIdentifier) else { return }
-        await Self.route(reminder)
+        let request = response.notification.request
+        await handle(requestIdentifier: request.identifier, actionIdentifier: response.actionIdentifier, body: request.content.body)
     }
 
-    @MainActor private static func route(_ reminder: ReminderResponse) async {
-        await AppDatabase.shared.router.handle(reminder)
+    /// The part of `didReceive` that doesn't need a system response object, so tests can drive it.
+    @MainActor func handle(requestIdentifier: String, actionIdentifier: String, body: String) async {
+        guard let reminder = ReminderResponse(requestIdentifier: requestIdentifier, actionIdentifier: actionIdentifier, body: body) else { return }
+        await router().handle(reminder)
     }
 }
 

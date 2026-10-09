@@ -327,7 +327,6 @@ struct CheckInRootView: View {
             .sheet(item: $scheduleTarget) { ScheduleCheckInSheet(store: store, target: $0) }
             .onChange(of: answerRequest, initial: true) { _, request in
                 guard let request else { return }
-                scheduleTarget = nil
                 answerTarget = request
                 answerRequest = nil
             }
