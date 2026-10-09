@@ -9,8 +9,10 @@
 /* Begin PBXBuildFile section */
 		09AFF20B9C7DAD9F0459333B /* ForesightApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB0E4E2919FCA342C2E18F40 /* ForesightApp.swift */; };
 		213A3CE529A7B12ECC4A2DC6 /* JournalAnalytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B2896D2DF2121C4B3BEE737 /* JournalAnalytics.swift */; };
+		36B4F500C34F1A86187290E1 /* ForesightSchema.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5733647EA151C99FF90749AD /* ForesightSchema.swift */; };
 		3A245569CBA697582E73B235 /* JournalAndCheckInViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = E93F38D9D00B3B76F24DE3ED /* JournalAndCheckInViews.swift */; };
 		3E68212BC00D986B84A261CF /* JournalEditorAndDetail.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E8212BD570E34285056EE8D /* JournalEditorAndDetail.swift */; };
+		418BB080B6CEE6F1A1799A14 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 550C3CB72B2C091944271FE6 /* PrivacyInfo.xcprivacy */; };
 		42BB45517EF55617DA2580C8 /* JournalDiscoveryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E64151CF82CC541C2D79BBE9 /* JournalDiscoveryTests.swift */; };
 		4F9F3836B0D9658BFC9B5A68 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = 773F803C565E11B20DB24D8C /* Models.swift */; };
 		502029B44D763EE6269951FC /* ForesightUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 197FC228C457D92DA90C14ED /* ForesightUITests.swift */; };
@@ -18,6 +20,7 @@
 		7324D957BAAD1456AEFB66F0 /* OutcomeAnalyticsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1927C867B272D06942C594C4 /* OutcomeAnalyticsTests.swift */; };
 		96CB9BFD4C2145366DD40C85 /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10B87F469D44416920F26262 /* DesignSystem.swift */; };
 		99BA436717EBF14D3DDF9609 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 734C8C601F310EDE1716E584 /* Assets.xcassets */; };
+		B420662DC767719F855F1E48 /* ForesightSchemaTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7C928A6200DE13C4CC0E003 /* ForesightSchemaTests.swift */; };
 		C1380DEBF7916973EFA48D57 /* OutcomeAnalytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B72476742E3B4D6EF3FD38F /* OutcomeAnalytics.swift */; };
 		D95CC3DE4E718CB58E144852 /* JournalStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95D4CAEC6CAE2A2ED5872487 /* JournalStoreTests.swift */; };
 		FE9FD7CA63B2D3C3C643573B /* PatternsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC99037CB2AA40E3E71559CE /* PatternsView.swift */; };
@@ -47,7 +50,9 @@
 		259E8AED706D0DBCB7A82482 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		2B2896D2DF2121C4B3BEE737 /* JournalAnalytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalAnalytics.swift; sourceTree = "<group>"; };
 		3B72476742E3B4D6EF3FD38F /* OutcomeAnalytics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutcomeAnalytics.swift; sourceTree = "<group>"; };
+		550C3CB72B2C091944271FE6 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		5685A5F92F3E2408A5037702 /* ForesightTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = ForesightTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		5733647EA151C99FF90749AD /* ForesightSchema.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForesightSchema.swift; sourceTree = "<group>"; };
 		6337D1B6270E2FE484A0FCAF /* Foresight.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Foresight.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		6479EDA6896C90F2ADFA8FEF /* JournalStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalStore.swift; sourceTree = "<group>"; };
 		6E8212BD570E34285056EE8D /* JournalEditorAndDetail.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalEditorAndDetail.swift; sourceTree = "<group>"; };
@@ -55,6 +60,7 @@
 		773F803C565E11B20DB24D8C /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		863337BCC02513520AC10C0E /* ForesightUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = ForesightUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		95D4CAEC6CAE2A2ED5872487 /* JournalStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalStoreTests.swift; sourceTree = "<group>"; };
+		A7C928A6200DE13C4CC0E003 /* ForesightSchemaTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForesightSchemaTests.swift; sourceTree = "<group>"; };
 		BB0E4E2919FCA342C2E18F40 /* ForesightApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForesightApp.swift; sourceTree = "<group>"; };
 		E64151CF82CC541C2D79BBE9 /* JournalDiscoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalDiscoveryTests.swift; sourceTree = "<group>"; };
 		E93F38D9D00B3B76F24DE3ED /* JournalAndCheckInViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalAndCheckInViews.swift; sourceTree = "<group>"; };
@@ -66,6 +72,7 @@
 			isa = PBXGroup;
 			children = (
 				734C8C601F310EDE1716E584 /* Assets.xcassets */,
+				550C3CB72B2C091944271FE6 /* PrivacyInfo.xcprivacy */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -85,6 +92,7 @@
 			children = (
 				10B87F469D44416920F26262 /* DesignSystem.swift */,
 				BB0E4E2919FCA342C2E18F40 /* ForesightApp.swift */,
+				5733647EA151C99FF90749AD /* ForesightSchema.swift */,
 				259E8AED706D0DBCB7A82482 /* Info.plist */,
 				2B2896D2DF2121C4B3BEE737 /* JournalAnalytics.swift */,
 				E93F38D9D00B3B76F24DE3ED /* JournalAndCheckInViews.swift */,
@@ -119,6 +127,7 @@
 		7476A49CF1201D18AA12A9C6 /* Tests */ = {
 			isa = PBXGroup;
 			children = (
+				A7C928A6200DE13C4CC0E003 /* ForesightSchemaTests.swift */,
 				E64151CF82CC541C2D79BBE9 /* JournalDiscoveryTests.swift */,
 				95D4CAEC6CAE2A2ED5872487 /* JournalStoreTests.swift */,
 				1927C867B272D06942C594C4 /* OutcomeAnalyticsTests.swift */,
@@ -192,6 +201,10 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
+					C3A0172CE188F8399BF7146E = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Automatic;
+					};
 					F930D4B250F76664C164E7A9 = {
 						TestTargetID = C3A0172CE188F8399BF7146E;
 					};
@@ -224,6 +237,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				99BA436717EBF14D3DDF9609 /* Assets.xcassets in Resources */,
+				418BB080B6CEE6F1A1799A14 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -236,6 +250,7 @@
 			files = (
 				96CB9BFD4C2145366DD40C85 /* DesignSystem.swift in Sources */,
 				09AFF20B9C7DAD9F0459333B /* ForesightApp.swift in Sources */,
+				36B4F500C34F1A86187290E1 /* ForesightSchema.swift in Sources */,
 				213A3CE529A7B12ECC4A2DC6 /* JournalAnalytics.swift in Sources */,
 				3A245569CBA697582E73B235 /* JournalAndCheckInViews.swift in Sources */,
 				3E68212BC00D986B84A261CF /* JournalEditorAndDetail.swift in Sources */,
@@ -258,6 +273,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B420662DC767719F855F1E48 /* ForesightSchemaTests.swift in Sources */,
 				42BB45517EF55617DA2580C8 /* JournalDiscoveryTests.swift in Sources */,
 				D95CC3DE4E718CB58E144852 /* JournalStoreTests.swift in Sources */,
 				7324D957BAAD1456AEFB66F0 /* OutcomeAnalyticsTests.swift in Sources */,
@@ -321,15 +337,18 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGNING_ALLOWED = NO;
+				"CODE_SIGNING_ALLOWED[sdk=iphonesimulator*]" = NO;
 				CODE_SIGNING_REQUIRED = NO;
 				CODE_SIGN_ENTITLEMENTS = "";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "";
 				INFOPLIST_FILE = ForesightApp/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.foresight.journal.testing;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(BUNDLE_ID_PREFIX).journal.testing";
 				PRODUCT_MODULE_NAME = Foresight;
 				PRODUCT_NAME = "Foresight QA";
 				SDKROOT = iphoneos;
@@ -380,6 +399,7 @@
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				BUNDLE_ID_PREFIX = com.foresight;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
@@ -447,15 +467,18 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGNING_ALLOWED = NO;
+				"CODE_SIGNING_ALLOWED[sdk=iphonesimulator*]" = NO;
 				CODE_SIGNING_REQUIRED = NO;
 				CODE_SIGN_ENTITLEMENTS = "";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = "";
 				INFOPLIST_FILE = ForesightApp/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.foresight.journal;
+				PRODUCT_BUNDLE_IDENTIFIER = "$(BUNDLE_ID_PREFIX).journal";
 				PRODUCT_MODULE_NAME = Foresight;
 				PRODUCT_NAME = Foresight;
 				SDKROOT = iphoneos;
@@ -469,6 +492,7 @@
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				BUNDLE_ID_PREFIX = com.foresight;
 				CLANG_ANALYZER_NONNULL = YES;
 				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
 				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
