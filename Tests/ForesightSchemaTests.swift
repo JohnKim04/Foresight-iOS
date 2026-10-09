@@ -13,7 +13,7 @@ struct ForesightSchemaTests {
 
     @Test("the migration plan ends at the newest schema version, in increasing order")
     func migrationPlanShape() {
-        let versions = ForesightMigrationPlan.schemas.map(\.versionIdentifier)
+        let versions = ForesightMigrationPlan.schemas.map { $0.versionIdentifier }
         #expect(versions.last == ForesightSchemaLatest.versionIdentifier)
         #expect(versions == versions.sorted())
         #expect(ForesightMigrationPlan.stages.count == ForesightMigrationPlan.schemas.count - 1)
