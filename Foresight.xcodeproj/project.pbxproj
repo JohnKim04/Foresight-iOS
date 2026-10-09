@@ -26,6 +26,8 @@
 		96CB9BFD4C2145366DD40C85 /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10B87F469D44416920F26262 /* DesignSystem.swift */; };
 		99BA436717EBF14D3DDF9609 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 734C8C601F310EDE1716E584 /* Assets.xcassets */; };
 		AA2D3B8E0D5DEC6015FE26D3 /* HelpSuggestions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 03E97A5FD61A0E57992E1B61 /* HelpSuggestions.swift */; };
+		AC6F77DD1931F63B5A281A2F /* CheckInReminders.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8248124D61CD48744430742 /* CheckInReminders.swift */; };
+		AEF5B54293B5D5ABA937BE74 /* CheckInReminderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F453BABA62D7B5A68F43EC3C /* CheckInReminderTests.swift */; };
 		B420662DC767719F855F1E48 /* ForesightSchemaTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7C928A6200DE13C4CC0E003 /* ForesightSchemaTests.swift */; };
 		C1380DEBF7916973EFA48D57 /* OutcomeAnalytics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B72476742E3B4D6EF3FD38F /* OutcomeAnalytics.swift */; };
 		D95CC3DE4E718CB58E144852 /* JournalStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95D4CAEC6CAE2A2ED5872487 /* JournalStoreTests.swift */; };
@@ -72,12 +74,14 @@
 		863337BCC02513520AC10C0E /* ForesightUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = ForesightUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		95D4CAEC6CAE2A2ED5872487 /* JournalStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalStoreTests.swift; sourceTree = "<group>"; };
 		A7C928A6200DE13C4CC0E003 /* ForesightSchemaTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForesightSchemaTests.swift; sourceTree = "<group>"; };
+		B8248124D61CD48744430742 /* CheckInReminders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CheckInReminders.swift; sourceTree = "<group>"; };
 		BB0E4E2919FCA342C2E18F40 /* ForesightApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ForesightApp.swift; sourceTree = "<group>"; };
 		BCE5B571C294BF2BA73EA195 /* CheckInFlowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CheckInFlowTests.swift; sourceTree = "<group>"; };
 		D2C4357C79FB5F0056373C78 /* CheckInFlow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CheckInFlow.swift; sourceTree = "<group>"; };
 		E64151CF82CC541C2D79BBE9 /* JournalDiscoveryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalDiscoveryTests.swift; sourceTree = "<group>"; };
 		E93F38D9D00B3B76F24DE3ED /* JournalAndCheckInViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JournalAndCheckInViews.swift; sourceTree = "<group>"; };
 		EC99037CB2AA40E3E71559CE /* PatternsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatternsView.swift; sourceTree = "<group>"; };
+		F453BABA62D7B5A68F43EC3C /* CheckInReminderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CheckInReminderTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -104,6 +108,7 @@
 			isa = PBXGroup;
 			children = (
 				D2C4357C79FB5F0056373C78 /* CheckInFlow.swift */,
+				B8248124D61CD48744430742 /* CheckInReminders.swift */,
 				10B87F469D44416920F26262 /* DesignSystem.swift */,
 				BB0E4E2919FCA342C2E18F40 /* ForesightApp.swift */,
 				5733647EA151C99FF90749AD /* ForesightSchema.swift */,
@@ -154,6 +159,7 @@
 			isa = PBXGroup;
 			children = (
 				BCE5B571C294BF2BA73EA195 /* CheckInFlowTests.swift */,
+				F453BABA62D7B5A68F43EC3C /* CheckInReminderTests.swift */,
 				A7C928A6200DE13C4CC0E003 /* ForesightSchemaTests.swift */,
 				6B737C2F3D390AD9744B2D88 /* HelpSuggestionsTests.swift */,
 				E64151CF82CC541C2D79BBE9 /* JournalDiscoveryTests.swift */,
@@ -277,6 +283,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				7B127016098C0A6717A911BD /* CheckInFlow.swift in Sources */,
+				AC6F77DD1931F63B5A281A2F /* CheckInReminders.swift in Sources */,
 				96CB9BFD4C2145366DD40C85 /* DesignSystem.swift in Sources */,
 				09AFF20B9C7DAD9F0459333B /* ForesightApp.swift in Sources */,
 				36B4F500C34F1A86187290E1 /* ForesightSchema.swift in Sources */,
@@ -306,6 +313,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				73EB3B011F4C96363AFDC774 /* CheckInFlowTests.swift in Sources */,
+				AEF5B54293B5D5ABA937BE74 /* CheckInReminderTests.swift in Sources */,
 				B420662DC767719F855F1E48 /* ForesightSchemaTests.swift in Sources */,
 				524B69852DF6C75A7505B5FD /* HelpSuggestionsTests.swift in Sources */,
 				42BB45517EF55617DA2580C8 /* JournalDiscoveryTests.swift in Sources */,

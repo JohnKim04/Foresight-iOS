@@ -208,9 +208,10 @@ final class CheckInReminderScheduler {
 
     func resync() {
         let previous = syncTask
-        let sources = sources
         syncTask = Task {
             await previous?.value
+            // Read the sources when this sync runs, not when it was queued, so an older
+            // sync can't treat a newer check-in's delivered reminder as stale.
             await reconcile(sources)
         }
     }
