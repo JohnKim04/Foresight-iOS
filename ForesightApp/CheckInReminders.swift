@@ -80,6 +80,15 @@ enum CheckInReminderPlan {
         Date(timeIntervalSinceReferenceDate: dueAt.timeIntervalSinceReferenceDate.rounded(.up))
     }
 
+    /// A check-in is due at an instant, not a wall-clock time. Components in UTC, with the
+    /// calendar attached, name exactly one instant: no repeated daylight-saving hour, and the
+    /// scheduled trigger's next date matches `fireAt`, so reconciling doesn't re-add it.
+    static func triggerComponents(for fireAt: Date) -> DateComponents {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        return calendar.dateComponents([.calendar, .timeZone, .year, .month, .day, .hour, .minute, .second], from: fireAt)
+    }
+
     static func body(for entryBody: String, showsLogText: Bool = showsLogText) -> String {
         guard showsLogText else { return genericBody }
         let firstLine = entryBody.split(whereSeparator: \.isNewline).first.map(String.init) ?? entryBody
@@ -155,8 +164,7 @@ struct SystemReminderNotificationCenter: ReminderNotificationCenter {
         content.sound = .default
         content.categoryIdentifier = CheckInReminderPlan.categoryIdentifier
         content.threadIdentifier = CheckInReminderPlan.threadIdentifier
-        let components = Calendar.current.dateComponents([.timeZone, .year, .month, .day, .hour, .minute, .second], from: reminder.fireAt)
-        let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
+        let trigger = UNCalendarNotificationTrigger(dateMatching: CheckInReminderPlan.triggerComponents(for: reminder.fireAt), repeats: false)
         try await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: reminder.identifier, content: content, trigger: trigger))
     }
 
@@ -304,7 +312,9 @@ final class CheckInReminderRouter {
         let checkIn = store?.checkIns.first { $0.id == response.checkInID }
         switch response.action {
         case .open:
-            if let checkIn, let entry = checkIn.entry {
+            // Only a pending check-in opens its answer sheet; one already answered or skipped
+            // (say, from another reminder or on the Check In tab) falls back to the tab.
+            if let checkIn, checkIn.status == .pending, let entry = checkIn.entry {
                 destination = .answer(CheckInTarget(entryID: entry.id, checkInID: checkIn.id))
             } else {
                 destination = .checkIns

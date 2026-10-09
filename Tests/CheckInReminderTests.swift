@@ -61,6 +61,19 @@ struct CheckInReminderPlanTests {
         #expect(reminders.map(\.checkInID) == sources.prefix(CheckInReminderPlan.pendingLimit).map(\.checkInID))
     }
 
+    @Test("trigger components name one instant, even in the repeated daylight-saving hour")
+    func triggerComponentsAcrossDST() throws {
+        // New York repeats 01:00-02:00 on Nov 3 2024: 01:30 EDT is 05:30 UTC, 01:30 EST is 06:30 UTC.
+        let first = Date(timeIntervalSince1970: 1_730_611_800)
+        let second = first.addingTimeInterval(3_600)
+        for instant in [first, second, now] {
+            let components = CheckInReminderPlan.triggerComponents(for: instant)
+            let calendar = try #require(components.calendar)
+            #expect(calendar.date(from: components) == instant)
+        }
+        #expect(CheckInReminderPlan.triggerComponents(for: first) != CheckInReminderPlan.triggerComponents(for: second))
+    }
+
     @Test("rounds the fire date up to a whole second")
     func roundsUp() {
         let reminder = CheckInReminderPlan.reminders(for: [source(in: 90.25)], now: now)[0]
@@ -270,6 +283,17 @@ struct CheckInReminderSchedulerTests {
         await router.handle(try #require(ReminderResponse(requestIdentifier: CheckInReminderPlan.identifier(for: checkIn.id), actionIdentifier: UNNotificationDefaultActionIdentifier)))
         let entryID = try #require(checkIn.entry?.id)
         #expect(router.destination == .answer(CheckInTarget(entryID: entryID, checkInID: checkIn.id)))
+    }
+
+    @Test("tapping a reminder for an already answered check-in falls back to the Check In tab")
+    func tapAnsweredCheckIn() async throws {
+        let (store, scheduler, _) = try makeSubject()
+        let router = CheckInReminderRouter(reminders: scheduler, now: { fixedNow })
+        router.store = store
+        let checkIn = try scheduledCheckIn(store)
+        try store.answer(checkIn, response: .same, notSure: false, note: "", excludedFromAnalysis: false)
+        await router.handle(try #require(ReminderResponse(requestIdentifier: CheckInReminderPlan.identifier(for: checkIn.id), actionIdentifier: UNNotificationDefaultActionIdentifier)))
+        #expect(router.destination == .checkIns)
     }
 
     @Test("tapping a reminder for a deleted check-in falls back to the Check In tab")
