@@ -227,13 +227,13 @@ struct JournalDetailView: View {
                                 }
                             }
                             CheckInDetailCard(
-                                title: "Overall feeling", checkIn: latestCheckIn(entry, phase: .immediate), isImmediate: true,
+                                title: "Overall feeling", checkIn: latestCheckIn(for: entry, phase: .immediate, checkIns: store.checkIns), isImmediate: true,
                                 onAnswer: { checkIn in answerTarget = CheckInTarget(entryID: entry.id, checkInID: checkIn?.id) },
                                 onSchedule: { _ in },
                                 onRemove: { checkIn in checkInToRemove = checkIn; showRemoveCheckIn = true }
                             )
                             CheckInDetailCard(
-                                title: "Later check-in", checkIn: latestCheckIn(entry, phase: .delayed), isImmediate: false,
+                                title: "Later check-in", checkIn: latestCheckIn(for: entry, phase: .delayed, checkIns: store.checkIns), isImmediate: false,
                                 onAnswer: { checkIn in answerTarget = CheckInTarget(entryID: entry.id, checkInID: checkIn?.id) },
                                 onSchedule: { checkIn in scheduleTarget = CheckInTarget(entryID: entry.id, checkInID: checkIn?.id) },
                                 onRemove: { checkIn in checkInToRemove = checkIn; showRemoveCheckIn = true }
@@ -263,12 +263,6 @@ struct JournalDetailView: View {
                 ContentUnavailableView("Log unavailable", systemImage: "book.closed", description: Text("This log may have been deleted."))
             }
         }
-    }
-
-    private func latestCheckIn(_ entry: JournalEntry, phase: OutcomePhase) -> OutcomeCheckIn? {
-        store.checkIns
-            .filter { $0.entry?.id == entry.id && $0.phase == phase }
-            .max { $0.createdAt < $1.createdAt }
     }
 }
 

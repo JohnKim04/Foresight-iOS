@@ -69,7 +69,7 @@ final class ForesightUITests: XCTestCase {
         let outsideCard = app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
             .withOffset(CGVector(dx: 8, dy: log.frame.midY))
         outsideCard.tap()
-        XCTAssertFalse(app.buttons["Edit log"].exists, "Tapping the margin outside a journal card should not open it")
+        XCTAssertFalse(app.buttons["Edit log"].waitForExistence(timeout: 1), "Tapping the margin outside a journal card should not open it")
 
         app.buttons["Calendar"].tap()
         let calendarLog = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Tap target test log")).firstMatch
@@ -77,7 +77,7 @@ final class ForesightUITests: XCTestCase {
         let outsideCalendarCard = app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
             .withOffset(CGVector(dx: 8, dy: calendarLog.frame.midY))
         outsideCalendarCard.tap()
-        XCTAssertFalse(app.buttons["Edit log"].exists, "Tapping beside a calendar log card should not open it")
+        XCTAssertFalse(app.buttons["Edit log"].waitForExistence(timeout: 1), "Tapping beside a calendar log card should not open it")
 
         calendarLog.tap()
         XCTAssertTrue(app.buttons["Edit log"].waitForExistence(timeout: 3))
@@ -131,7 +131,7 @@ final class ForesightUITests: XCTestCase {
         let outsideCard = app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
             .withOffset(CGVector(dx: 8, dy: source.frame.midY))
         outsideCard.tap()
-        XCTAssertFalse(app.buttons["Edit log"].exists)
+        XCTAssertFalse(app.buttons["Edit log"].waitForExistence(timeout: 1))
         source.tap()
         XCTAssertTrue(app.buttons["Edit log"].waitForExistence(timeout: 3))
     }
@@ -169,14 +169,23 @@ final class ForesightUITests: XCTestCase {
         app.buttons["Add"].tap()
         app.textViews["What happened?"].tap()
         app.textViews["What happened?"].typeText("Only this category should match")
-        app.buttons["Dropdown test"].tap()
         app.buttons["Save"].firstMatch.tap()
+
+        app.buttons["New log"].tap()
+        app.textViews["What happened?"].tap()
+        app.textViews["What happened?"].typeText("Uncategorized log")
+        app.buttons["Save"].firstMatch.tap()
+
+        let matching = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Only this category should match")).firstMatch
+        let other = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Uncategorized log")).firstMatch
+        XCTAssertTrue(other.waitForExistence(timeout: 3))
 
         let category = app.buttons["Choose category"]
         category.tap()
         app.buttons["Dropdown test"].tap()
         XCTAssertEqual(category.value as? String, "Dropdown test")
-        XCTAssertFalse(app.staticTexts["No matching logs"].exists)
+        XCTAssertTrue(matching.waitForExistence(timeout: 3))
+        XCTAssertTrue(other.waitForNonExistence(timeout: 3), "Logs outside the selected category should be filtered out")
     }
 
     func testPatternsActivityDropdownUpdatesSelection() {
@@ -205,6 +214,6 @@ final class ForesightUITests: XCTestCase {
         let outsideCard = app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
             .withOffset(CGVector(dx: 8, dy: source.frame.midY))
         outsideCard.tap()
-        XCTAssertFalse(app.buttons["Edit log"].exists)
+        XCTAssertFalse(app.buttons["Edit log"].waitForExistence(timeout: 1))
     }
 }

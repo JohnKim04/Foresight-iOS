@@ -219,6 +219,23 @@ struct JournalStoreTests {
         catch { #expect(error as? ForesightError == .noteTooLong) }
     }
 
+    @Test("detail shows the newest check-in per phase for its own log")
+    func latestCheckInPerPhase() throws {
+        let store = try makeStore()
+        let entry = try store.saveLog(body: "Run", eventAt: fixedNow, categoryIDs: [])
+        let other = try store.saveLog(body: "Walk", eventAt: fixedNow, categoryIDs: [])
+        let immediate = try store.createCheckIn(for: entry, phase: .immediate)
+        let skipped = try store.createCheckIn(for: entry, phase: .delayed, dueAt: fixedNow.addingTimeInterval(3_600))
+        try store.skip(skipped)
+        let rescheduled = try store.createCheckIn(for: entry, phase: .delayed, dueAt: fixedNow.addingTimeInterval(7_200))
+        skipped.createdAt = fixedNow.addingTimeInterval(-60)
+        _ = try store.createCheckIn(for: other, phase: .delayed, dueAt: fixedNow.addingTimeInterval(3_600))
+
+        #expect(latestCheckIn(for: entry, phase: .immediate, checkIns: store.checkIns)?.id == immediate.id)
+        #expect(latestCheckIn(for: entry, phase: .delayed, checkIns: store.checkIns)?.id == rescheduled.id)
+        #expect(latestCheckIn(for: other, phase: .immediate, checkIns: store.checkIns) == nil)
+    }
+
     @Test("skips a delayed check-in")
     func skipsCheckIn() throws {
         let store = try makeStore()

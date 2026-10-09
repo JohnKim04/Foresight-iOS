@@ -112,6 +112,14 @@ func entryCheckInLabel(entry: JournalEntry, checkIns: [OutcomeCheckIn], now: Dat
     return nil
 }
 
+/// Reads from the store's check-in list rather than `entry.checkIns`, which can
+/// lag behind inserts and deletes until SwiftData refreshes the relationship.
+func latestCheckIn(for entry: JournalEntry, phase: OutcomePhase, checkIns: [OutcomeCheckIn]) -> OutcomeCheckIn? {
+    checkIns
+        .filter { $0.entry?.id == entry.id && $0.phase == phase }
+        .max { $0.createdAt < $1.createdAt }
+}
+
 struct QueuedCheckIn: Identifiable {
     let checkIn: OutcomeCheckIn
     let entry: JournalEntry
