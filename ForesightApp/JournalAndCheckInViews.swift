@@ -51,6 +51,7 @@ struct JournalRootView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
+            .scrollDismissesKeyboard(.interactively)
             .background(Color.foresightCanvas)
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
@@ -68,6 +69,7 @@ struct JournalRootView: View {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(Color.foresightMuted)
                 TextField("Search logs and categories", text: $query)
+                    .submitLabel(.search)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
                 if !query.isEmpty {
@@ -101,6 +103,7 @@ struct JournalRootView: View {
         .padding(.horizontal)
         .padding(.top, 8)
         .padding(.bottom, 8)
+        .foresightDropdownAvoided()
     }
 
     private var journalControls: some View {
@@ -228,6 +231,7 @@ struct JournalEntryRow: View {
     let label: String?
     let onOpen: () -> Void
     @State private var cardSize: CGSize = .zero
+    @GestureState private var isPressed = false
 
     var body: some View {
         ForesightCard {
@@ -241,17 +245,29 @@ struct JournalEntryRow: View {
                 if !entry.categories.isEmpty { Text(entry.categories.map(\.name).joined(separator: " · ")).font(.caption).foregroundStyle(Color.foresightMuted) }
             }
         }
+        .scaleEffect(isPressed ? 0.985 : 1)
+        .opacity(isPressed ? 0.85 : 1)
+        .animation(.easeOut(duration: 0.12), value: isPressed)
         .contentShape(.interaction, RoundedRectangle(cornerRadius: 18, style: .continuous))
         .onGeometryChange(for: CGSize.self) { $0.size } action: { cardSize = $0 }
         .gesture(SpatialTapGesture().onEnded { tap in
             // SwiftUI can deliver taps from just outside the drawn card.
-            let card = RoundedRectangle(cornerRadius: 18, style: .continuous)
-            guard card.path(in: CGRect(origin: .zero, size: cardSize)).contains(tap.location) else { return }
+            guard contains(tap.location) else { return }
             onOpen()
         })
+        // Never completes; it only tracks touch-down for the pressed state and
+        // fails once the finger moves, so scrolling and the tap above still work.
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: .infinity, maximumDistance: 10)
+                .updating($isPressed) { _, pressed, _ in pressed = true }
+        )
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { onOpen() }
+    }
+
+    private func contains(_ point: CGPoint) -> Bool {
+        RoundedRectangle(cornerRadius: 18, style: .continuous).path(in: CGRect(origin: .zero, size: cardSize)).contains(point)
     }
 }
 

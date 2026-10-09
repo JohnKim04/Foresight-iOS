@@ -246,11 +246,26 @@ final class ForesightDropdownCoordinator: ObservableObject {
     func dismiss() { active = nil }
 }
 
-private struct ForesightDropdownAnchorKey: PreferenceKey {
-    static let defaultValue: [String: Anchor<CGRect>] = [:]
+private struct ForesightDropdownAnchors {
+    var triggers: [String: Anchor<CGRect>] = [:]
+    /// Bars and other chrome the panel must not cover, such as a bottom toolbar.
+    var avoided: [Anchor<CGRect>] = []
+}
 
-    static func reduce(value: inout [String: Anchor<CGRect>], nextValue: () -> [String: Anchor<CGRect>]) {
-        value.merge(nextValue(), uniquingKeysWith: { _, latest in latest })
+private struct ForesightDropdownAnchorKey: PreferenceKey {
+    static let defaultValue = ForesightDropdownAnchors()
+
+    static func reduce(value: inout ForesightDropdownAnchors, nextValue: () -> ForesightDropdownAnchors) {
+        let next = nextValue()
+        value.triggers.merge(next.triggers, uniquingKeysWith: { _, latest in latest })
+        value.avoided += next.avoided
+    }
+}
+
+extension View {
+    /// Keeps open Foresight dropdown panels from overlapping this view.
+    func foresightDropdownAvoided() -> some View {
+        transformAnchorPreference(key: ForesightDropdownAnchorKey.self, value: .bounds) { $0.avoided.append($1) }
     }
 }
 
@@ -267,11 +282,12 @@ struct ForesightDropdownHost<Content: View>: View {
             .environmentObject(coordinator)
             .overlayPreferenceValue(ForesightDropdownAnchorKey.self) { anchors in
                 GeometryReader { proxy in
-                    if let active = coordinator.active, let anchor = anchors[active.id] {
+                    if let active = coordinator.active, let anchor = anchors.triggers[active.id] {
                         ForesightDropdownOverlay(
                             active: active,
                             triggerFrame: proxy[anchor],
-                            allTriggerFrames: anchors.values.map { proxy[$0] },
+                            allTriggerFrames: anchors.triggers.values.map { proxy[$0] },
+                            avoidedFrames: anchors.avoided.map { proxy[$0] },
                             containerSize: proxy.size,
                             safeAreaInsets: proxy.safeAreaInsets,
                             dismiss: coordinator.dismiss
@@ -326,7 +342,7 @@ struct ForesightDropdown<Value: Hashable, ID: Hashable>: View {
         .frame(minHeight: 44)
         .accessibilityLabel(accessibilityLabel)
         .accessibilityValue(accessibilityValue)
-        .anchorPreference(key: ForesightDropdownAnchorKey.self, value: .bounds) { [id: $0] }
+        .transformAnchorPreference(key: ForesightDropdownAnchorKey.self, value: .bounds) { $0.triggers[id] = $1 }
         .onDisappear { coordinator.dismiss() }
     }
 
@@ -430,6 +446,7 @@ private struct ForesightDropdownOverlay: View {
     let active: ForesightDropdownCoordinator.Presentation
     let triggerFrame: CGRect
     let allTriggerFrames: [CGRect]
+    let avoidedFrames: [CGRect]
     let containerSize: CGSize
     let safeAreaInsets: EdgeInsets
     let dismiss: () -> Void
@@ -437,11 +454,17 @@ private struct ForesightDropdownOverlay: View {
     var body: some View {
         let margin: CGFloat = 12
         let width = min(containerSize.width - safeAreaInsets.leading - safeAreaInsets.trailing - (margin * 2), preferredWidth)
-        let below = containerSize.height - safeAreaInsets.bottom - margin - triggerFrame.maxY - 6
-        let above = triggerFrame.minY - safeAreaInsets.top - margin - 6
+        let bottomLimit = avoidedFrames.filter { $0.minY >= triggerFrame.maxY }.map(\.minY)
+            .reduce(containerSize.height - safeAreaInsets.bottom, min)
+        let topLimit = avoidedFrames.filter { $0.maxY <= triggerFrame.minY }.map(\.maxY)
+            .reduce(safeAreaInsets.top, max)
+        let below = bottomLimit - margin - triggerFrame.maxY - 6
+        let above = triggerFrame.minY - topLimit - margin - 6
         let placeAbove = below < 220 && above > below
         let available = placeAbove ? above : below
-        let height = max(44, min(active.preferredHeight, min(360, available)))
+        // On short screens a 360pt panel would hide most of the page.
+        let maxHeight = min(360, containerSize.height * 0.45)
+        let height = max(44, min(active.preferredHeight, min(maxHeight, available)))
         let left = min(max(triggerFrame.minX, safeAreaInsets.leading + margin), containerSize.width - safeAreaInsets.trailing - margin - width)
         let centerY = placeAbove ? triggerFrame.minY - 6 - height / 2 : triggerFrame.maxY + 6 + height / 2
 
@@ -519,24 +542,6 @@ private struct ForesightDropdownPanel<Value: Hashable, ID: Hashable>: View {
         .background(Color.foresightSurface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay { RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.foresightLine, lineWidth: 1) }
         .shadow(color: .black.opacity(0.14), radius: 14, y: 7)
-    }
-}
-
-struct ForesightIconButton: View {
-    let title: String
-    let systemImage: String
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(width: 52, height: 52)
-                .background(Color.foresightAction, in: RoundedRectangle(cornerRadius: 17, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(title)
     }
 }
 
