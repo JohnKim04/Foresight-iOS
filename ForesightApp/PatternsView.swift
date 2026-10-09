@@ -132,8 +132,9 @@ struct PatternsRootView: View {
                         selection: $outcomeCategoryID,
                         options: categoryOptions(firstTitle: "Clear category", firstID: "clear-category"),
                         style: .fullWidth(systemImage: "tag.fill", label: "Category"),
+                        title: outcomeCategory?.name ?? "Select a category",
                         accessibilityLabel: "Choose category",
-                        accessibilityValue: outcomeCategory?.name ?? "Select a category"
+                        accessibilityValue: outcomeCategory?.name ?? "No category selected"
                     )
                     SectionKicker(text: "Time window")
                     ForesightSegmentedPicker(

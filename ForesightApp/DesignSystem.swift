@@ -204,22 +204,6 @@ struct ForesightSegmentedPicker<Value: Hashable>: View {
     }
 }
 
-struct ForesightMenuLabel: View {
-    let title: String
-    let systemImage: String
-
-    var body: some View {
-        Label(title, systemImage: systemImage)
-            .font(ForesightType.control)
-            .foregroundStyle(Color.foresightSage)
-            .lineLimit(1)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 9)
-            .background(Color.foresightRaised, in: Capsule())
-            .overlay(Capsule().stroke(Color.foresightLine, lineWidth: 1))
-    }
-}
-
 // MARK: - Anchored dropdowns
 
 /// The data shown by a Foresight dropdown. `ID` is intentionally separate from
@@ -254,22 +238,12 @@ final class ForesightDropdownCoordinator: ObservableObject {
     }
 
     @Published private(set) var active: Presentation?
-    private var ignoresNextOutsideTap = false
 
     func toggle(_ presentation: Presentation) {
-        ignoresNextOutsideTap = true
         active = active?.id == presentation.id ? nil : presentation
     }
 
     func dismiss() { active = nil }
-
-    func handleOutsideTap() {
-        if ignoresNextOutsideTap {
-            ignoresNextOutsideTap = false
-        } else {
-            dismiss()
-        }
-    }
 }
 
 private struct ForesightDropdownAnchorKey: PreferenceKey {
@@ -291,13 +265,13 @@ struct ForesightDropdownHost<Content: View>: View {
     var body: some View {
         content
             .environmentObject(coordinator)
-            .simultaneousGesture(TapGesture().onEnded { coordinator.handleOutsideTap() }, including: .subviews)
             .overlayPreferenceValue(ForesightDropdownAnchorKey.self) { anchors in
                 GeometryReader { proxy in
                     if let active = coordinator.active, let anchor = anchors[active.id] {
                         ForesightDropdownOverlay(
                             active: active,
                             triggerFrame: proxy[anchor],
+                            allTriggerFrames: anchors.values.map { proxy[$0] },
                             containerSize: proxy.size,
                             safeAreaInsets: proxy.safeAreaInsets,
                             dismiss: coordinator.dismiss
@@ -313,6 +287,7 @@ struct ForesightDropdown<Value: Hashable, ID: Hashable>: View {
     private let id: String
     private let options: [ForesightDropdownOption<Value, ID>]
     private let style: ForesightDropdownStyle
+    private let title: String
     private let accessibilityLabel: String
     private let accessibilityValue: String
     @EnvironmentObject private var coordinator: ForesightDropdownCoordinator
@@ -322,10 +297,12 @@ struct ForesightDropdown<Value: Hashable, ID: Hashable>: View {
         selection: Binding<Value>,
         options: [ForesightDropdownOption<Value, ID>],
         style: ForesightDropdownStyle,
+        title: String? = nil,
         accessibilityLabel: String,
         accessibilityValue: String
     ) {
         self.id = id
+        self.title = title ?? accessibilityValue
         _selection = selection
         self.options = options
         self.style = style
@@ -340,7 +317,7 @@ struct ForesightDropdown<Value: Hashable, ID: Hashable>: View {
             }
         } label: {
             ForesightDropdownTrigger(
-                title: accessibilityValue,
+                title: title,
                 style: style,
                 isExpanded: coordinator.active?.id == id
             )
@@ -452,6 +429,7 @@ private struct ForesightDropdownTrigger: View {
 private struct ForesightDropdownOverlay: View {
     let active: ForesightDropdownCoordinator.Presentation
     let triggerFrame: CGRect
+    let allTriggerFrames: [CGRect]
     let containerSize: CGSize
     let safeAreaInsets: EdgeInsets
     let dismiss: () -> Void
@@ -468,6 +446,13 @@ private struct ForesightDropdownOverlay: View {
         let centerY = placeAbove ? triggerFrame.minY - 6 - height / 2 : triggerFrame.maxY + 6 + height / 2
 
         ZStack(alignment: .topLeading) {
+            // Catches taps outside the panel so they close it without reaching the
+            // content underneath. Triggers are left uncovered, so tapping one
+            // still toggles or switches panels through its own button action.
+            Color.clear
+                .contentShape(ForesightDropdownDismissShape(holes: allTriggerFrames), eoFill: true)
+                .onTapGesture(perform: dismiss)
+                .accessibilityHidden(true)
             active.panel
                 .frame(width: width, height: height)
                 .position(x: left + width / 2, y: centerY)
@@ -484,6 +469,16 @@ private struct ForesightDropdownOverlay: View {
         }
     }
 
+}
+
+private struct ForesightDropdownDismissShape: Shape {
+    let holes: [CGRect]
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path(rect)
+        holes.forEach { path.addRect($0) }
+        return path
+    }
 }
 
 private struct ForesightDropdownPanel<Value: Hashable, ID: Hashable>: View {

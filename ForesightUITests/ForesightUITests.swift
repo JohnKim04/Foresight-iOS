@@ -151,6 +151,12 @@ final class ForesightUITests: XCTestCase {
         checkIn.tap()
         XCTAssertFalse(app.buttons["Scheduled"].exists)
 
+        // Tapping elsewhere on the screen closes the open panel.
+        category.tap()
+        XCTAssertTrue(app.buttons["All categories"].waitForExistence(timeout: 2))
+        app.staticTexts["Notice what follows."].tap()
+        XCTAssertFalse(app.buttons["All categories"].waitForExistence(timeout: 1))
+
         checkIn.tap()
         app.buttons["Scheduled"].tap()
         XCTAssertEqual(checkIn.value as? String, "Scheduled")
