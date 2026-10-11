@@ -103,7 +103,10 @@ final class ForesightUITests: XCTestCase {
         for title in ["Check-in reminders", "Pattern nudges", "Quiet hours"] {
             XCTAssertTrue(app.switches.matching(NSPredicate(format: "label BEGINSWITH %@", title)).firstMatch.waitForExistence(timeout: 3), "\(title) toggle is missing")
         }
-        XCTAssertTrue(app.buttons["settings.export"].exists)
+        // The quiet-hours wheels and Categories push the data rows below the fold.
+        let export = app.buttons["settings.export"]
+        scrollSettings(until: export)
+        XCTAssertTrue(export.exists)
         let erase = app.buttons["settings.erase"]
         scrollSettings(until: erase)
         erase.tap()
