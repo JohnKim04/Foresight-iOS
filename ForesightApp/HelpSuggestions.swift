@@ -81,9 +81,10 @@ func helpSuggestions(entries: [JournalEntry], checkIns: [OutcomeCheckIn], catego
         guard outcomeDirection(later) == .positive else { continue }
 
         // 3 of 5 better clears the 60% rule but is close to a coin flip, so a suggestion needs
-        // the low end of its likely better rate to be above half.
+        // the low end of its likely better rate to reach half. 6 of 9 lands on it exactly,
+        // so allow for rounding.
         let lowerBound = wilsonLowerBound(successes: later.betterCount, trials: later.numericCount)
-        guard lowerBound > 0.5 else { continue }
+        guard lowerBound >= 0.5 - 1e-9 else { continue }
         // A pattern whose latest later check-ins were mostly not better may have faded.
         let recent = laterResponses(entries: entries, checkIns: checkIns, sourceIDs: Set(later.sourceEntryIDs)).prefix(helpSuggestionRecentResponses)
         guard recent.count < helpSuggestionRecentResponses || recent.filter({ $0 > 0 }).count * 2 > recent.count else { continue }

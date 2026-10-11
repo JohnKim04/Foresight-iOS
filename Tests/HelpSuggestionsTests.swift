@@ -59,7 +59,7 @@ struct HelpSuggestionsTests {
 
     private func expectNonCausal(_ strings: [String]) {
         let text = strings.joined(separator: " ").lowercased()
-        for causal in ["help", "because", "causes", "makes you", "leads to"] { #expect(!text.contains(causal), "\(causal) in \(text)") }
+        for causal in ["help", "because", "causes", "makes you", "leads to", "lead to", "affect"] { #expect(!text.contains(causal), "\(causal) in \(text)") }
     }
 
     @Test("keeps the card and nudge copy non-causal in every state")
@@ -120,8 +120,18 @@ struct HelpSuggestionsTests {
         #expect(wilsonLowerBound(successes: 4, trials: 5) > 0.5)
         #expect(wilsonLowerBound(successes: 6, trials: 10) < 0.5)
         #expect(wilsonLowerBound(successes: 7, trials: 10) > 0.5)
+        // 6 of 9 lands on 0.5 exactly in exact arithmetic, and still qualifies.
+        #expect(abs(wilsonLowerBound(successes: 6, trials: 9) - 0.5) < 1e-9)
         #expect(wilsonLowerBound(successes: 10, trials: 10) > wilsonLowerBound(successes: 5, trials: 5))
         #expect(abs(wilsonLowerBound(successes: 4, trials: 5) - 0.579) < 0.001)
+    }
+
+    @Test("a lower bound of exactly one half qualifies")
+    func boundaryQualifies() {
+        let workout = JournalCategory(name: "Workout")
+        let entries = logs(workout, count: 9)
+        let result = report(entries, answers(entries, [.aLittleBetter, .aLittleBetter, .aLittleBetter, .same, .aLittleBetter, .same, .aLittleBetter, .same, .aLittleBetter]), [workout])
+        #expect(result.suggestions.first?.betterCount == 6)
     }
 
     @Test("drops a pattern whose latest later check-ins were mostly not better")
@@ -152,7 +162,9 @@ struct HelpSuggestionsTests {
         let hikes = [6, 13, 20, 27, 34].map { log(hike, daysAgo: $0) }
         let walks = [1, 2, 3, 4, 7].map { log(walk, daysAgo: $0) }
         #expect(hikes.allSatisfy { calendar.isDateInWeekend($0.eventAt) })
-        let result = report(hikes + walks, answers(hikes, [.aLittleBetter]) + answers(walks, [.aLittleBetter]), [hike, walk])
+        // Hike is the stronger pattern; Walk only leads while Hike is demoted on a weekday.
+        let checkIns = answers(hikes, [.muchBetter]) + answers(walks, [.muchBetter, .aLittleBetter])
+        let result = report(hikes + walks, checkIns, [hike, walk])
         #expect(result.suggestions.map(\.category.name) == ["Walk", "Hike"])
         let weekend = try #require(result.suggestions.last)
         #expect(weekend.mostlyWeekends)
@@ -161,7 +173,7 @@ struct HelpSuggestionsTests {
         expectNonCausal([weekend.context ?? ""])
 
         let saturday = calendar.date(byAdding: .day, value: 1, to: now)!
-        let onSaturday = helpSuggestions(entries: hikes + walks, checkIns: answers(hikes, [.aLittleBetter]) + answers(walks, [.aLittleBetter]), categories: [hike, walk], now: saturday, calendar: calendar)
+        let onSaturday = helpSuggestions(entries: hikes + walks, checkIns: checkIns, categories: [hike, walk], now: saturday, calendar: calendar)
         #expect(onSaturday.suggestions.map(\.category.name) == ["Hike", "Walk"])
     }
 
@@ -251,7 +263,7 @@ struct HelpSuggestionsTests {
         let workoutLogs = logs(workout, count: 10, hourOffset: 12)
         let socialLogs = logs(social, count: 5, hourOffset: 12)
         let sleepLogs = logs(sleep, count: 5, hourOffset: 12)
-        let checkIns = answers(workoutLogs, [.muchBetter]) + answers(socialLogs, [.aLittleBetter, .aLittleBetter, .aLittleBetter, .same, .same]) + answers(sleepLogs, [.muchBetter, .aLittleBetter])
+        let checkIns = answers(workoutLogs, [.muchBetter]) + answers(socialLogs, [.aLittleBetter, .aLittleBetter, .aLittleBetter, .aLittleBetter, .same]) + answers(sleepLogs, [.muchBetter, .aLittleBetter])
         let result = report(workoutLogs + socialLogs + sleepLogs, checkIns, [social, sleep, workout], limit: 2)
         #expect(result.suggestions.map(\.category.name) == ["Workout", "Sleep"])
         #expect(result.patternCount == 3)

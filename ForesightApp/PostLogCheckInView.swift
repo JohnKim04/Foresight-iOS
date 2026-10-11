@@ -7,6 +7,7 @@ struct PostLogCheckInView: View {
     let store: JournalStore
     let entryID: UUID
     let onDone: () -> Void
+    private let now: Date
     @State private var laterOptions: [CheckInLaterOption]
     @State private var chosenLater: CheckInLaterOption.Kind?
     @State private var scheduleTarget: CheckInTarget?
@@ -20,6 +21,7 @@ struct PostLogCheckInView: View {
         self.store = store
         self.entryID = entryID
         self.onDone = onDone
+        self.now = now
         _laterOptions = State(initialValue: CheckInLaterOption.options(now: now))
     }
 
@@ -202,7 +204,7 @@ struct PostLogCheckInView: View {
     }
 
     private func suggestionAfterWorse(_ entry: JournalEntry) -> HelpSuggestion? {
-        let report = helpSuggestions(entries: store.entries, checkIns: store.checkIns, categories: store.categories, limit: .max)
+        let report = helpSuggestions(entries: store.entries, checkIns: store.checkIns, categories: store.categories, now: now, limit: .max)
         return suggestionAfterWorseCheckIn(report, excluding: Set(entry.categories.map(\.id)))
     }
 
