@@ -340,10 +340,7 @@ final class ForesightUITests: XCTestCase {
     }
 
     func testAWorseRatingAfterSavingShowsAPatternFollowedByFeelingBetter() {
-        app.tabBars.buttons["Check In"].tap()
-        XCTAssertTrue(app.buttons["Add history"].waitForExistence(timeout: 3))
-        app.buttons["Add history"].tap()
-        app.tabBars.buttons["Journal"].tap()
+        addSampleHistory()
         app.buttons["New log"].tap()
         app.textViews["What happened?"].tap()
         app.textViews["What happened?"].typeText("A rough afternoon")

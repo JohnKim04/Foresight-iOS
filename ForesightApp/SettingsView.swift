@@ -242,6 +242,7 @@ struct SettingsView: View {
     }
 
     private func erase() {
+        sampleMessage = nil
         store.resetStore()
         if let error = store.initializationError {
             message = error

@@ -20,6 +20,8 @@ struct PatternsRootView: View {
     @State private var didPickDefaultCategory = false
     /// True while the app, not the user, changes the Outcomes category, so the page doesn't jump.
     @State private var isPickingCategoryForUser = false
+    /// Bumped to scroll to the evidence, even when the category it shows was already selected.
+    @State private var evidenceScrollRequest = 0
 
     private var activityCategory: JournalCategory? { activityCategoryID.flatMap { id in store.categories.first { $0.id == id } } }
     private var outcomeCategory: JournalCategory? { outcomeCategoryID.flatMap { id in store.categories.first { $0.id == id } } }
@@ -59,6 +61,10 @@ struct PatternsRootView: View {
                     if isPickingCategoryForUser { isPickingCategoryForUser = false; return }
                     guard mode == .outcomes, oldValue != newValue else { return }
                     withAnimation(.snappy) { proxy.scrollTo("outcome-controls", anchor: .top) }
+                }
+                .onChange(of: evidenceScrollRequest) {
+                    // Waits a turn so Outcomes has laid out if the mode just switched to it.
+                    Task { @MainActor in withAnimation(.snappy) { proxy.scrollTo("outcome-controls", anchor: .top) } }
                 }
             }
             .onChange(of: evidenceRequest, initial: true) { _, request in
@@ -311,6 +317,7 @@ struct PatternsRootView: View {
         outcomePhase = .delayed
         outcomeRange = helpSuggestionRange
         outcomeCategoryID = category.id
+        evidenceScrollRequest += 1
     }
 
     private var rankedInsights: some View {
