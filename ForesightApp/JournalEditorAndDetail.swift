@@ -16,8 +16,6 @@ struct JournalEditorView: View {
     @State private var newCategory = ""
     @State private var message: String?
     @State private var discardConfirmation = false
-    @State private var archiveConfirmation = false
-    @State private var categoryToArchive: JournalCategory?
     /// Set once a new log is saved; the editor then turns into the post-log check-in step.
     @State private var savedEntryID: UUID?
     @FocusState private var isWriting: Bool
@@ -70,8 +68,11 @@ struct JournalEditorView: View {
                                         .background(Color.foresightRaised, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                                         .overlay { RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.foresightLine, lineWidth: 1) }
                                         .accessibilityLabel("What happened?")
-                                    Text("\(bodyText.count) of 5,000 characters")
-                                        .font(.caption).foregroundStyle(bodyText.count > 5_000 ? .red : .secondary)
+                                    // Only worth reading once a note gets near the limit.
+                                    if bodyText.count >= 4_000 {
+                                        Text("\(bodyText.count) of 5,000 characters")
+                                            .font(.caption).foregroundStyle(bodyText.count >= 5_000 ? Color.foresightWarning : Color.foresightMuted)
+                                    }
                                 }
                                 VStack(alignment: .leading, spacing: 8) {
                                     Text("When did it happen?").font(.headline).foregroundStyle(Color.foresightInk)
@@ -81,6 +82,9 @@ struct JournalEditorView: View {
                                 }
                                 VStack(alignment: .leading, spacing: 10) {
                                     Text("Categories").font(.headline).foregroundStyle(Color.foresightInk)
+                                    Text("Tag similar moments the same way so Patterns can line them up. You can archive categories in Settings.")
+                                        .font(.caption).foregroundStyle(Color.foresightMuted)
+                                        .fixedSize(horizontal: false, vertical: true)
                                     CategoryPickerGrid(categories: store.activeCategories, selected: $categoryIDs)
                                     HStack(spacing: 8) {
                                         TextField("Create a category", text: $newCategory)
@@ -99,25 +103,6 @@ struct JournalEditorView: View {
                                     .buttonStyle(ForesightPrimaryButtonStyle())
                                     .disabled(bodyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || bodyText.count > 5_000)
                                     .frame(maxWidth: .infinity, alignment: .trailing)
-                            }
-                        }
-                        ForesightCard {
-                            VStack(alignment: .leading, spacing: 10) {
-                                SectionKicker(text: "Category management")
-                                Text("Archived categories remain on past logs and in Patterns.")
-                                    .font(.subheadline).foregroundStyle(.secondary)
-                                ForEach(store.activeCategories, id: \.id) { category in
-                                    HStack {
-                                        Text(category.name)
-                                        Spacer()
-                                        Button("Archive") {
-                                            categoryToArchive = category
-                                            archiveConfirmation = true
-                                        }
-                                        .buttonStyle(ForesightQuietButtonStyle(tone: .foresightWarning))
-                                    }
-                                    .padding(.vertical, 4)
-                                }
                             }
                         }
                         if let message { Text(message).font(.footnote).foregroundStyle(Color.foresightWarning) }
@@ -142,13 +127,6 @@ struct JournalEditorView: View {
             .confirmationDialog("Discard unsaved log?", isPresented: $discardConfirmation, titleVisibility: .visible) {
                 Button("Discard changes", role: .destructive) { dismiss() }
             } message: { Text("Your changes have not been saved.") }
-            .confirmationDialog("Archive \(categoryToArchive?.name ?? "this category")?", isPresented: $archiveConfirmation, titleVisibility: .visible) {
-                Button("Archive") {
-                    guard let categoryToArchive else { return }
-                    do { try store.archiveCategory(categoryToArchive) }
-                    catch { message = error.localizedDescription }
-                }
-            } message: { Text("It will stay attached to past logs and visible in Patterns.") }
         }
     }
 
@@ -245,13 +223,13 @@ struct JournalDetailView: View {
                                 }
                             }
                             CheckInDetailCard(
-                                title: "Overall feeling", checkIn: latestCheckIn(for: entry, phase: .immediate, checkIns: store.checkIns), isImmediate: true,
+                                title: "Right after", checkIn: latestCheckIn(for: entry, phase: .immediate, checkIns: store.checkIns), isImmediate: true,
                                 onAnswer: { checkIn in answerTarget = CheckInTarget(entryID: entry.id, checkInID: checkIn?.id) },
                                 onSchedule: { _ in },
                                 onRemove: { checkIn in checkInToRemove = checkIn; showRemoveCheckIn = true }
                             )
                             CheckInDetailCard(
-                                title: "Later check-in", checkIn: latestCheckIn(for: entry, phase: .delayed, checkIns: store.checkIns), isImmediate: false,
+                                title: "Later", checkIn: latestCheckIn(for: entry, phase: .delayed, checkIns: store.checkIns), isImmediate: false,
                                 onAnswer: { checkIn in answerTarget = CheckInTarget(entryID: entry.id, checkInID: checkIn?.id) },
                                 onSchedule: { checkIn in scheduleTarget = CheckInTarget(entryID: entry.id, checkInID: checkIn?.id) },
                                 onRemove: { checkIn in checkInToRemove = checkIn; showRemoveCheckIn = true }
@@ -328,8 +306,8 @@ struct CheckInDetailCard: View {
                         Button(isImmediate ? "Remove" : checkIn.status == .pending ? "Cancel" : "Remove") { onRemove(checkIn) }.buttonStyle(ForesightQuietButtonStyle(tone: .foresightWarning))
                     }
                 } else {
-                    Text(isImmediate ? "No check-in" : "No scheduled check-in").font(ForesightType.sectionTitle).foregroundStyle(Color.foresightInk)
-                    Text(isImmediate ? "Add an overall rating." : "Choose a time to rate this log later.").foregroundStyle(.secondary)
+                    Text(isImmediate ? "Not rated" : "Not scheduled").font(ForesightType.sectionTitle).foregroundStyle(Color.foresightInk)
+                    Text(isImmediate ? "How you felt right after it happened." : "Pick a time to say how you feel once some time has passed.").foregroundStyle(.secondary)
                     Button(isImmediate ? "Check in now" : "Check in later") {
                         isImmediate ? onAnswer(nil) : onSchedule(nil)
                     }.buttonStyle(ForesightSecondaryButtonStyle())
@@ -390,13 +368,13 @@ struct OutcomeAnswerSheet: View {
                         VStack(alignment: .leading, spacing: 18) {
                             ForesightPageHeader(
                                 kicker: existing == nil ? "Check in" : "Update check-in",
-                                title: "How did this affect you?",
-                                subtitle: existing?.phase == .delayed ? "Think about the time since this happened." : "Compare how you feel now with how you felt before."
+                                title: existing?.phase == .delayed ? "How do you feel now?" : "How did it feel right after?",
+                                subtitle: existing?.phase == .delayed ? "Think about the time since this happened." : "Compare how you felt right after with how you felt before."
                             )
                             if let entry { ForesightCard { VStack(alignment: .leading, spacing: 6) { Text(ForesightFormat.detailDate(entry.eventAt)).font(.caption.weight(.bold)).foregroundStyle(Color.foresightSage); Text(entry.body).font(.system(.body, design: .serif)).lineLimit(4) } } }
                             ForesightCard {
                                 VStack(alignment: .leading, spacing: 16) {
-                                    Text("Rating").font(.headline)
+                                    Text("Compared with before").font(.headline)
                                     HStack {
                                         Text("Worse")
                                         Spacer()
@@ -443,6 +421,7 @@ struct OutcomeAnswerSheet: View {
                                     }
                                     Toggle("Leave out of pattern summaries", isOn: $excluded)
                                 }
+                                .tint(Color.foresightSwitch)
                             }
                             if let message { Text(message).font(.footnote).foregroundStyle(Color.foresightWarning) }
                         }

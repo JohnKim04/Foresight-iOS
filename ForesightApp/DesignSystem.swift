@@ -18,6 +18,8 @@ extension Color {
     static let foresightWarm = Color(light: 0xFAF2DF, dark: 0x3D3426)
     static let foresightWarning = Color(light: 0x714F20, dark: 0xE6BE7A)
     static let foresightNegative = Color(light: 0xA56A55, dark: 0xD9A18B)
+    /// Switch tint. The dark sage is too pale to tell on from off against a white knob.
+    static let foresightSwitch = Color(light: 0x34503F, dark: 0x4E8A5C)
 
     // Compatibility for existing call sites and the former asset-backed canvas name.
     static let foresightCream = Color.foresightCanvas
@@ -273,13 +275,20 @@ extension View {
 /// avoids menu sheets and prevents a card or scroll view from clipping it.
 struct ForesightDropdownHost<Content: View>: View {
     @StateObject private var coordinator = ForesightDropdownCoordinator()
+    /// False while this host's screen is hidden, such as a tab you've switched away from.
+    /// An open panel closes then, so it isn't still open when you come back.
+    var isActive = true
     @ViewBuilder let content: Content
 
-    init(@ViewBuilder content: () -> Content) { self.content = content() }
+    init(isActive: Bool = true, @ViewBuilder content: () -> Content) {
+        self.isActive = isActive
+        self.content = content()
+    }
 
     var body: some View {
         content
             .environmentObject(coordinator)
+            .onChange(of: isActive) { _, active in if !active { coordinator.dismiss() } }
             .overlayPreferenceValue(ForesightDropdownAnchorKey.self) { anchors in
                 GeometryReader { proxy in
                     if let active = coordinator.active, let anchor = anchors.triggers[active.id] {
@@ -539,6 +548,8 @@ private struct ForesightDropdownPanel<Value: Hashable, ID: Hashable>: View {
             .padding(6)
         }
         .scrollIndicators(.automatic)
+        // A long list is cut off at the panel's edge; flashing the indicator shows it scrolls.
+        .scrollIndicatorsFlash(onAppear: true)
         .background(Color.foresightSurface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay { RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.foresightLine, lineWidth: 1) }
         .shadow(color: .black.opacity(0.14), radius: 14, y: 7)

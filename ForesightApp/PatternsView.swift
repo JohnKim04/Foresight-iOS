@@ -16,6 +16,12 @@ struct PatternsRootView: View {
     @State private var outcomeRange: OutcomeTrendRange = .ninety
     @State private var outcomePhase: OutcomePhase = .delayed
     @State private var helpReport: HelpSuggestionReport?
+    /// Set once Outcomes has picked a category on its own, so clearing it later sticks.
+    @State private var didPickDefaultCategory = false
+    /// True while the app, not the user, changes the Outcomes category, so the page doesn't jump.
+    @State private var isPickingCategoryForUser = false
+    /// Bumped to scroll to the evidence, even when the category it shows was already selected.
+    @State private var evidenceScrollRequest = 0
 
     private var activityCategory: JournalCategory? { activityCategoryID.flatMap { id in store.categories.first { $0.id == id } } }
     private var outcomeCategory: JournalCategory? { outcomeCategoryID.flatMap { id in store.categories.first { $0.id == id } } }
@@ -32,11 +38,16 @@ struct PatternsRootView: View {
                                 subtitle: "Foresight describes associations in your own logs. It does not claim causes."
                             )
                             helpedCard
-                            ForesightSegmentedPicker(
-                                selection: $mode,
-                                options: PatternsMode.allCases.map { ($0, $0.title) }
-                            )
-                            if mode == .activity { activityView } else { outcomesView }
+                            if store.entries.isEmpty {
+                                // Charts and category pickers have nothing to show before the first log.
+                                EmptyState(title: "Nothing to compare yet", detail: "Write a few logs with categories and check in later. Patterns describes what tended to follow them.")
+                            } else {
+                                ForesightSegmentedPicker(
+                                    selection: $mode,
+                                    options: PatternsMode.allCases.map { ($0, $0.title) }
+                                )
+                                if mode == .activity { activityView } else { outcomesView }
+                            }
                         }
                         .padding()
                     }
@@ -47,8 +58,13 @@ struct PatternsRootView: View {
                     withAnimation(.snappy) { proxy.scrollTo("activity-controls", anchor: .top) }
                 }
                 .onChange(of: outcomeCategoryID) { oldValue, newValue in
+                    if isPickingCategoryForUser { isPickingCategoryForUser = false; return }
                     guard mode == .outcomes, oldValue != newValue else { return }
                     withAnimation(.snappy) { proxy.scrollTo("outcome-controls", anchor: .top) }
+                }
+                .onChange(of: evidenceScrollRequest) {
+                    // Waits a turn so Outcomes has laid out if the mode just switched to it.
+                    Task { @MainActor in withAnimation(.snappy) { proxy.scrollTo("outcome-controls", anchor: .top) } }
                 }
             }
             .onChange(of: evidenceRequest, initial: true) { _, request in
@@ -58,6 +74,7 @@ struct PatternsRootView: View {
             }
             .onChange(of: helpReportKey, initial: true) {
                 helpReport = helpSuggestions(entries: store.entries, checkIns: store.checkIns, categories: store.categories)
+                pickDefaultOutcomeCategory()
             }
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
@@ -276,11 +293,31 @@ struct PatternsRootView: View {
         }
     }
 
+    /// Opens Outcomes on something worth reading instead of an empty "choose a category" card:
+    /// the top suggestion, else the clearest pattern, else the category closest to having one.
+    private func pickDefaultOutcomeCategory() {
+        // After an erase the old pick no longer exists; start over as if nothing was chosen.
+        if let id = outcomeCategoryID, !store.categories.contains(where: { $0.id == id }) {
+            isPickingCategoryForUser = true
+            outcomeCategoryID = nil
+            didPickDefaultCategory = false
+        }
+        guard outcomeCategoryID == nil, !didPickDefaultCategory else { return }
+        let pick = helpReport?.suggestions.first?.category
+            ?? categoryOutcomeInsights(entries: store.entries, checkIns: store.checkIns, categories: store.categories, phase: outcomePhase, range: outcomeRange).first?.category
+            ?? closestInsightProgress(entries: store.entries, checkIns: store.checkIns, categories: store.activeCategories, phase: outcomePhase, range: outcomeRange, now: .now)?.category
+        guard let pick else { return }
+        isPickingCategoryForUser = true
+        outcomeCategoryID = pick.id
+        didPickDefaultCategory = true
+    }
+
     private func showHelpEvidence(_ category: JournalCategory) {
         mode = .outcomes
         outcomePhase = .delayed
         outcomeRange = helpSuggestionRange
         outcomeCategoryID = category.id
+        evidenceScrollRequest += 1
     }
 
     private var rankedInsights: some View {

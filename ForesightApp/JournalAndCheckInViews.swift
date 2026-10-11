@@ -41,9 +41,9 @@ struct JournalRootView: View {
                 ContentColumn {
                     VStack(alignment: .leading, spacing: 18) {
                         ForesightPageHeader(
-                            kicker: "Consequence journal",
+                            kicker: "Private journal",
                             title: "Notice what follows.",
-                            subtitle: "Capture what happened now. Reflect on how it affected you later."
+                            subtitle: "Write down what happened. Check in later to see how you felt."
                         ) {
                             Button("Settings", systemImage: "gearshape", action: openSettings)
                                 .labelStyle(.iconOnly)
@@ -52,7 +52,9 @@ struct JournalRootView: View {
                                 .frame(width: 44, height: 44)
                                 .glassEffect(.regular, in: Circle())
                         }
-                        journalControls
+                        // Filters have nothing to work on until the first log, so a new
+                        // journal opens straight onto the prompt to write one.
+                        if !store.entries.isEmpty { journalControls }
                         if viewMode == .timeline { timeline } else { calendar }
                     }
                     .padding()
@@ -279,7 +281,30 @@ struct JournalEntryRow: View {
     }
 }
 
-enum QueueFilter: String, CaseIterable, Identifiable { case all, due, upcoming, recent; var id: String { rawValue }; var title: String { rawValue.capitalized } }
+enum QueueFilter: String, CaseIterable, Identifiable {
+    case all, due, upcoming, recent
+    var id: String { rawValue }
+    var title: String { rawValue.capitalized }
+    func title(count: Int) -> String { self == .all || count == 0 ? title : "\(title) \(count)" }
+
+    var emptyTitle: String {
+        switch self {
+        case .all: "Nothing here yet"
+        case .due: "Nothing due"
+        case .upcoming: "Nothing upcoming"
+        case .recent: "No answers yet"
+        }
+    }
+
+    var emptyDetail: String {
+        switch self {
+        case .all: "Check-ins you schedule will show up here."
+        case .due: "You're caught up. Upcoming check-ins appear here when their time comes."
+        case .upcoming: "Pick a later time after you save a log and it will wait here."
+        case .recent: "Check-ins you answer or skip show up here, so you can change them."
+        }
+    }
+}
 
 struct CheckInRootView: View {
     let store: JournalStore
@@ -289,7 +314,6 @@ struct CheckInRootView: View {
     @State private var answerTarget: CheckInTarget?
     @State private var scheduleTarget: CheckInTarget?
     @State private var checkInToSkip: OutcomeCheckIn?
-    @State private var sampleConfirmation = false
     @State private var message: String?
 
     private var queue: [QueuedCheckIn] { delayedCheckInQueue(store.snapshot) }
@@ -304,20 +328,18 @@ struct CheckInRootView: View {
                     ContentColumn {
                         VStack(alignment: .leading, spacing: 18) {
                             ForesightPageHeader(
-                                kicker: "Action → consequence",
-                                title: "Check in",
-                                subtitle: "A short reflection now gives your future self better evidence."
+                                kicker: "Follow up",
+                                title: "How did it go?",
+                                subtitle: "Rate how you feel a while after each log. Patterns builds on these answers."
                             )
-                            ForesightSegmentedPicker(
-                                selection: $filter,
-                                options: QueueFilter.allCases.map { ($0, $0.title) }
-                            )
-                            CheckInSummary(due: due.count, upcoming: upcoming.count, recent: recent.count)
+                            if !queue.isEmpty || !recent.isEmpty {
+                                ForesightSegmentedPicker(
+                                    selection: $filter,
+                                    options: QueueFilter.allCases.map { ($0, $0.title(count: count(for: $0))) }
+                                )
+                            }
                             if let message { Text(message).font(.footnote).foregroundStyle(Color.foresightSage) }
                             queueContent
-                            #if ENABLE_DEVELOPMENT_FIXTURES
-                            developmentControls
-                            #endif
                         }
                         .padding()
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -341,20 +363,16 @@ struct CheckInRootView: View {
             .alert("Skip this check-in?", isPresented: Binding(get: { checkInToSkip != nil }, set: { if !$0 { checkInToSkip = nil } })) {
                 Button("Skip") { if let checkInToSkip { try? store.skip(checkInToSkip); message = "Check-in skipped." } }
                 Button("Cancel", role: .cancel) { }
-            } message: { Text("It will stay in recent responses, where you can answer it later.") }
-            .alert("Remove sample history?", isPresented: $sampleConfirmation) {
-                Button("Remove", role: .destructive) { do { try store.removeDemoHistory(); message = "Sample history removed. Your own logs were kept." } catch { message = error.localizedDescription } }
-                Button("Cancel", role: .cancel) { }
-            } message: { Text("All development fixtures will be removed. Your own logs and check-ins will stay.") }
+            } message: { Text("It moves to Recent, where you can still answer it.") }
         }
     }
 
     @ViewBuilder private var queueContent: some View {
-        if (filter == .all || filter == .due) && !due.isEmpty { QueueGroup(title: "Ready now", items: due, store: store, onAnswer: { answerTarget = CheckInTarget(entryID: $0.entry.id, checkInID: $0.checkIn.id) }, onReschedule: { scheduleTarget = CheckInTarget(entryID: $0.entry.id, checkInID: $0.checkIn.id) }, onSkip: { checkInToSkip = $0.checkIn }) }
-        if (filter == .all || filter == .upcoming) && !upcoming.isEmpty { QueueGroup(title: "Coming up", items: upcoming, store: store, onAnswer: { answerTarget = CheckInTarget(entryID: $0.entry.id, checkInID: $0.checkIn.id) }, onReschedule: { scheduleTarget = CheckInTarget(entryID: $0.entry.id, checkInID: $0.checkIn.id) }, onSkip: { checkInToSkip = $0.checkIn }) }
+        if (filter == .all || filter == .due) && !due.isEmpty { QueueGroup(title: "Due · \(due.count)", items: due, store: store, onAnswer: { answerTarget = CheckInTarget(entryID: $0.entry.id, checkInID: $0.checkIn.id) }, onReschedule: { scheduleTarget = CheckInTarget(entryID: $0.entry.id, checkInID: $0.checkIn.id) }, onSkip: { checkInToSkip = $0.checkIn }) }
+        if (filter == .all || filter == .upcoming) && !upcoming.isEmpty { QueueGroup(title: "Upcoming · \(upcoming.count)", items: upcoming, store: store, onAnswer: { answerTarget = CheckInTarget(entryID: $0.entry.id, checkInID: $0.checkIn.id) }, onReschedule: { scheduleTarget = CheckInTarget(entryID: $0.entry.id, checkInID: $0.checkIn.id) }, onSkip: { checkInToSkip = $0.checkIn }) }
         if (filter == .all || filter == .recent) && !recent.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
-                SectionKicker(text: "Recent responses")
+                SectionKicker(text: "Recent · \(recent.count)")
                 ForEach(recent) { item in
                     ForesightCard {
                         HStack(alignment: .top) {
@@ -367,27 +385,21 @@ struct CheckInRootView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        if queue.isEmpty && recent.isEmpty { EmptyState(title: filter == .due ? "Nothing due" : "Nothing here yet", detail: filter == .due ? "Your scheduled check-ins are caught up." : "Schedule a follow-up from any saved log and it will appear here.") }
-    }
-
-    #if ENABLE_DEVELOPMENT_FIXTURES
-    private var developmentControls: some View {
-        ForesightCard {
-            HStack(alignment: .center, spacing: 12) {
-                VStack(alignment: .leading, spacing: 5) {
-                    SectionKicker(text: "Development data")
-                    Text(store.demoDataState() == .complete ? "Sample history is loaded." : "Add a 90-day pattern history plus queue states.").font(.caption).foregroundStyle(.secondary)
-                }
-                Spacer()
-                Button(store.demoDataState() == .complete ? "Remove" : "Add history") {
-                    if store.demoDataState() == .complete { sampleConfirmation = true }
-                    else { do { try store.addDemoHistory(); message = "Sample history added. You can safely run this again." } catch { message = error.localizedDescription } }
-                }.buttonStyle(ForesightSecondaryButtonStyle())
-            }
+        if queue.isEmpty && recent.isEmpty {
+            EmptyState(title: "Nothing to check in on yet", detail: "After you save a log, pick a time to check in later. It will wait here, and Foresight can remind you.")
+        } else if count(for: filter) == 0 {
+            EmptyState(title: filter.emptyTitle, detail: filter.emptyDetail)
         }
     }
-    #endif
 
+    private func count(for filter: QueueFilter) -> Int {
+        switch filter {
+        case .all: queue.count + recent.count
+        case .due: due.count
+        case .upcoming: upcoming.count
+        case .recent: recent.count
+        }
+    }
 }
 
 struct QueueGroup: View {
@@ -421,35 +433,5 @@ struct QueueGroup: View {
         Button(item.due ? "Answer" : "Answer early") { onAnswer(item) }.buttonStyle(ForesightPrimaryButtonStyle())
         Button("Reschedule") { onReschedule(item) }.buttonStyle(ForesightSecondaryButtonStyle())
         Button("Skip") { onSkip(item) }.buttonStyle(ForesightQuietButtonStyle(tone: .foresightWarning))
-    }
-}
-
-private struct CheckInSummary: View {
-    let due: Int
-    let upcoming: Int
-    let recent: Int
-
-    var body: some View {
-        HStack(spacing: 8) {
-            metric(due, label: "Ready", emphasized: due > 0)
-            metric(upcoming, label: "Upcoming")
-            metric(recent, label: "Recent")
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    private func metric(_ value: Int, label: String, emphasized: Bool = false) -> some View {
-        VStack(spacing: 2) {
-            Text("\(value)")
-                .font(.title3.weight(.bold))
-                .foregroundStyle(emphasized ? Color.foresightWarning : Color.foresightSage)
-            Text(label)
-                .font(.caption2.weight(.bold))
-                .foregroundStyle(Color.foresightMuted)
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-        }
-        .frame(maxWidth: .infinity, minHeight: 58)
-        .background(emphasized ? Color.foresightWarm : Color.foresightSoftSage, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }

@@ -37,7 +37,7 @@ struct PostLogCheckInView: View {
                     ForesightPageHeader(
                         kicker: "Log saved",
                         title: "How do you feel right now?",
-                        subtitle: "A quick rating now and another later show what this tends to lead to."
+                        subtitle: "Rate it now and again later. Over time, Patterns shows what tends to follow."
                     )
                     if let entry {
                         Text(entry.body)
@@ -126,7 +126,7 @@ struct PostLogCheckInView: View {
         ForesightCard {
             VStack(alignment: .leading, spacing: 12) {
                 SectionKicker(text: "Check in later")
-                Text("Effects often show up later. Pick a time and it will wait for you in Check In.")
+                Text("How you feel a few hours on can differ from right after. Pick a time and it will wait for you in Check In.")
                     .font(.subheadline)
                     .foregroundStyle(Color.foresightMuted)
                     .fixedSize(horizontal: false, vertical: true)
