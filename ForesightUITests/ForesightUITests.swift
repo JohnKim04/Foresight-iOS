@@ -150,7 +150,7 @@ final class ForesightUITests: XCTestCase {
         app.textFields["Create a category"].tap()
         app.textFields["Create a category"].typeText("Testing")
         app.buttons["Add"].tap()
-        XCTAssertTrue(app.buttons["Testing"].exists)
+        XCTAssertTrue(app.buttons["Testing"].waitForExistence(timeout: 3))
         app.textViews["What happened?"].tap()
         app.textViews["What happened?"].typeText("A tagged test")
         // Add already selected the new category, so the log is saved with it.

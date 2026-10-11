@@ -2,8 +2,12 @@ name: CI
 
 on:
   pull_request:
+    # ready_for_review reruns the full suite when a draft is marked ready.
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths-ignore: ["**.md"]
   push:
     branches: [main]
+    paths-ignore: ["**.md"]
   workflow_dispatch:
 
 permissions:
@@ -55,6 +59,8 @@ jobs:
       - name: Generate, build, and test
         env:
           VERIFY_SKIP_LAUNCH: "1"
+          # Drafts get the build and unit tests only; ready PRs and main also run the UI tests.
+          VERIFY_SKIP_UI_TESTS: ${{ github.event.pull_request.draft == true && '1' || '' }}
           VERIFY_RESULT_BUNDLE_PATH: ${{ github.workspace }}/build/TestResults.xcresult
         run: ./Scripts/verify.sh
 
