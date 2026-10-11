@@ -21,6 +21,8 @@ final class JournalStore {
     @ObservationIgnored var onCheckInsChanged: (@MainActor ([OutcomeCheckIn]) -> Void)?
     /// Called after every successful load, so suggestion nudges follow every journal change.
     @ObservationIgnored var onJournalChanged: (@MainActor (JournalStore) -> Void)?
+    /// Called after the journal is erased, so notification history about it goes too.
+    @ObservationIgnored var onReset: (@MainActor () -> Void)?
 
     init(modelContext: ModelContext, modelContainer: ModelContainer? = nil, now: @escaping () -> Date = { .now }, makeID: @escaping () -> UUID = UUID.init) {
         self.modelContext = modelContext
@@ -58,6 +60,7 @@ final class JournalStore {
             try modelContext.fetch(FetchDescriptor<JournalCategory>()).forEach(modelContext.delete)
             try modelContext.save()
             reload()
+            onReset?()
         } catch {
             initializationError = "The journal could not be reset. \(error.localizedDescription)"
         }

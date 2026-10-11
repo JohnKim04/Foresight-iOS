@@ -24,28 +24,6 @@ struct SuggestionNudge: Equatable, Sendable {
     let body: String
 }
 
-/// Hours when no nudge is sent. A later Settings screen can replace the default.
-struct NudgeQuietHours: Equatable, Sendable {
-    var start: Int
-    var end: Int
-
-    static let standard = NudgeQuietHours(start: 22, end: 8)
-
-    func contains(hour: Int) -> Bool {
-        start > end ? (hour >= start || hour < end) : (hour >= start && hour < end)
-    }
-}
-
-/// Where a Settings screen turns nudges off. Nudges are on by default. Nothing observes this
-/// key, so whatever flips it must call `SuggestionNudgeScheduler.resync()` afterwards.
-enum NudgePreferences {
-    static let enabledKey = "suggestionNudgesEnabled"
-
-    static func isEnabled(_ defaults: UserDefaults = .standard) -> Bool {
-        defaults.object(forKey: enabledKey) as? Bool ?? true
-    }
-}
-
 /// Nudge copy, kept here so the non-causal wording is covered by tests.
 enum SuggestionNudgeCopy {
     enum Style { case specific, generic }
@@ -113,7 +91,7 @@ enum SuggestionNudgePlan {
     /// One nudge per day for the next few days. Each day takes the strongest candidate
     /// it can, preferring a different category from the day before so it doesn't repeat.
     /// `usedToday` means a nudge already went out today.
-    static func nudges(for candidates: [NudgeCandidate], now: Date, calendar: Calendar, quietHours: NudgeQuietHours = .standard, usedToday: Bool) -> [SuggestionNudge] {
+    static func nudges(for candidates: [NudgeCandidate], now: Date, calendar: Calendar, quietHours: QuietHours = .standard, usedToday: Bool) -> [SuggestionNudge] {
         let ranked = candidates
             .filter { !quietHours.contains(hour: $0.usualHour) }
             .sorted { $0.strength != $1.strength ? $0.strength > $1.strength : $0.categoryName < $1.categoryName }
@@ -160,20 +138,38 @@ enum SuggestionNudgePlan {
 }
 
 /// Remembers when scheduled nudges fire, so a nudge that already went out today
-/// still counts after it leaves the pending list.
+/// still counts after it leaves the pending list. It keeps the wall-clock time the trigger
+/// uses, not an instant: after a time zone change the trigger fires at that local time, so
+/// the ledger has to read it in the current zone too.
 protocol NudgeLedger: AnyObject {
-    var fireDates: [Date] { get set }
+    var fireTimes: [DateComponents] { get set }
 }
 
 final class UserDefaultsNudgeLedger: NudgeLedger {
     private let defaults: UserDefaults
-    private let key = "suggestionNudgeFireDates"
+    private let key = "suggestionNudgeWallClockTimes"
+    /// The earlier format stored instants. It is read once, converted, and then removed.
+    private let legacyKey = "suggestionNudgeFireDates"
 
     init(defaults: UserDefaults = .standard) { self.defaults = defaults }
 
-    var fireDates: [Date] {
-        get { (defaults.array(forKey: key) as? [Double] ?? []).map(Date.init(timeIntervalSinceReferenceDate:)) }
-        set { defaults.set(newValue.map(\.timeIntervalSinceReferenceDate), forKey: key) }
+    var fireTimes: [DateComponents] {
+        get {
+            // Upgrade day: read the old instants as wall-clock times here, so a nudge that
+            // already went out today still counts.
+            if defaults.object(forKey: key) == nil, let legacy = defaults.array(forKey: legacyKey) as? [Double] {
+                let calendar = Calendar.autoupdatingCurrent
+                return legacy.map { calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: Date(timeIntervalSinceReferenceDate: $0)) }
+            }
+            return (defaults.array(forKey: key) as? [[Int]] ?? []).compactMap { parts in
+                guard parts.count == 6 else { return nil }
+                return DateComponents(year: parts[0], month: parts[1], day: parts[2], hour: parts[3], minute: parts[4], second: parts[5])
+            }
+        }
+        set {
+            defaults.removeObject(forKey: legacyKey)
+            defaults.set(newValue.map { [$0.year ?? 0, $0.month ?? 0, $0.day ?? 0, $0.hour ?? 0, $0.minute ?? 0, $0.second ?? 0] }, forKey: key)
+        }
     }
 }
 
@@ -211,7 +207,7 @@ final class SuggestionNudgeScheduler {
     private let now: () -> Date
     private let calendar: () -> Calendar
     private let isEnabled: () -> Bool
-    private let quietHours: () -> NudgeQuietHours
+    private let quietHours: () -> QuietHours
     private weak var store: JournalStore?
     private var syncTask: Task<Void, Never>?
 
@@ -220,8 +216,8 @@ final class SuggestionNudgeScheduler {
         ledger: any NudgeLedger = UserDefaultsNudgeLedger(),
         now: @escaping () -> Date = { .now },
         calendar: @escaping () -> Calendar = { .autoupdatingCurrent },
-        isEnabled: @escaping () -> Bool = { NudgePreferences.isEnabled() },
-        quietHours: @escaping () -> NudgeQuietHours = { .standard }
+        isEnabled: @escaping () -> Bool = { true },
+        quietHours: @escaping () -> QuietHours = { .standard }
     ) {
         self.center = center
         self.ledger = ledger
@@ -234,6 +230,7 @@ final class SuggestionNudgeScheduler {
     func attach(to store: JournalStore) {
         self.store = store
         store.onJournalChanged = { [weak self] _ in self?.resync() }
+        store.onReset = { [weak self] in self?.journalWasReset() }
         resync()
     }
 
@@ -260,15 +257,32 @@ final class SuggestionNudgeScheduler {
         await syncTask?.value
     }
 
+    /// After the journal is erased: forget which nudges went out and clear any still in
+    /// Notification Center, since their categories no longer exist.
+    func journalWasReset() {
+        let previous = syncTask
+        let center = self.center
+        syncTask = Task {
+            // Clear after any sync already running, which would otherwise write old entries back.
+            await previous?.value
+            ledger.fireTimes = []
+            let delivered = await center.deliveredIdentifiers()
+            await center.removeDelivered(delivered.filter { $0.hasPrefix(SuggestionNudgePlan.identifierPrefix) })
+        }
+        resync()
+    }
+
     private func reconcile(_ candidates: [NudgeCandidate], now: Date, calendar: Calendar, enabled: Bool) async {
         // A nudge whose fire time has passed went out; keep those from today and yesterday.
-        let fired = ledger.fireDates.filter { $0 <= now && $0 > now.addingTimeInterval(-2 * 24 * 60 * 60) }
+        // Each is read in the current zone, as its floating trigger was.
+        let fired = ledger.fireTimes.compactMap { time in calendar.date(from: time).map { (time, $0) } }
+            .filter { $0.1 <= now && $0.1 > now.addingTimeInterval(-2 * 24 * 60 * 60) }
         let allowed = await center.authorization() == .allowed
         let today = SuggestionNudgePlan.dayKey(now, calendar: calendar)
         let delivered = await center.deliveredIdentifiers()
         // A nudge for today already in Notification Center also counts: it covers a floating
         // trigger that fired early after travelling east, and a suspension before the ledger write.
-        let usedToday = fired.contains { calendar.isDate($0, inSameDayAs: now) }
+        let usedToday = fired.contains { calendar.isDate($0.1, inSameDayAs: now) }
             || delivered.contains { $0.hasPrefix(SuggestionNudgePlan.identifierPrefix + today + ".") }
         await center.removeDelivered(SuggestionNudgePlan.staleDelivered(delivered, today: today, enabled: enabled && allowed))
         let desired = allowed ? SuggestionNudgePlan.nudges(for: candidates, now: now, calendar: calendar, quietHours: quietHours(), usedToday: usedToday) : []
@@ -278,7 +292,7 @@ final class SuggestionNudgeScheduler {
         for nudge in changes.toAdd {
             do { try await center.addNudge(nudge) } catch { failed.insert(nudge.identifier) }
         }
-        ledger.fireDates = fired + desired.filter { !failed.contains($0.identifier) }.map(\.fireAt)
+        ledger.fireTimes = fired.map { $0.0 } + desired.filter { !failed.contains($0.identifier) }.map(\.wallClock)
     }
 }
 

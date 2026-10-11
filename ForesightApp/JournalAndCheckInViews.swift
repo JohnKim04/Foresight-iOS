@@ -5,6 +5,7 @@ enum JournalDateScope: String, CaseIterable, Identifiable { case recent, all, cu
 
 struct JournalRootView: View {
     let store: JournalStore
+    let openSettings: () -> Void
     @State private var query = ""
     @State private var categoryID: UUID?
     @State private var checkInFilter: JournalCheckInFilter = .all
@@ -43,7 +44,14 @@ struct JournalRootView: View {
                             kicker: "Consequence journal",
                             title: "Notice what follows.",
                             subtitle: "Capture what happened now. Reflect on how it affected you later."
-                        )
+                        ) {
+                            Button("Settings", systemImage: "gearshape", action: openSettings)
+                                .labelStyle(.iconOnly)
+                                .font(.title3)
+                                .foregroundStyle(Color.foresightInk)
+                                .frame(width: 44, height: 44)
+                                .glassEffect(.regular, in: Circle())
+                        }
                         journalControls
                         if viewMode == .timeline { timeline } else { calendar }
                     }
