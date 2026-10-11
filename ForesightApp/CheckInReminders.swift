@@ -38,6 +38,9 @@ enum CheckInReminderPlan {
     static let identifierPrefix = "check-in."
     static let categoryIdentifier = "CHECK_IN_DUE"
     static let snoozeActionIdentifier = "CHECK_IN_SNOOZE"
+    static let answerActionPrefix = "CHECK_IN_ANSWER_"
+    /// The answers a reminder offers as buttons, best first, so the list reads like the scale.
+    static let answerActionValues: [OutcomeValue] = [.muchBetter, .aLittleBetter, .same, .aLittleWorse, .muchWorse]
     static let threadIdentifier = "check-ins"
     static let title = "How do you feel now?"
     /// The one switch for what a reminder, and a suggestion nudge, says. With it on, the first
@@ -51,6 +54,13 @@ enum CheckInReminderPlan {
     static let snoozeInterval: TimeInterval = 60 * 60
 
     static func identifier(for checkInID: UUID) -> String { identifierPrefix + checkInID.uuidString }
+
+    static func answerActionIdentifier(for value: OutcomeValue) -> String { answerActionPrefix + String(value.rawValue) }
+
+    static func answer(fromActionIdentifier identifier: String) -> OutcomeValue? {
+        guard identifier.hasPrefix(answerActionPrefix), let rawValue = Int(identifier.dropFirst(answerActionPrefix.count)) else { return nil }
+        return OutcomeValue(rawValue: rawValue)
+    }
 
     static func checkInID(fromIdentifier identifier: String) -> UUID? {
         guard identifier.hasPrefix(identifierPrefix) else { return nil }
@@ -183,9 +193,17 @@ struct SystemReminderNotificationCenter: ReminderNotificationCenter {
         UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: identifiers)
     }
 
+    /// Answering from the notification records the check-in in the background, without unlocking,
+    /// the same way the log text already shows on the lock screen.
+    static var checkInActions: [UNNotificationAction] {
+        let answers = CheckInReminderPlan.answerActionValues.map { value in
+            UNNotificationAction(identifier: CheckInReminderPlan.answerActionIdentifier(for: value), title: value.title, options: [])
+        }
+        return answers + [UNNotificationAction(identifier: CheckInReminderPlan.snoozeActionIdentifier, title: "Remind me in an hour", options: [])]
+    }
+
     static var categories: Set<UNNotificationCategory> {
-        let snooze = UNNotificationAction(identifier: CheckInReminderPlan.snoozeActionIdentifier, title: "Remind me in an hour", options: [])
-        return [UNNotificationCategory(identifier: CheckInReminderPlan.categoryIdentifier, actions: [snooze], intentIdentifiers: [], options: [])]
+        [UNNotificationCategory(identifier: CheckInReminderPlan.categoryIdentifier, actions: checkInActions, intentIdentifiers: [], options: [])]
     }
 }
 
@@ -293,11 +311,12 @@ final class CheckInReminderScheduler {
 }
 
 struct ReminderResponse: Equatable, Sendable {
-    enum Action: Equatable, Sendable { case open, snooze }
+    enum Action: Equatable, Sendable { case open, snooze, answer(OutcomeValue) }
 
     let checkInID: UUID
     let action: Action
-    /// The delivered notification's text, kept so a snooze can re-post it without the store.
+    /// The delivered notification's text, kept so a snooze, or an answer that can't be saved,
+    /// can re-post it without the store.
     let body: String
 
     init?(requestIdentifier: String, actionIdentifier: String, body: String = "") {
@@ -305,7 +324,9 @@ struct ReminderResponse: Equatable, Sendable {
         switch actionIdentifier {
         case UNNotificationDefaultActionIdentifier: action = .open
         case CheckInReminderPlan.snoozeActionIdentifier: action = .snooze
-        default: return nil
+        default:
+            guard let value = CheckInReminderPlan.answer(fromActionIdentifier: actionIdentifier) else { return nil }
+            action = .answer(value)
         }
         self.checkInID = checkInID
         self.body = body
@@ -317,9 +338,11 @@ enum ReminderDestination: Equatable {
     case answer(CheckInTarget)
     /// A category's later evidence on Patterns, from a tapped suggestion nudge.
     case evidence(UUID)
+    /// A new log, from the widget.
+    case newLog
 }
 
-/// Turns a tapped or snoozed reminder into app state. The root view consumes `destination`.
+/// Turns a tapped, answered or snoozed reminder into app state. The root view consumes `destination`.
 @MainActor
 @Observable
 final class CheckInReminderRouter {
@@ -353,6 +376,36 @@ final class CheckInReminderRouter {
             try? store.reschedule(checkIn, to: now().addingTimeInterval(CheckInReminderPlan.snoozeInterval))
             // A snooze can run with the app in the background; finish scheduling before returning.
             await reminders.waitForPendingWork()
+        case .answer(let value):
+            guard let store else {
+                // The journal can't be read, so the answer has nowhere to go. Ask again in an hour
+                // rather than drop the check-in along with the notification.
+                await reminders.snoozeWithoutStore(checkInID: response.checkInID, body: response.body.isEmpty ? CheckInReminderPlan.genericBody : response.body)
+                return
+            }
+            // Answered or skipped elsewhere first: that answer stands.
+            guard let checkIn, checkIn.status == .pending else { return }
+            try? store.answer(checkIn, response: value, notSure: false, note: "", excludedFromAnalysis: false)
+            // The app may only be awake for this; clear the reminder before returning.
+            await reminders.waitForPendingWork()
+        }
+    }
+}
+
+extension CheckInReminderRouter {
+    /// A widget tap. A check-in link opens like a tapped reminder: its answer sheet while it's
+    /// still pending, otherwise the Check In tab.
+    func open(_ link: ForesightLink) {
+        switch link {
+        case .newLog: destination = .newLog
+        case .checkIns: destination = .checkIns
+        case .checkIn(let id):
+            let checkIn = store?.checkIns.first { $0.id == id }
+            if let checkIn, checkIn.status == .pending, let entry = checkIn.entry {
+                destination = .answer(CheckInTarget(entryID: entry.id, checkInID: checkIn.id))
+            } else {
+                destination = .checkIns
+            }
         }
     }
 }

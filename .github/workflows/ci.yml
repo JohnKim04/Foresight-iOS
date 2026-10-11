@@ -64,6 +64,18 @@ jobs:
           VERIFY_RESULT_BUNDLE_PATH: ${{ github.workspace }}/build/TestResults.xcresult
         run: ./Scripts/verify.sh
 
+      # verify.sh regenerates the project, so CI passes even when the committed project.pbxproj is
+      # stale. Print the difference: a session without XcodeGen can apply it with `git apply`.
+      - name: Check the committed Xcode project
+        if: always()
+        run: |
+          if ! git diff --quiet -- Foresight.xcodeproj; then
+            echo "::warning::Foresight.xcodeproj is out of date with project.yml. Run xcodegen generate, or apply the diff below."
+            echo "----- BEGIN PROJECT DIFF -----"
+            git diff -- Foresight.xcodeproj
+            echo "----- END PROJECT DIFF -----"
+          fi
+
       - name: Upload test results
         if: failure() || cancelled()
         uses: actions/upload-artifact@v6

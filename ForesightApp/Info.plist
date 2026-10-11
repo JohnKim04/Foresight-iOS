@@ -20,6 +20,19 @@
   <string>1.0</string>
   <key>CFBundleVersion</key>
   <string>1</string>
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key>
+      <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+      <key>CFBundleURLSchemes</key>
+      <array>
+        <string>foresight</string>
+      </array>
+    </dict>
+  </array>
+  <key>ForesightAppGroup</key>
+  <string>$(APP_GROUP_IDENTIFIER)</string>
   <key>ITSAppUsesNonExemptEncryption</key>
   <false/>
   <key>UILaunchScreen</key>

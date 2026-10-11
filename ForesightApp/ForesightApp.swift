@@ -4,6 +4,7 @@ import Observation
 import SwiftData
 import SwiftUI
 import UIKit
+import WidgetKit
 
 @main
 struct ForesightApp: App {
@@ -71,19 +72,24 @@ final class AppDatabase {
 
     func open(inMemory: Bool = ProcessInfo.processInfo.arguments.contains("-in-memory-store")) {
         do {
-            let newContainer = try ForesightPersistence.makeContainer(storeURL: inMemory ? nil : Self.storeURL)
-            let newStore = JournalStore(modelContext: newContainer.mainContext, modelContainer: newContainer)
-            if let error = newStore.initializationError {
-                container = nil
-                store = nil
-                errorMessage = error
+            let (newContainer, newStore): (ModelContainer, JournalStore)
+            if inMemory {
+                (newContainer, newStore) = try Self.openStore(at: nil)
             } else {
-                container = newContainer
-                store = newStore
-                errorMessage = nil
-                reminders.attach(to: newStore)
-                nudges.attach(to: newStore)
-                router.store = newStore
+                (newContainer, newStore) = try SharedJournal.open(groupDirectory: SharedJournal.groupDirectory, appDirectory: SharedJournal.appDirectory) { url in
+                    lastStoreURL = url
+                    return try Self.openStore(at: url)
+                }
+            }
+            container = newContainer
+            store = newStore
+            errorMessage = nil
+            reminders.attach(to: newStore)
+            nudges.attach(to: newStore)
+            router.store = newStore
+            if !inMemory {
+                newStore.onLoaded = { WidgetCenter.shared.reloadAllTimelines() }
+                WidgetCenter.shared.reloadAllTimelines()
             }
         } catch {
             container = nil
@@ -97,22 +103,28 @@ final class AppDatabase {
             store.resetStore()
             errorMessage = store.initializationError
         } else {
-            do {
-                for suffix in ["", "-shm", "-wal"] {
-                    let url = URL(fileURLWithPath: Self.storeURL.path + suffix)
-                    if FileManager.default.fileExists(atPath: url.path) { try FileManager.default.removeItem(at: url) }
-                }
-                open(inMemory: false)
-            } catch {
-                errorMessage = "The journal could not be reset. \(error.localizedDescription)"
-            }
+            // Resetting a build that can't reach the group starts a new journal outside it.
+            if SharedJournal.groupDirectory == nil { UserDefaults.standard.removeObject(forKey: SharedJournal.inGroupKey) }
+            if let lastStoreURL { SharedJournal.removeStore(at: lastStoreURL) }
+            open(inMemory: false)
         }
     }
 
-    private static var storeURL: URL {
-        let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first ?? FileManager.default.temporaryDirectory
-        return directory.appendingPathComponent("Foresight.store")
+    /// The store the last open tried, so a reset removes the one that wouldn't open.
+    @ObservationIgnored private var lastStoreURL: URL?
+
+    /// A container and a store that loaded, or an error saying why not.
+    private static func openStore(at url: URL?) throws -> (ModelContainer, JournalStore) {
+        let container = try ForesightPersistence.makeContainer(storeURL: url)
+        let store = JournalStore(modelContext: container.mainContext, modelContainer: container)
+        if let error = store.initializationError { throw StoreOpenError(message: error) }
+        return (container, store)
     }
+}
+
+private struct StoreOpenError: LocalizedError {
+    let message: String
+    var errorDescription: String? { message }
 }
 
 enum AppTab: Hashable { case journal, checkIns, patterns }
@@ -129,6 +141,7 @@ struct ForesightRootView: View {
     /// Advanced when the next check-in falls due, so the badge appears without any polling.
     @State private var badgeClock = Date.now
     @State private var checkInAnswerRequest: CheckInTarget?
+    @State private var newLogRequest = false
     @State private var evidenceRequest: UUID?
     @Environment(\.scenePhase) private var scenePhase
 
@@ -139,7 +152,7 @@ struct ForesightRootView: View {
         // Each tab gets its own dropdown host, inside the TabView, so the tab bar counts as
         // safe area and an open panel stops above it instead of running underneath.
         TabView(selection: $tab) {
-            ForesightDropdownHost(isActive: tab == .journal) { JournalRootView(store: store) { showsSettings = true } }
+            ForesightDropdownHost(isActive: tab == .journal) { JournalRootView(store: store, newLogRequest: $newLogRequest) { showsSettings = true } }
                 .tabItem { Label("Journal", systemImage: "book.closed") }
                 .tag(AppTab.journal)
             ForesightDropdownHost(isActive: tab == .checkIns) { CheckInRootView(store: store, answerRequest: $checkInAnswerRequest) }
@@ -182,12 +195,18 @@ struct ForesightRootView: View {
                     case .checkIns: tab = .checkIns
                     case .answer(let target): tab = .checkIns; checkInAnswerRequest = target
                     case .evidence(let categoryID): tab = .patterns; evidenceRequest = categoryID
+                    case .newLog: tab = .journal; newLogRequest = true
                     }
                     router.destination = nil
                     return
                 }
                 try? await Task.sleep(for: .milliseconds(400))
             }
+        }
+        // Widget taps arrive as foresight:// links and go through the same waiting as reminder taps.
+        .onOpenURL { url in
+            guard let link = ForesightLink(url: url) else { return }
+            router.open(link)
         }
         .sheet(isPresented: $showsSettings) {
             SettingsView(store: store, reminders: reminders, nudges: nudges, preferences: preferences)

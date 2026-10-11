@@ -54,13 +54,14 @@ enum ForesightPersistence {
     static var schema: Schema { Schema(versionedSchema: ForesightSchemaLatest.self) }
 
     /// Opens the store at `url`, migrating it to the newest schema version, or an in-memory store when `url` is nil.
-    static func makeContainer(storeURL url: URL?) throws -> ModelContainer {
+    /// The widget passes `allowsSave: false`: it only reads, and never migrates, a store the app owns.
+    static func makeContainer(storeURL url: URL?, allowsSave: Bool = true) throws -> ModelContainer {
         let configuration: ModelConfiguration
         if let url {
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-            configuration = ModelConfiguration("Foresight", schema: schema, url: url, allowsSave: true, cloudKitDatabase: .none)
+            configuration = ModelConfiguration("Foresight", schema: schema, url: url, allowsSave: allowsSave, cloudKitDatabase: .none)
         } else {
-            configuration = ModelConfiguration("Foresight", schema: schema, isStoredInMemoryOnly: true, allowsSave: true, cloudKitDatabase: .none)
+            configuration = ModelConfiguration("Foresight", schema: schema, isStoredInMemoryOnly: true, allowsSave: allowsSave, cloudKitDatabase: .none)
         }
         return try ModelContainer(for: schema, migrationPlan: ForesightMigrationPlan.self, configurations: [configuration])
     }
