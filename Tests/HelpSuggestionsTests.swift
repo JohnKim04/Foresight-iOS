@@ -59,7 +59,7 @@ struct HelpSuggestionsTests {
 
     private func expectNonCausal(_ strings: [String]) {
         let text = strings.joined(separator: " ").lowercased()
-        for causal in ["help", "because", "causes", "makes you", "leads to"] { #expect(!text.contains(causal), "\(causal) in \(text)") }
+        for causal in ["help", "because", "causes", "makes you", "leads to", "lead to", "affect"] { #expect(!text.contains(causal), "\(causal) in \(text)") }
     }
 
     @Test("keeps the card and nudge copy non-causal in every state")
@@ -73,7 +73,7 @@ struct HelpSuggestionsTests {
         ]
         #expect(Set(messages).count == 3)
         #expect(messages[1].contains("Workout needs 1 more later check-in "))
-        expectNonCausal([HelpSuggestionCopy.title] + messages)
+        expectNonCausal([HelpSuggestionCopy.title, HelpSuggestionCopy.afterWorseIntro] + messages)
         expectNonCausal([SuggestionNudgeCopy.title, SuggestionNudgeCopy.body(categoryName: "Workout", betterCount: 4, numericCount: 5, style: .specific), SuggestionNudgeCopy.body(categoryName: "Workout", betterCount: 4, numericCount: 5, style: .generic)])
         // The footnote is the disclaimer itself, so it names "causes" on purpose.
         #expect(HelpSuggestionCopy.footnote.hasSuffix("These are patterns, not causes."))
@@ -95,18 +95,98 @@ struct HelpSuggestionsTests {
         #expect(try #require(result.suggestions.first { $0.category.id == read.id }).usualHour == nil)
     }
 
-    @Test("qualifies at exactly 60 percent better but not at 40 percent")
-    func sixtyPercentBoundary() {
+    @Test("needs more than a bare majority at five responses, and the 60 percent rule")
+    func smallSampleBar() {
         let workout = JournalCategory(name: "Workout")
+        let reading = JournalCategory(name: "Reading")
         let social = JournalCategory(name: "Social")
         let workoutLogs = logs(workout, count: 5)
+        let readingLogs = logs(reading, count: 5)
         let socialLogs = logs(social, count: 5)
-        let checkIns = answers(workoutLogs, [.aLittleBetter, .aLittleBetter, .aLittleBetter, .same, .same])
+        let checkIns = answers(workoutLogs, [.aLittleBetter, .aLittleBetter, .aLittleBetter, .aLittleBetter, .same])
+            + answers(readingLogs, [.aLittleBetter, .aLittleBetter, .aLittleBetter, .same, .same])
             + answers(socialLogs, [.muchBetter, .muchBetter, .same, .same, .same])
-        let result = report(workoutLogs + socialLogs, checkIns, [workout, social])
+        let result = report(workoutLogs + readingLogs + socialLogs, checkIns, [workout, reading, social])
+        // Reading's 3 of 5 clears the 60% rule that Patterns uses, but is too close to chance to suggest.
         #expect(result.suggestions.map(\.category.name) == ["Workout"])
-        #expect(result.suggestions.first?.betterCount == 3)
+        #expect(result.suggestions.first?.betterCount == 4)
+        #expect(result.patternCount == 3)
+    }
+
+    @Test("the Wilson lower bound discounts small samples")
+    func lowerBound() {
+        #expect(wilsonLowerBound(successes: 0, trials: 0) == 0)
+        #expect(wilsonLowerBound(successes: 3, trials: 5) < 0.5)
+        #expect(wilsonLowerBound(successes: 4, trials: 5) > 0.5)
+        #expect(wilsonLowerBound(successes: 6, trials: 10) < 0.5)
+        #expect(wilsonLowerBound(successes: 7, trials: 10) > 0.5)
+        // 6 of 9 lands on 0.5 exactly in exact arithmetic, and still qualifies.
+        #expect(abs(wilsonLowerBound(successes: 6, trials: 9) - 0.5) < 1e-9)
+        #expect(wilsonLowerBound(successes: 10, trials: 10) > wilsonLowerBound(successes: 5, trials: 5))
+        #expect(abs(wilsonLowerBound(successes: 4, trials: 5) - 0.579) < 0.001)
+    }
+
+    @Test("a lower bound of exactly one half qualifies")
+    func boundaryQualifies() {
+        let workout = JournalCategory(name: "Workout")
+        let entries = logs(workout, count: 9)
+        let result = report(entries, answers(entries, [.aLittleBetter, .aLittleBetter, .aLittleBetter, .same, .aLittleBetter, .same, .aLittleBetter, .same, .aLittleBetter]), [workout])
+        #expect(result.suggestions.first?.betterCount == 6)
+    }
+
+    @Test("drops a pattern whose latest later check-ins were mostly not better")
+    func dropsFadedPattern() {
+        let workout = JournalCategory(name: "Workout")
+        let social = JournalCategory(name: "Social")
+        let workoutLogs = logs(workout, count: 8, hourOffset: 12)
+        let socialLogs = logs(social, count: 8, hourOffset: 12)
+        // Both are better in 6 of 8. Workout's three newest were worse, same, better;
+        // Social's three oldest were.
+        let faded: [OutcomeValue] = [.aLittleWorse, .same, .aLittleBetter, .aLittleBetter, .aLittleBetter, .aLittleBetter, .aLittleBetter, .aLittleBetter]
+        let checkIns = answers(workoutLogs, faded) + answers(socialLogs, Array(faded.reversed()))
+        let result = report(workoutLogs + socialLogs, checkIns, [workout, social])
+        #expect(result.suggestions.map(\.category.name) == ["Social"])
         #expect(result.patternCount == 2)
+    }
+
+    @Test("notices a pattern that held mostly on weekends and ranks it lower on a weekday")
+    func weekendPattern() throws {
+        let hike = JournalCategory(name: "Hike")
+        let walk = JournalCategory(name: "Walk")
+        func log(_ category: JournalCategory, daysAgo: Int) -> JournalEntry {
+            let date = calendar.date(byAdding: .hour, value: 12 - 24 * daysAgo, to: now)!
+            return JournalEntry(body: category.name, eventAt: date, createdAt: date, updatedAt: date, categories: [category])
+        }
+        // `now` is a Friday. Saturdays are 6, 13, 20, 27 and 34 days back.
+        #expect(!calendar.isDateInWeekend(now))
+        let hikes = [6, 13, 20, 27, 34].map { log(hike, daysAgo: $0) }
+        let walks = [1, 2, 3, 4, 7].map { log(walk, daysAgo: $0) }
+        #expect(hikes.allSatisfy { calendar.isDateInWeekend($0.eventAt) })
+        // Hike is the stronger pattern; Walk only leads while Hike is demoted on a weekday.
+        let checkIns = answers(hikes, [.muchBetter]) + answers(walks, [.muchBetter, .aLittleBetter])
+        let result = report(hikes + walks, checkIns, [hike, walk])
+        #expect(result.suggestions.map(\.category.name) == ["Walk", "Hike"])
+        let weekend = try #require(result.suggestions.last)
+        #expect(weekend.mostlyWeekends)
+        #expect(weekend.context?.contains("Mostly logged on weekends.") == true)
+        #expect(result.suggestions.first?.mostlyWeekends == false)
+        expectNonCausal([weekend.context ?? ""])
+
+        let saturday = calendar.date(byAdding: .day, value: 1, to: now)!
+        let onSaturday = helpSuggestions(entries: hikes + walks, checkIns: checkIns, categories: [hike, walk], now: saturday, calendar: calendar)
+        #expect(onSaturday.suggestions.map(\.category.name) == ["Hike", "Walk"])
+    }
+
+    @Test("after a worse check-in, suggests the strongest pattern that isn't the log just rated")
+    func afterWorse() {
+        let workout = JournalCategory(name: "Workout")
+        let social = JournalCategory(name: "Social")
+        let workoutLogs = logs(workout, count: 10, hourOffset: 12)
+        let socialLogs = logs(social, count: 5, hourOffset: 12)
+        let result = report(workoutLogs + socialLogs, answers(workoutLogs, [.muchBetter]) + answers(socialLogs, [.aLittleBetter]), [workout, social], limit: .max)
+        #expect(suggestionAfterWorseCheckIn(result, excluding: [])?.category.id == workout.id)
+        #expect(suggestionAfterWorseCheckIn(result, excluding: [workout.id])?.category.id == social.id)
+        #expect(suggestionAfterWorseCheckIn(result, excluding: [workout.id, social.id]) == nil)
     }
 
     @Test("breaks equal scores by category name")
@@ -183,7 +263,7 @@ struct HelpSuggestionsTests {
         let workoutLogs = logs(workout, count: 10, hourOffset: 12)
         let socialLogs = logs(social, count: 5, hourOffset: 12)
         let sleepLogs = logs(sleep, count: 5, hourOffset: 12)
-        let checkIns = answers(workoutLogs, [.muchBetter]) + answers(socialLogs, [.aLittleBetter, .aLittleBetter, .aLittleBetter, .same, .same]) + answers(sleepLogs, [.muchBetter, .aLittleBetter])
+        let checkIns = answers(workoutLogs, [.muchBetter]) + answers(socialLogs, [.aLittleBetter, .aLittleBetter, .aLittleBetter, .aLittleBetter, .same]) + answers(sleepLogs, [.muchBetter, .aLittleBetter])
         let result = report(workoutLogs + socialLogs + sleepLogs, checkIns, [social, sleep, workout], limit: 2)
         #expect(result.suggestions.map(\.category.name) == ["Workout", "Sleep"])
         #expect(result.patternCount == 3)

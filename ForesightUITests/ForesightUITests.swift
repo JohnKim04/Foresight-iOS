@@ -308,6 +308,32 @@ final class ForesightUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Answer early"].waitForExistence(timeout: 3))
     }
 
+    func testAWorseRatingAfterSavingShowsAPatternFollowedByFeelingBetter() {
+        app.tabBars.buttons["Check In"].tap()
+        XCTAssertTrue(app.buttons["Add history"].waitForExistence(timeout: 3))
+        app.buttons["Add history"].tap()
+        app.tabBars.buttons["Journal"].tap()
+        app.buttons["New log"].tap()
+        app.textViews["What happened?"].tap()
+        app.textViews["What happened?"].typeText("A rough afternoon")
+        app.buttons["Save"].firstMatch.tap()
+
+        XCTAssertTrue(app.staticTexts["How do you feel right now?"].waitForExistence(timeout: 3))
+        // Demo history has Workout, Sleep and Social mostly better later.
+        let suggestion = app.buttons["post-log.suggestion"]
+        XCTAssertFalse(suggestion.exists)
+        app.buttons["A little worse"].tap()
+        XCTAssertTrue(suggestion.waitForExistence(timeout: 2))
+        app.buttons["About the same"].tap()
+        XCTAssertTrue(suggestion.waitForNonExistence(timeout: 2))
+        app.buttons["Much worse"].tap()
+        XCTAssertTrue(suggestion.waitForExistence(timeout: 2))
+        if !suggestion.isHittable { app.swipeUp() }
+        suggestion.tap()
+        XCTAssertTrue(app.staticTexts["Source logs"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.tabBars.buttons["Patterns"].isSelected)
+    }
+
     func testTappingAChosenLaterTimeAgainCancelsIt() {
         app.buttons["New log"].tap()
         app.textViews["What happened?"].tap()

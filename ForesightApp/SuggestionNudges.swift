@@ -11,6 +11,8 @@ struct NudgeCandidate: Equatable, Sendable {
     let numericCount: Int
     let strength: Double
     let loggedToday: Bool
+    /// The pattern held mostly on weekends, so weekdays get no nudge for it.
+    var weekendsOnly = false
 }
 
 struct SuggestionNudge: Equatable, Sendable {
@@ -41,8 +43,9 @@ enum SuggestionNudgeCopy {
     }
 }
 
-/// Pure planning rules for suggestion nudges: at most one a day, at the hour the
-/// pattern holds, outside quiet hours, and never for something already logged today.
+/// Pure planning rules for suggestion nudges: at most one a day, at the hour the pattern
+/// holds, on the kind of day it holds, outside quiet hours, and never for something
+/// already logged today.
 enum SuggestionNudgePlan {
     static let identifierPrefix = "nudge."
     static let threadIdentifier = "nudges"
@@ -59,7 +62,8 @@ enum SuggestionNudgePlan {
                 betterCount: suggestion.betterCount,
                 numericCount: suggestion.numericCount,
                 strength: suggestion.strength,
-                loggedToday: suggestion.loggedToday
+                loggedToday: suggestion.loggedToday,
+                weekendsOnly: suggestion.mostlyWeekends
             )
         }
     }
@@ -105,6 +109,7 @@ enum SuggestionNudgePlan {
             let options = ranked.compactMap { candidate -> (NudgeCandidate, Date)? in
                 guard let fireAt = calendar.date(bySettingHour: candidate.usualHour, minute: 0, second: 0, of: day), fireAt > now else { return nil }
                 if offset == 0 && candidate.loggedToday { return nil }
+                if candidate.weekendsOnly && !calendar.isDateInWeekend(day) { return nil }
                 return (candidate, fireAt)
             }
             guard let pick = options.first(where: { $0.0.categoryID != previous }) ?? options.first else {

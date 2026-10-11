@@ -49,8 +49,8 @@ private func at(hour: Int, dayOffset: Int = 0) -> Date {
 }
 
 struct SuggestionNudgePlanTests {
-    private func candidate(_ name: String, hour: Int, strength: Double = 1, loggedToday: Bool = false, id: UUID = UUID()) -> NudgeCandidate {
-        NudgeCandidate(categoryID: id, categoryName: name, usualHour: hour, betterCount: 4, numericCount: 5, strength: strength, loggedToday: loggedToday)
+    private func candidate(_ name: String, hour: Int, strength: Double = 1, loggedToday: Bool = false, weekendsOnly: Bool = false, id: UUID = UUID()) -> NudgeCandidate {
+        NudgeCandidate(categoryID: id, categoryName: name, usualHour: hour, betterCount: 4, numericCount: 5, strength: strength, loggedToday: loggedToday, weekendsOnly: weekendsOnly)
     }
 
     private func plan(_ candidates: [NudgeCandidate], now: Date = morning, calendar: Calendar = utc, usedToday: Bool = false) -> [SuggestionNudge] {
@@ -94,6 +94,17 @@ struct SuggestionNudgePlanTests {
         let read = candidate("Read", hour: 20)
         let nudges = plan([walk, read])
         #expect(nudges.map(\.categoryID) == [read.categoryID, walk.categoryID, read.categoryID])
+    }
+
+    @Test("a pattern that held mostly on weekends is only nudged on weekends")
+    func weekendsOnly() {
+        // `morning` is a Friday, so the three days ahead are Friday, Saturday and Sunday.
+        let hike = candidate("Hike", hour: 10, strength: 2, weekendsOnly: true)
+        let walk = candidate("Walk", hour: 18)
+        let nudges = plan([hike, walk])
+        #expect(nudges.map(\.categoryID) == [walk.categoryID, hike.categoryID, walk.categoryID])
+        #expect(nudges.map(\.fireAt) == [at(hour: 18), at(hour: 10, dayOffset: 1), at(hour: 18, dayOffset: 2)])
+        #expect(plan([hike]).map(\.fireAt) == [at(hour: 10, dayOffset: 1), at(hour: 10, dayOffset: 2)])
     }
 
     @Test("never nudges during quiet hours")
@@ -207,14 +218,14 @@ struct SuggestionNudgeSchedulerTests {
     }
 
     /// Five walks at 18:00 on the previous days, each followed later by feeling better.
-    /// With `alsoRead`, a weaker pattern: reading at 21:00, better in 3 of 5 later check-ins.
+    /// With `alsoRead`, a weaker pattern: reading at 21:00, better in 4 of 5 later check-ins.
     private func makeSubject(status: ReminderAuthorization = .allowed, enabled: Bool = true, alsoRead: Bool = false, setUp: (JournalStore, Clock) throws -> Void = { _, _ in }) throws -> Subject {
         let clock = Clock()
         clock.enabled = enabled
         let container = try ForesightPersistence.makeContainer(storeURL: nil)
         let store = JournalStore(modelContext: container.mainContext, modelContainer: container, now: { clock.now })
         let walk = try addPattern("Walk", hour: 18, responses: [.aLittleBetter], store: store, clock: clock)
-        if alsoRead { _ = try addPattern("Read", hour: 21, responses: [.aLittleBetter, .same], store: store, clock: clock) }
+        if alsoRead { _ = try addPattern("Read", hour: 21, responses: [.aLittleBetter, .aLittleBetter, .aLittleBetter, .aLittleBetter, .same], store: store, clock: clock) }
         try setUp(store, clock)
         let center = FakeNudgeCenter(status: status)
         let ledger = MemoryNudgeLedger()
