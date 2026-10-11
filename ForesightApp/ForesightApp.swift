@@ -23,6 +23,7 @@ struct ForesightApp: App {
                     ForesightRootView(store: store, reminders: database.reminders, nudges: database.nudges, router: database.router, preferences: database.preferences)
                         .modelContainer(container)
                         .environment(database.reminders)
+                        .environment(database.router)
                 } else {
                     StoreRecoveryView(message: database.errorMessage ?? "Your journal could not be opened.") {
                         database.open()

@@ -11,7 +11,10 @@ struct PostLogCheckInView: View {
     @State private var chosenLater: CheckInLaterOption.Kind?
     @State private var scheduleTarget: CheckInTarget?
     @State private var message: String?
+    /// Set after a "worse" rating: something else that has tended to be followed by feeling better.
+    @State private var worseSuggestion: HelpSuggestion?
     @Environment(CheckInReminderScheduler.self) private var reminders
+    @Environment(CheckInReminderRouter.self) private var router
 
     init(store: JournalStore, entryID: UUID, onDone: @escaping () -> Void, now: Date = .now) {
         self.store = store
@@ -41,6 +44,7 @@ struct PostLogCheckInView: View {
                             .lineLimit(2)
                     }
                     ratingCard
+                    if let worseSuggestion { suggestionCard(worseSuggestion) }
                     laterCard
                     if let message { Text(message).font(.footnote).foregroundStyle(Color.foresightWarning) }
                     Button("Done", action: onDone)
@@ -89,6 +93,31 @@ struct PostLogCheckInView: View {
                     .frame(maxWidth: .infinity)
             }
         }
+    }
+
+    private func suggestionCard(_ suggestion: HelpSuggestion) -> some View {
+        ForesightCard {
+            VStack(alignment: .leading, spacing: 10) {
+                SectionKicker(text: HelpSuggestionCopy.title)
+                Text(HelpSuggestionCopy.afterWorseIntro)
+                    .font(.subheadline)
+                    .foregroundStyle(Color.foresightMuted)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(suggestion.headline).font(.subheadline.weight(.semibold)).foregroundStyle(Color.foresightInk)
+                    Text(suggestion.evidence).font(.caption).foregroundStyle(.secondary)
+                    if let context = suggestion.context { Text(context).font(.caption).foregroundStyle(Color.foresightSage) }
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                Button("See the pattern") {
+                    // The root view opens it on Patterns once this sheet has closed.
+                    router.destination = .evidence(suggestion.category.id)
+                    onDone()
+                }
+                .buttonStyle(ForesightQuietButtonStyle())
+                .accessibilityIdentifier("post-log.suggestion")
+            }
+        }
+        .transition(.opacity)
     }
 
     private var laterCard: some View {
@@ -148,6 +177,7 @@ struct PostLogCheckInView: View {
             try store.answer(checkIn, response: value, notSure: false, note: checkIn.note, excludedFromAnalysis: checkIn.excludedFromAnalysis)
             UISelectionFeedbackGenerator().selectionChanged()
             message = nil
+            withAnimation(.snappy) { worseSuggestion = value.rawValue < 0 ? suggestionAfterWorse(entry) : nil }
         } catch { message = error.localizedDescription }
     }
 
@@ -169,6 +199,11 @@ struct PostLogCheckInView: View {
             }
             message = nil
         } catch { message = error.localizedDescription }
+    }
+
+    private func suggestionAfterWorse(_ entry: JournalEntry) -> HelpSuggestion? {
+        let report = helpSuggestions(entries: store.entries, checkIns: store.checkIns, categories: store.categories, limit: .max)
+        return suggestionAfterWorseCheckIn(report, excluding: Set(entry.categories.map(\.id)))
     }
 
     /// A time picked in the full scheduler replaces whichever shortcut was highlighted.
