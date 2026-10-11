@@ -45,7 +45,7 @@ struct SettingsView: View {
                 #if ENABLE_DEVELOPMENT_FIXTURES
                 sampleDataSection
                 #endif
-                privacySection
+                aboutSection
             }
             .scrollContentBackground(.hidden)
             .background(Color.foresightCanvas)
@@ -223,14 +223,11 @@ struct SettingsView: View {
         }
     }
 
-    private var privacySection: some View {
+    private var aboutSection: some View {
         Section {
-            Text("Your journal stays on this device. Foresight has no account and sends nothing anywhere; an export goes only where you share it.")
-                .font(.subheadline)
-                .foregroundStyle(Color.foresightMuted)
             LabeledContent("Version", value: Self.version)
         } header: {
-            Text("Privacy")
+            Text("About")
         }
     }
 
