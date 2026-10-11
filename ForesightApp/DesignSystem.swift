@@ -18,6 +18,8 @@ extension Color {
     static let foresightWarm = Color(light: 0xFAF2DF, dark: 0x3D3426)
     static let foresightWarning = Color(light: 0x714F20, dark: 0xE6BE7A)
     static let foresightNegative = Color(light: 0xA56A55, dark: 0xD9A18B)
+    /// Switch tint. The dark sage is too pale to tell on from off against a white knob.
+    static let foresightSwitch = Color(light: 0x34503F, dark: 0x4E8A5C)
 
     // Compatibility for existing call sites and the former asset-backed canvas name.
     static let foresightCream = Color.foresightCanvas

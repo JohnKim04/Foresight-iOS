@@ -14,6 +14,7 @@ struct SettingsView: View {
     @State private var quietStart: Int
     @State private var quietEnd: Int
     @State private var confirmErase = false
+    @State private var confirmRemoveSample = false
     @State private var message: String?
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
@@ -37,7 +38,11 @@ struct SettingsView: View {
             Form {
                 notificationsSection
                 quietHoursSection
+                categoriesSection
                 dataSection
+                #if ENABLE_DEVELOPMENT_FIXTURES
+                sampleDataSection
+                #endif
                 privacySection
             }
             .scrollContentBackground(.hidden)
@@ -69,6 +74,13 @@ struct SettingsView: View {
                 preferences.quietHoursEnd = hour
                 preferencesChanged()
             }
+            .alert("Remove sample history?", isPresented: $confirmRemoveSample) {
+                Button("Remove", role: .destructive) {
+                    do { try store.removeDemoHistory(); message = "Sample history removed. Your own logs were kept." }
+                    catch { message = error.localizedDescription }
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: { Text("All sample logs and check-ins will be removed. Your own logs and check-ins will stay.") }
             .alert("Erase your journal?", isPresented: $confirmErase) {
                 Button("Erase", role: .destructive, action: erase)
                 Button("Cancel", role: .cancel) { }
@@ -94,9 +106,11 @@ struct SettingsView: View {
             Toggle(isOn: $remindersEnabled) {
                 SettingLabel(title: "Check-in reminders", detail: "A notification when a scheduled check-in is ready.")
             }
+            .tint(Color.foresightSwitch)
             Toggle(isOn: $nudgesEnabled) {
                 SettingLabel(title: "Pattern nudges", detail: "At most one a day, around the time you usually log something that has often been followed by feeling better.")
             }
+            .tint(Color.foresightSwitch)
         } header: {
             Text("Notifications")
         }
@@ -107,18 +121,69 @@ struct SettingsView: View {
             Toggle(isOn: $quietHoursEnabled) {
                 SettingLabel(title: "Quiet hours", detail: quietHoursEnabled ? "Reminders due \(Self.hourLabel(quietStart))–\(Self.hourLabel(quietEnd)) arrive at \(Self.hourLabel(quietEnd)). Nudges skip these hours." : "Reminders and nudges can arrive at any hour.")
             }
+            .tint(Color.foresightSwitch)
             if quietHoursEnabled {
-                Picker("From", selection: $quietStart) {
-                    ForEach(0..<24, id: \.self) { hour in Text(Self.hourLabel(hour)).tag(hour).disabled(hour == quietEnd) }
-                }
-                Picker("Until", selection: $quietEnd) {
-                    ForEach(0..<24, id: \.self) { hour in Text(Self.hourLabel(hour)).tag(hour).disabled(hour == quietStart) }
+                // Two short wheels side by side read like a time range, where a pair of
+                // 24-row menus meant a long scroll for each end.
+                HStack(spacing: 12) {
+                    hourWheel("From", selection: $quietStart, excluding: quietEnd)
+                    hourWheel("Until", selection: $quietEnd, excluding: quietStart)
                 }
             }
         } header: {
             Text("Quiet hours")
         }
     }
+
+    private func hourWheel(_ title: String, selection: Binding<Int>, excluding other: Int) -> some View {
+        VStack(spacing: 2) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Color.foresightMuted)
+            Picker(title, selection: selection) {
+                // The other end's hour is left out, since equal ends would mean never quiet.
+                ForEach((0..<24).filter { $0 != other }, id: \.self) { hour in Text(Self.hourLabel(hour)).tag(hour) }
+            }
+            .pickerStyle(.wheel)
+            .frame(height: 120)
+            .clipped()
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var categoriesSection: some View {
+        Section {
+            NavigationLink {
+                CategorySettingsView(store: store)
+            } label: {
+                SettingLabel(title: "Categories", detail: "\(store.activeCategories.count) in use\(archivedCount > 0 ? ", \(archivedCount) archived" : ""). Archive ones you no longer log, or bring them back.")
+            }
+        } header: {
+            Text("Journal")
+        }
+    }
+
+    private var archivedCount: Int { store.categories.filter(\.isArchived).count }
+
+    #if ENABLE_DEVELOPMENT_FIXTURES
+    private var sampleDataSection: some View {
+        Section {
+            let complete = store.demoDataState() == .complete
+            Button(complete ? "Remove sample history" : "Add history") {
+                if complete { confirmRemoveSample = true }
+                else {
+                    do { try store.addDemoHistory(); message = "Sample history added. You can safely run this again." }
+                    catch { message = error.localizedDescription }
+                }
+            }
+            .accessibilityIdentifier("settings.sample-history")
+        } header: {
+            Text("Development data")
+        } footer: {
+            Text("Debug builds only. Adds a 90-day pattern history plus due and upcoming check-ins. Removing it keeps your own logs.")
+        }
+    }
+    #endif
 
     private var dataSection: some View {
         Section {
@@ -203,5 +268,82 @@ private struct SettingLabel: View {
         }
         // A disabled row (Export with nothing to export) should look it.
         .opacity(isEnabled ? 1 : 0.45)
+    }
+}
+
+/// Archive categories you no longer log, or bring them back. Archived ones stay on past logs
+/// and in Patterns; they just stop being offered when you write a new log.
+private struct CategorySettingsView: View {
+    let store: JournalStore
+    @State private var newCategory = ""
+    @State private var categoryToArchive: JournalCategory?
+    @State private var message: String?
+
+    private var archived: [JournalCategory] { store.categories.filter(\.isArchived) }
+
+    var body: some View {
+        Form {
+            Section {
+                ForEach(store.activeCategories, id: \.id) { category in
+                    HStack {
+                        Text(category.name).foregroundStyle(Color.foresightInk)
+                        Spacer()
+                        Button("Archive") { categoryToArchive = category }
+                            .buttonStyle(ForesightQuietButtonStyle(tone: .foresightWarning))
+                            .accessibilityLabel("Archive \(category.name)")
+                    }
+                }
+                HStack(spacing: 8) {
+                    TextField("New category", text: $newCategory)
+                        .submitLabel(.done)
+                        .onSubmit(add)
+                    Button("Add", action: add)
+                        .disabled(newCategory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            } header: {
+                Text("In use")
+            } footer: {
+                if let message { Text(message).foregroundStyle(Color.foresightWarning) }
+            }
+            if !archived.isEmpty {
+                Section {
+                    ForEach(archived, id: \.id) { category in
+                        HStack {
+                            Text(category.name).foregroundStyle(Color.foresightMuted)
+                            Spacer()
+                            Button("Restore") { perform { try store.restoreCategory(category) } }
+                                .buttonStyle(ForesightQuietButtonStyle())
+                                .accessibilityLabel("Restore \(category.name)")
+                        }
+                    }
+                } header: {
+                    Text("Archived")
+                } footer: {
+                    Text("Archived categories stay on past logs and in Patterns. They aren't offered on new logs.")
+                }
+            }
+        }
+        .scrollContentBackground(.hidden)
+        .background(Color.foresightCanvas)
+        .navigationTitle("Categories")
+        .navigationBarTitleDisplayMode(.inline)
+        .confirmationDialog("Archive \(categoryToArchive?.name ?? "this category")?", isPresented: Binding(get: { categoryToArchive != nil }, set: { if !$0 { categoryToArchive = nil } }), titleVisibility: .visible) {
+            Button("Archive") {
+                guard let category = categoryToArchive else { return }
+                perform { try store.archiveCategory(category) }
+            }
+        } message: { Text("It stays on past logs and in Patterns, and you can restore it here.") }
+    }
+
+    private func add() {
+        perform {
+            _ = try store.addCategory(named: newCategory)
+            newCategory = ""
+        }
+    }
+
+    private func perform(_ change: () throws -> Void) {
+        do { try change(); message = nil }
+        catch { message = error.localizedDescription }
     }
 }

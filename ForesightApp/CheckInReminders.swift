@@ -39,7 +39,7 @@ enum CheckInReminderPlan {
     static let categoryIdentifier = "CHECK_IN_DUE"
     static let snoozeActionIdentifier = "CHECK_IN_SNOOZE"
     static let threadIdentifier = "check-ins"
-    static let title = "How did this affect you?"
+    static let title = "How do you feel now?"
     /// The one switch for what a reminder, and a suggestion nudge, says. With it on, the first
     /// line of the log (or the category and its counts) shows, on the lock screen too when
     /// previews are allowed there; off, the text is generic.

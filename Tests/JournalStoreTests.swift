@@ -131,6 +131,18 @@ struct JournalStoreTests {
         #expect(entry.categories.isEmpty)
     }
 
+    @Test("restores an archived category for new logs")
+    func restoresArchivedCategory() throws {
+        let store = try makeStore()
+        let workout = category("Workout", in: store)
+        try store.archiveCategory(workout)
+        try store.restoreCategory(workout)
+        #expect(!workout.isArchived)
+        #expect(store.activeCategories.contains { $0.id == workout.id })
+        let entry = try store.saveLog(body: "Run", eventAt: fixedNow, categoryIDs: [workout.id])
+        #expect(entry.categories.map(\.id) == [workout.id])
+    }
+
     @Test("creates an immediate check-in")
     func createsImmediateCheckIn() throws {
         let store = try makeStore()

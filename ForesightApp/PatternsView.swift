@@ -16,6 +16,8 @@ struct PatternsRootView: View {
     @State private var outcomeRange: OutcomeTrendRange = .ninety
     @State private var outcomePhase: OutcomePhase = .delayed
     @State private var helpReport: HelpSuggestionReport?
+    /// Set once Outcomes has picked a category on its own, so clearing it later sticks.
+    @State private var didPickDefaultCategory = false
 
     private var activityCategory: JournalCategory? { activityCategoryID.flatMap { id in store.categories.first { $0.id == id } } }
     private var outcomeCategory: JournalCategory? { outcomeCategoryID.flatMap { id in store.categories.first { $0.id == id } } }
@@ -58,6 +60,7 @@ struct PatternsRootView: View {
             }
             .onChange(of: helpReportKey, initial: true) {
                 helpReport = helpSuggestions(entries: store.entries, checkIns: store.checkIns, categories: store.categories)
+                pickDefaultOutcomeCategory()
             }
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
@@ -274,6 +277,18 @@ struct PatternsRootView: View {
                 }
             }
         }
+    }
+
+    /// Opens Outcomes on something worth reading instead of an empty "choose a category" card:
+    /// the top suggestion, else the clearest pattern, else the category closest to having one.
+    private func pickDefaultOutcomeCategory() {
+        guard outcomeCategoryID == nil, !didPickDefaultCategory else { return }
+        let pick = helpReport?.suggestions.first?.category
+            ?? categoryOutcomeInsights(entries: store.entries, checkIns: store.checkIns, categories: store.categories, phase: outcomePhase, range: outcomeRange).first?.category
+            ?? closestInsightProgress(entries: store.entries, checkIns: store.checkIns, categories: store.activeCategories, phase: outcomePhase, range: outcomeRange, now: .now)?.category
+        guard let pick else { return }
+        outcomeCategoryID = pick.id
+        didPickDefaultCategory = true
     }
 
     private func showHelpEvidence(_ category: JournalCategory) {

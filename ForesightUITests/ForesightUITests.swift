@@ -19,6 +19,20 @@ final class ForesightUITests: XCTestCase {
         done.tap()
     }
 
+    /// Loads the Debug-only sample history from Settings, then closes Settings on the Journal tab.
+    private func addSampleHistory() {
+        app.tabBars.buttons["Journal"].tap()
+        let settings = app.buttons["Settings"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 3))
+        settings.tap()
+        let add = app.buttons["settings.sample-history"]
+        for _ in 0..<5 where !(add.exists && add.isHittable) { app.swipeUp() }
+        XCTAssertEqual(add.label, "Add history")
+        add.tap()
+        XCTAssertTrue(app.staticTexts["Sample history added. You can safely run this again."].waitForExistence(timeout: 3))
+        app.buttons["Done"].tap()
+    }
+
     private func openLog(named text: String) {
         let log = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", text)).firstMatch
         XCTAssertTrue(log.waitForExistence(timeout: 3))
@@ -125,8 +139,9 @@ final class ForesightUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Testing"].exists)
         app.textViews["What happened?"].tap()
         app.textViews["What happened?"].typeText("A tagged test")
-        app.buttons["Testing"].tap()
+        // Add already selected the new category, so the log is saved with it.
         saveNewLog()
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", "A tagged test", "Testing")).firstMatch.waitForExistence(timeout: 3))
         openLog(named: "A tagged test")
         app.buttons["Check in now"].tap()
         app.buttons["Much better"].tap()
@@ -152,9 +167,7 @@ final class ForesightUITests: XCTestCase {
     }
 
     func testDemoHistoryTabNavigationAndPatternSourceLogs() {
-        app.tabBars.buttons["Check In"].tap()
-        XCTAssertTrue(app.buttons["Add history"].waitForExistence(timeout: 3))
-        app.buttons["Add history"].tap()
+        addSampleHistory()
         app.tabBars.buttons["Patterns"].tap()
         XCTAssertTrue(app.staticTexts["See what repeats."].firstMatch.waitForExistence(timeout: 3))
         app.buttons["Choose category"].tap()
@@ -174,9 +187,7 @@ final class ForesightUITests: XCTestCase {
         app.tabBars.buttons["Patterns"].tap()
         XCTAssertTrue(app.staticTexts["OFTEN FOLLOWED BY FEELING BETTER"].firstMatch.waitForExistence(timeout: 3))
         XCTAssertFalse(app.buttons["See Workout later evidence"].exists)
-        app.tabBars.buttons["Check In"].tap()
-        XCTAssertTrue(app.buttons["Add history"].waitForExistence(timeout: 3))
-        app.buttons["Add history"].tap()
+        addSampleHistory()
         app.tabBars.buttons["Patterns"].tap()
         // Demo history: Workout, Sleep and Social were mostly better later. Alcohol felt
         // better right after but worse later, and Scrolling and Work have no clear lift.
@@ -190,6 +201,13 @@ final class ForesightUITests: XCTestCase {
     }
 
     func testJournalDropdownsSelectAndDismissEachOther() {
+        // The filters appear once the journal has a log.
+        XCTAssertFalse(app.buttons["Choose category"].exists)
+        app.buttons["New log"].tap()
+        app.textViews["What happened?"].tap()
+        app.textViews["What happened?"].typeText("A log to filter")
+        saveNewLog()
+
         let category = app.buttons["Choose category"]
         let checkIn = app.buttons["Choose check-in filter"]
         XCTAssertTrue(category.waitForExistence(timeout: 3))
@@ -242,8 +260,7 @@ final class ForesightUITests: XCTestCase {
     }
 
     func testPatternsActivityDropdownUpdatesSelection() {
-        app.tabBars.buttons["Check In"].tap()
-        app.buttons["Add history"].tap()
+        addSampleHistory()
         app.tabBars.buttons["Patterns"].tap()
         app.buttons["Activity"].tap()
 
@@ -255,8 +272,8 @@ final class ForesightUITests: XCTestCase {
     }
 
     func testCheckInSourceLogDoesNotOpenFromOutsideCard() {
+        addSampleHistory()
         app.tabBars.buttons["Check In"].tap()
-        app.buttons["Add history"].tap()
 
         let source = app.staticTexts["Went out for drinks and stayed later than I planned."].firstMatch
         XCTAssertTrue(source.waitForExistence(timeout: 3))
@@ -276,7 +293,7 @@ final class ForesightUITests: XCTestCase {
         app.launch()
         XCTAssertTrue(app.buttons["Next"].waitForExistence(timeout: 3))
         for _ in 0..<3 { app.buttons["Next"].tap() }
-        XCTAssertTrue(app.staticTexts["See what tends to help."].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["Spot what repeats."].waitForExistence(timeout: 3))
         app.buttons["Start journaling"].tap()
         XCTAssertTrue(app.buttons["New log"].waitForExistence(timeout: 3))
 
@@ -349,9 +366,9 @@ final class ForesightUITests: XCTestCase {
     }
 
     func testCheckInTabShowsABadgeForDueCheckIns() {
+        addSampleHistory()
         let tab = app.tabBars.buttons["Check In"]
         tab.tap()
-        app.buttons["Add history"].tap()
         // Sample history has two later check-ins already past due.
         // iOS 27 exposes the badge as the tab button's value, e.g. "2 items". iOS 26.x
         // (CI's iOS 26.5 simulator) leaves the button's value empty, so UI tests can't read the badge;

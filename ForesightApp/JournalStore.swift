@@ -104,6 +104,12 @@ final class JournalStore {
         try persist()
     }
 
+    func restoreCategory(_ category: JournalCategory) throws {
+        guard categories.contains(where: { $0.id == category.id }) else { throw ForesightError.missingCategory }
+        category.archivedAt = nil
+        try persist()
+    }
+
     func deleteEntry(_ entry: JournalEntry) throws {
         guard entries.contains(where: { $0.id == entry.id }) else { throw ForesightError.missingEntry }
         entry.checkIns.forEach(modelContext.delete)
