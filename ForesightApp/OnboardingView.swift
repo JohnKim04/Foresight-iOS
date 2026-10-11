@@ -13,7 +13,7 @@ struct OnboardingView: View {
     }
 
     private let pages = [
-        Page(symbol: nil, kicker: "Welcome to Foresight", title: "See what tends to follow.", detail: "A private journal for the things you do and how they turn out. Everything stays on this phone."),
+        Page(symbol: nil, kicker: "Welcome to Foresight", title: "See what tends to follow.", detail: "A journal for the things you do and how they turn out."),
         Page(symbol: "square.and.pencil", kicker: "1 · Log", title: "Write down what happened.", detail: "A line is enough: a workout, a late night, an hour of scrolling. Add a category so similar moments line up later."),
         Page(symbol: "checkmark.circle", kicker: "2 · Check in", title: "Say how it felt, twice.", detail: "Rate how you feel right after you log, then again a few hours later. Check In shows what's due, and a reminder can tell you."),
         Page(symbol: "chart.xyaxis.line", kicker: "3 · Patterns", title: "Spot what repeats.", detail: "After a handful of check-ins, Patterns shows what usually came before feeling better or worse. It describes what happened, not what caused it.")

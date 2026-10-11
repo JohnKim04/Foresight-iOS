@@ -54,7 +54,7 @@ GitHub Actions (`.github/workflows/ci.yml`) runs `Scripts/verify.sh` on every pu
 - `JournalAnalytics.swift` and `OutcomeAnalytics.swift` are deterministic pure functions for discovery, queues, date/calendar grouping, activity trends, outcome aggregation, and non-causal insights.
 - The app uses native `TabView`, separate `NavigationStack`s, full-screen writing, native sheets for response/scheduling, Swift Charts, Dynamic Type-aware controls, system serif display type, SF Symbols, haptics, and system Liquid Glass navigation/tab/sheet surfaces.
 
-If SwiftData cannot initialize, the app offers retry and an explicit local reset. There are deliberately no accounts, AI, sync, Android support, or App Store submission workflow.
+If SwiftData cannot initialize, the app offers retry and an explicit local reset. There are no accounts, sync, Android support, or App Store submission workflow yet.
 
 ## Parity checklist
 
