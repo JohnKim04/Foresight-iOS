@@ -275,13 +275,20 @@ extension View {
 /// avoids menu sheets and prevents a card or scroll view from clipping it.
 struct ForesightDropdownHost<Content: View>: View {
     @StateObject private var coordinator = ForesightDropdownCoordinator()
+    /// False while this host's screen is hidden, such as a tab you've switched away from.
+    /// An open panel closes then, so it isn't still open when you come back.
+    var isActive = true
     @ViewBuilder let content: Content
 
-    init(@ViewBuilder content: () -> Content) { self.content = content() }
+    init(isActive: Bool = true, @ViewBuilder content: () -> Content) {
+        self.isActive = isActive
+        self.content = content()
+    }
 
     var body: some View {
         content
             .environmentObject(coordinator)
+            .onChange(of: isActive) { _, active in if !active { coordinator.dismiss() } }
             .overlayPreferenceValue(ForesightDropdownAnchorKey.self) { anchors in
                 GeometryReader { proxy in
                     if let active = coordinator.active, let anchor = anchors.triggers[active.id] {

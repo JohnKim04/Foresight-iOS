@@ -26,11 +26,22 @@ final class ForesightUITests: XCTestCase {
         XCTAssertTrue(settings.waitForExistence(timeout: 3))
         settings.tap()
         let add = app.buttons["settings.sample-history"]
-        for _ in 0..<5 where !(add.exists && add.isHittable) { app.swipeUp() }
+        scrollSettings(until: add)
         XCTAssertEqual(add.label, "Add history")
         add.tap()
         XCTAssertTrue(app.staticTexts["Sample history added. You can safely run this again."].waitForExistence(timeout: 3))
         app.buttons["Done"].tap()
+    }
+
+    /// Scrolls the Settings form by dragging from near its bottom edge, below the quiet-hours
+    /// wheels, so the drag scrolls the form instead of turning a wheel.
+    private func scrollSettings(until element: XCUIElement) {
+        let form = app.collectionViews.firstMatch
+        XCTAssertTrue(form.waitForExistence(timeout: 3))
+        for _ in 0..<6 where !(element.exists && element.isHittable) {
+            let start = form.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.94))
+            start.press(forDuration: 0.05, thenDragTo: form.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)))
+        }
     }
 
     private func openLog(named text: String) {
@@ -94,7 +105,7 @@ final class ForesightUITests: XCTestCase {
         }
         XCTAssertTrue(app.buttons["settings.export"].exists)
         let erase = app.buttons["settings.erase"]
-        if !erase.isHittable { app.swipeUp() }
+        scrollSettings(until: erase)
         erase.tap()
         let confirm = app.alerts.buttons["Erase"]
         XCTAssertTrue(confirm.waitForExistence(timeout: 3))

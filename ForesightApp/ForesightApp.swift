@@ -139,14 +139,14 @@ struct ForesightRootView: View {
         // Each tab gets its own dropdown host, inside the TabView, so the tab bar counts as
         // safe area and an open panel stops above it instead of running underneath.
         TabView(selection: $tab) {
-            ForesightDropdownHost { JournalRootView(store: store) { showsSettings = true } }
+            ForesightDropdownHost(isActive: tab == .journal) { JournalRootView(store: store) { showsSettings = true } }
                 .tabItem { Label("Journal", systemImage: "book.closed") }
                 .tag(AppTab.journal)
-            ForesightDropdownHost { CheckInRootView(store: store, answerRequest: $checkInAnswerRequest) }
+            ForesightDropdownHost(isActive: tab == .checkIns) { CheckInRootView(store: store, answerRequest: $checkInAnswerRequest) }
                 .tabItem { Label("Check In", systemImage: "checkmark.circle") }
                 .badge(dueCount)
                 .tag(AppTab.checkIns)
-            ForesightDropdownHost { PatternsRootView(store: store, evidenceRequest: $evidenceRequest) }
+            ForesightDropdownHost(isActive: tab == .patterns) { PatternsRootView(store: store, evidenceRequest: $evidenceRequest) }
                 .tabItem { Label("Patterns", systemImage: "chart.xyaxis.line") }
                 .tag(AppTab.patterns)
         }

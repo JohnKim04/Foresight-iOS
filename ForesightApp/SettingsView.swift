@@ -146,7 +146,11 @@ struct SettingsView: View {
             }
             .pickerStyle(.wheel)
             .frame(height: 120)
+            // Wheels keep their full-size touch area unless clipped to it, so side by side
+            // they would steal each other's drags.
+            .compositingGroup()
             .clipped()
+            .contentShape(Rectangle())
         }
         .frame(maxWidth: .infinity)
     }

@@ -18,6 +18,8 @@ struct PatternsRootView: View {
     @State private var helpReport: HelpSuggestionReport?
     /// Set once Outcomes has picked a category on its own, so clearing it later sticks.
     @State private var didPickDefaultCategory = false
+    /// True while the app, not the user, changes the Outcomes category, so the page doesn't jump.
+    @State private var isPickingCategoryForUser = false
 
     private var activityCategory: JournalCategory? { activityCategoryID.flatMap { id in store.categories.first { $0.id == id } } }
     private var outcomeCategory: JournalCategory? { outcomeCategoryID.flatMap { id in store.categories.first { $0.id == id } } }
@@ -49,6 +51,7 @@ struct PatternsRootView: View {
                     withAnimation(.snappy) { proxy.scrollTo("activity-controls", anchor: .top) }
                 }
                 .onChange(of: outcomeCategoryID) { oldValue, newValue in
+                    if isPickingCategoryForUser { isPickingCategoryForUser = false; return }
                     guard mode == .outcomes, oldValue != newValue else { return }
                     withAnimation(.snappy) { proxy.scrollTo("outcome-controls", anchor: .top) }
                 }
@@ -282,11 +285,18 @@ struct PatternsRootView: View {
     /// Opens Outcomes on something worth reading instead of an empty "choose a category" card:
     /// the top suggestion, else the clearest pattern, else the category closest to having one.
     private func pickDefaultOutcomeCategory() {
+        // After an erase the old pick no longer exists; start over as if nothing was chosen.
+        if let id = outcomeCategoryID, !store.categories.contains(where: { $0.id == id }) {
+            isPickingCategoryForUser = true
+            outcomeCategoryID = nil
+            didPickDefaultCategory = false
+        }
         guard outcomeCategoryID == nil, !didPickDefaultCategory else { return }
         let pick = helpReport?.suggestions.first?.category
             ?? categoryOutcomeInsights(entries: store.entries, checkIns: store.checkIns, categories: store.categories, phase: outcomePhase, range: outcomeRange).first?.category
             ?? closestInsightProgress(entries: store.entries, checkIns: store.checkIns, categories: store.activeCategories, phase: outcomePhase, range: outcomeRange, now: .now)?.category
         guard let pick else { return }
+        isPickingCategoryForUser = true
         outcomeCategoryID = pick.id
         didPickDefaultCategory = true
     }
