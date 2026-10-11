@@ -36,11 +36,16 @@ struct PatternsRootView: View {
                                 subtitle: "Foresight describes associations in your own logs. It does not claim causes."
                             )
                             helpedCard
-                            ForesightSegmentedPicker(
-                                selection: $mode,
-                                options: PatternsMode.allCases.map { ($0, $0.title) }
-                            )
-                            if mode == .activity { activityView } else { outcomesView }
+                            if store.entries.isEmpty {
+                                // Charts and category pickers have nothing to show before the first log.
+                                EmptyState(title: "Nothing to compare yet", detail: "Write a few logs with categories and check in later. Patterns describes what tended to follow them.")
+                            } else {
+                                ForesightSegmentedPicker(
+                                    selection: $mode,
+                                    options: PatternsMode.allCases.map { ($0, $0.title) }
+                                )
+                                if mode == .activity { activityView } else { outcomesView }
+                            }
                         }
                         .padding()
                     }

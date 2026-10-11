@@ -16,6 +16,8 @@ struct SettingsView: View {
     @State private var confirmErase = false
     @State private var confirmRemoveSample = false
     @State private var message: String?
+    /// Kept apart from `message` so it shows under the button that caused it.
+    @State private var sampleMessage: String?
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
 
@@ -76,8 +78,8 @@ struct SettingsView: View {
             }
             .alert("Remove sample history?", isPresented: $confirmRemoveSample) {
                 Button("Remove", role: .destructive) {
-                    do { try store.removeDemoHistory(); message = "Sample history removed. Your own logs were kept." }
-                    catch { message = error.localizedDescription }
+                    do { try store.removeDemoHistory(); sampleMessage = "Sample history removed. Your own logs were kept." }
+                    catch { sampleMessage = error.localizedDescription }
                 }
                 Button("Cancel", role: .cancel) { }
             } message: { Text("All sample logs and check-ins will be removed. Your own logs and check-ins will stay.") }
@@ -171,29 +173,41 @@ struct SettingsView: View {
 
     #if ENABLE_DEVELOPMENT_FIXTURES
     private var sampleDataSection: some View {
-        Section {
-            let complete = store.demoDataState() == .complete
+        let complete = store.demoDataState() == .complete
+        return Section {
             Button(complete ? "Remove sample history" : "Add history") {
                 if complete { confirmRemoveSample = true }
                 else {
-                    do { try store.addDemoHistory(); message = "Sample history added. You can safely run this again." }
-                    catch { message = error.localizedDescription }
+                    do { try store.addDemoHistory(); sampleMessage = "Sample history added." }
+                    catch { sampleMessage = error.localizedDescription }
                 }
             }
             .accessibilityIdentifier("settings.sample-history")
+            if let sampleMessage {
+                Text(sampleMessage).font(.footnote).foregroundStyle(Color.foresightSage)
+            }
         } header: {
             Text("Development data")
         } footer: {
-            Text("Debug builds only. Adds a 90-day pattern history plus due and upcoming check-ins. Removing it keeps your own logs.")
+            Text(complete
+                ? "Debug builds only. Removing it keeps your own logs and check-ins."
+                : "Debug builds only. Adds a 90-day pattern history plus due and upcoming check-ins.")
+                .padding(.bottom, 8)
         }
     }
     #endif
+
+    private func exportDetail(_ export: JournalExport) -> String {
+        // Sample history is left out of exports, so a journal of only samples has nothing to send.
+        if export.entries.isEmpty && !store.entries.isEmpty { return "Sample history isn't exported. Your own logs will appear here." }
+        return "\(export.entries.count) \(export.entries.count == 1 ? "log" : "logs") and \(export.checkInCount) \(export.checkInCount == 1 ? "check-in" : "check-ins") as a JSON file."
+    }
 
     private var dataSection: some View {
         Section {
             let current = export
             ShareLink(item: current, preview: SharePreview("Foresight journal")) {
-                SettingLabel(title: "Export journal", detail: "\(current.entries.count) \(current.entries.count == 1 ? "log" : "logs") and \(current.checkInCount) \(current.checkInCount == 1 ? "check-in" : "check-ins") as a JSON file.", systemImage: "square.and.arrow.up")
+                SettingLabel(title: "Export journal", detail: exportDetail(current), systemImage: "square.and.arrow.up")
             }
             .disabled(current.entries.isEmpty)
             .accessibilityIdentifier("settings.export")

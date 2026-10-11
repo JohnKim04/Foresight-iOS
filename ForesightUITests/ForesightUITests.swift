@@ -29,7 +29,7 @@ final class ForesightUITests: XCTestCase {
         scrollSettings(until: add)
         XCTAssertEqual(add.label, "Add history")
         add.tap()
-        XCTAssertTrue(app.staticTexts["Sample history added. You can safely run this again."].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["Sample history added."].waitForExistence(timeout: 3))
         app.buttons["Done"].tap()
     }
 

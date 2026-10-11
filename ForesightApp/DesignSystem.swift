@@ -548,6 +548,8 @@ private struct ForesightDropdownPanel<Value: Hashable, ID: Hashable>: View {
             .padding(6)
         }
         .scrollIndicators(.automatic)
+        // A long list is cut off at the panel's edge; flashing the indicator shows it scrolls.
+        .scrollIndicatorsFlash(onAppear: true)
         .background(Color.foresightSurface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay { RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.foresightLine, lineWidth: 1) }
         .shadow(color: .black.opacity(0.14), radius: 14, y: 7)
