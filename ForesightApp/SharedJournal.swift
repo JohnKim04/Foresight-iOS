@@ -3,15 +3,18 @@ import SwiftData
 
 // Compiled into the app and the widget extension. Keep it to Foundation and SwiftData.
 
-/// Where the journal's store lives. With the App Group entitlement (a signed build) it sits in the
-/// group container so the widget can read it; without one (unsigned simulator builds, or a team
-/// that can't use App Groups) it stays in the app's own Application Support and the widget asks
-/// the user to open the app.
+/// Where the journal's store lives. With the App Group entitlement (a signed device build) it sits
+/// in the group container so the widget can read it; on a device without one (a team that can't
+/// use App Groups) it stays in the app's own Application Support and the widget asks the user to
+/// open the app. The simulator hands out a group container even to unsigned builds.
 enum SharedJournal {
     static let appGroupInfoKey = "ForesightAppGroup"
     static let storeFileName = "Foresight.store"
     /// SQLite keeps a store in up to three files; they move together.
     static let storeFileSuffixes = ["", "-shm", "-wal"]
+    /// Set once the journal has opened from the group container. From then on the group copy is
+    /// the journal, and the app-directory copy (if any is left) is not.
+    static let inGroupKey = "journalIsInAppGroup"
 
     static var appGroupIdentifier: String? {
         guard let identifier = Bundle.main.object(forInfoDictionaryKey: appGroupInfoKey) as? String,
@@ -33,34 +36,77 @@ enum SharedJournal {
     /// The store the widget reads, or nil when the journal isn't shared with it.
     static var sharedStoreURL: URL? { groupDirectory?.appending(path: storeFileName) }
 
-    /// The store the app opens. Call once, before any container is made.
-    static func appStoreURL() -> URL {
-        resolveStoreURL(groupDirectory: groupDirectory, appDirectory: appDirectory)
+    /// Opens the journal with `open`, moving it into the group container on the way.
+    ///
+    /// Until the group copy has opened once, the app-directory store is the journal: each launch
+    /// copies it afresh over whatever an interrupted earlier attempt left in the group, and only
+    /// deletes it after the group copy opens. If the group copy won't open, it is thrown away and
+    /// the app-directory store opens instead, to be tried again next launch.
+    static func open<Value>(
+        groupDirectory: URL?,
+        appDirectory: URL,
+        defaults: UserDefaults = .standard,
+        fileManager: FileManager = .default,
+        using open: (URL) throws -> Value
+    ) throws -> Value {
+        let appStore = appDirectory.appending(path: storeFileName)
+        let inGroup = defaults.bool(forKey: inGroupKey)
+        guard let groupDirectory else {
+            // A journal that moved to the group is unreachable now; don't start an empty one over it.
+            if inGroup { throw SharedJournalError.groupUnreachable }
+            return try open(appStore)
+        }
+        let groupStore = groupDirectory.appending(path: storeFileName)
+        if !inGroup, fileManager.fileExists(atPath: appStore.path) {
+            do {
+                try copyStore(from: appStore, to: groupStore, fileManager: fileManager)
+            } catch {
+                removeStore(at: groupStore, fileManager: fileManager)
+                return try open(appStore)
+            }
+            let value: Value
+            do {
+                value = try open(groupStore)
+            } catch {
+                removeStore(at: groupStore, fileManager: fileManager)
+                return try open(appStore)
+            }
+            defaults.set(true, forKey: inGroupKey)
+            removeStore(at: appStore, fileManager: fileManager)
+            return value
+        }
+        let value = try open(groupStore)
+        defaults.set(true, forKey: inGroupKey)
+        // A copy left behind by a launch that ended between opening the group and cleaning up.
+        removeStore(at: appStore, fileManager: fileManager)
+        return value
     }
 
-    /// Picks the group store when there is a group, first moving a journal that an earlier build
-    /// kept in the app's own directory. The move copies every file before removing any, so a
-    /// failure part way leaves the old store where it was, and the app keeps using it.
-    static func resolveStoreURL(groupDirectory: URL?, appDirectory: URL, fileManager: FileManager = .default) -> URL {
-        let appStore = appDirectory.appending(path: storeFileName)
-        guard let groupDirectory else { return appStore }
-        let groupStore = groupDirectory.appending(path: storeFileName)
-        guard !fileManager.fileExists(atPath: groupStore.path), fileManager.fileExists(atPath: appStore.path) else { return groupStore }
-        let moves = storeFileSuffixes
-            .map { (from: URL(fileURLWithPath: appStore.path + $0), to: URL(fileURLWithPath: groupStore.path + $0)) }
-            .filter { fileManager.fileExists(atPath: $0.from.path) }
-        do {
-            try fileManager.createDirectory(at: groupDirectory, withIntermediateDirectories: true)
-            for move in moves {
-                if fileManager.fileExists(atPath: move.to.path) { try fileManager.removeItem(at: move.to) }
-                try fileManager.copyItem(at: move.from, to: move.to)
-            }
-        } catch {
-            moves.forEach { try? fileManager.removeItem(at: $0.to) }
-            return appStore
+    /// Copies the write-ahead log first and the main file last, through a temporary name and a
+    /// rename, so a main file in the group is never half-written.
+    static func copyStore(from source: URL, to destination: URL, fileManager: FileManager = .default) throws {
+        try fileManager.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+        removeStore(at: destination, fileManager: fileManager)
+        for suffix in ["-wal", "-shm"] where fileManager.fileExists(atPath: source.path + suffix) {
+            try fileManager.copyItem(at: URL(fileURLWithPath: source.path + suffix), to: URL(fileURLWithPath: destination.path + suffix))
         }
-        moves.forEach { try? fileManager.removeItem(at: $0.from) }
-        return groupStore
+        let partial = URL(fileURLWithPath: destination.path + ".partial")
+        try fileManager.copyItem(at: source, to: partial)
+        try fileManager.moveItem(at: partial, to: destination)
+    }
+
+    static func removeStore(at url: URL, fileManager: FileManager = .default) {
+        for suffix in storeFileSuffixes + [".partial"] {
+            try? fileManager.removeItem(at: URL(fileURLWithPath: url.path + suffix))
+        }
+    }
+}
+
+enum SharedJournalError: LocalizedError, Equatable {
+    case groupUnreachable
+
+    var errorDescription: String? {
+        "Your journal is in Foresight's shared App Group, which this build can't reach. Turn App Groups back on in signing, or reset to start an empty journal on this build."
     }
 }
 

@@ -58,7 +58,8 @@ struct CheckInsProvider: TimelineProvider {
             return
         }
         let entries = CheckInWidgetPlan.entryDates(for: items, now: now).map { CheckInsEntry(date: $0, state: CheckInWidgetPlan.state(for: items, at: $0)) }
-        completion(Timeline(entries: entries, policy: .atEnd))
+        // With nothing coming due, nothing changes until the app reloads the timeline.
+        completion(Timeline(entries: entries, policy: entries.count > 1 ? .atEnd : .never))
     }
 }
 
@@ -159,6 +160,8 @@ struct CheckInsWidgetView: View {
                         .font(.footnote)
                         .foregroundStyle(WidgetPalette.muted)
                         .lineLimit(3)
+                        // Redacted where the system hides private content, such as StandBy while locked.
+                        .privacySensitive()
                 } else {
                     nothingDue
                 }
@@ -187,6 +190,7 @@ struct CheckInsWidgetView: View {
                                     .font(.footnote)
                                     .foregroundStyle(WidgetPalette.muted)
                                     .lineLimit(1)
+                                    .privacySensitive()
                             }
                         }
                     }

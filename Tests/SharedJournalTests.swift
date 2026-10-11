@@ -5,96 +5,122 @@ import Testing
 
 @MainActor
 struct SharedJournalStoreTests {
-    private func temporaryDirectory(_ name: String) throws -> URL {
-        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("SharedJournalTests-\(UUID().uuidString)/\(name)", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        return directory
+    private struct OpenFailed: Error { }
+
+    private let root = FileManager.default.temporaryDirectory.appendingPathComponent("SharedJournalTests-\(UUID().uuidString)", isDirectory: true)
+    private var appDirectory: URL { root.appending(path: "app", directoryHint: .isDirectory) }
+    private var groupDirectory: URL { root.appending(path: "group", directoryHint: .isDirectory) }
+    private var appStore: URL { appDirectory.appending(path: "Foresight.store") }
+    private var groupStore: URL { groupDirectory.appending(path: "Foresight.store") }
+    private let defaults = UserDefaults(suiteName: "SharedJournalTests-\(UUID().uuidString)")!
+
+    /// Opens a real journal, as the app does.
+    private func openJournal(_ url: URL) throws -> (ModelContainer, JournalStore) {
+        let container = try ForesightPersistence.makeContainer(storeURL: url)
+        let store = JournalStore(modelContext: container.mainContext, modelContainer: container)
+        if store.initializationError != nil { throw OpenFailed() }
+        return (container, store)
     }
+
+    private func writeJournal(at url: URL, body: String) throws {
+        let (_, store) = try openJournal(url)
+        let entry = try store.saveLog(body: body, eventAt: .now, categoryIDs: [])
+        _ = try store.createCheckIn(for: entry, phase: .delayed, dueAt: .now.addingTimeInterval(3_600))
+    }
+
+    private func exists(_ url: URL, _ suffix: String = "") -> Bool { FileManager.default.fileExists(atPath: url.path + suffix) }
 
     @Test("without an App Group the journal stays in the app's own directory")
     func noGroup() throws {
-        let appDirectory = try temporaryDirectory("app")
-        #expect(SharedJournal.resolveStoreURL(groupDirectory: nil, appDirectory: appDirectory) == appDirectory.appending(path: "Foresight.store"))
+        let (_, store) = try SharedJournal.open(groupDirectory: nil, appDirectory: appDirectory, defaults: defaults, using: openJournal)
+        #expect(store.initializationError == nil)
+        #expect(exists(appStore))
+        #expect(!defaults.bool(forKey: SharedJournal.inGroupKey))
     }
 
     @Test("a fresh install opens its journal in the group container")
     func freshInstall() throws {
-        let appDirectory = try temporaryDirectory("app")
-        let groupDirectory = try temporaryDirectory("group")
-        let url = SharedJournal.resolveStoreURL(groupDirectory: groupDirectory, appDirectory: appDirectory)
-        #expect(url == groupDirectory.appending(path: "Foresight.store"))
-        let container = try ForesightPersistence.makeContainer(storeURL: url)
-        let store = JournalStore(modelContext: container.mainContext, modelContainer: container)
+        let (_, store) = try SharedJournal.open(groupDirectory: groupDirectory, appDirectory: appDirectory, defaults: defaults, using: openJournal)
         #expect(store.initializationError == nil)
-        #expect(FileManager.default.fileExists(atPath: url.path))
+        #expect(exists(groupStore))
+        #expect(!exists(appStore))
+        #expect(defaults.bool(forKey: SharedJournal.inGroupKey))
     }
 
     @Test("a journal from an earlier build moves into the group container and still opens")
     func movesEarlierJournal() throws {
-        let appDirectory = try temporaryDirectory("app")
-        let groupDirectory = try temporaryDirectory("group")
-        let oldURL = appDirectory.appending(path: "Foresight.store")
-        do {
-            let container = try ForesightPersistence.makeContainer(storeURL: oldURL)
-            let store = JournalStore(modelContext: container.mainContext, modelContainer: container)
-            let entry = try store.saveLog(body: "Walked to work", eventAt: .now, categoryIDs: [])
-            _ = try store.createCheckIn(for: entry, phase: .delayed, dueAt: .now.addingTimeInterval(3_600))
-        }
-
-        let url = SharedJournal.resolveStoreURL(groupDirectory: groupDirectory, appDirectory: appDirectory)
-
-        #expect(url == groupDirectory.appending(path: "Foresight.store"))
-        for suffix in SharedJournal.storeFileSuffixes {
-            #expect(!FileManager.default.fileExists(atPath: oldURL.path + suffix))
-        }
-        let container = try ForesightPersistence.makeContainer(storeURL: url)
-        let store = JournalStore(modelContext: container.mainContext, modelContainer: container)
-        #expect(store.initializationError == nil)
+        try writeJournal(at: appStore, body: "Walked to work")
+        let (_, store) = try SharedJournal.open(groupDirectory: groupDirectory, appDirectory: appDirectory, defaults: defaults, using: openJournal)
         #expect(store.entries.map(\.body) == ["Walked to work"])
         #expect(store.checkIns.count == 1)
+        for suffix in SharedJournal.storeFileSuffixes + [".partial"] {
+            #expect(!exists(appStore, suffix))
+        }
+        #expect(!exists(groupStore, ".partial"))
+        #expect(defaults.bool(forKey: SharedJournal.inGroupKey))
 
-        // Run again on the next launch: nothing more to move, same store.
-        #expect(SharedJournal.resolveStoreURL(groupDirectory: groupDirectory, appDirectory: appDirectory) == url)
+        // The next launch opens the same journal from the group.
+        let (_, reopened) = try SharedJournal.open(groupDirectory: groupDirectory, appDirectory: appDirectory, defaults: defaults, using: openJournal)
+        #expect(reopened.entries.map(\.body) == ["Walked to work"])
     }
 
-    @Test("a journal already in the group is never replaced by an older one")
-    func keepsGroupJournal() throws {
-        let appDirectory = try temporaryDirectory("app")
-        let groupDirectory = try temporaryDirectory("group")
-        let groupURL = groupDirectory.appending(path: "Foresight.store")
-        let oldURL = appDirectory.appending(path: "Foresight.store")
-        try Data("group".utf8).write(to: groupURL)
-        try Data("old".utf8).write(to: oldURL)
-        #expect(SharedJournal.resolveStoreURL(groupDirectory: groupDirectory, appDirectory: appDirectory) == groupURL)
-        #expect(try Data(contentsOf: groupURL) == Data("group".utf8))
-        #expect(FileManager.default.fileExists(atPath: oldURL.path))
+    @Test("if the group copy won't open, the old journal opens instead and is kept")
+    func groupOpenFails() throws {
+        try writeJournal(at: appStore, body: "Walked to work")
+        var tried: [URL] = []
+        let (_, store) = try SharedJournal.open(groupDirectory: groupDirectory, appDirectory: appDirectory, defaults: defaults) { url in
+            tried.append(url)
+            if url == groupStore { throw OpenFailed() }
+            return try openJournal(url)
+        }
+        #expect(tried == [groupStore, appStore])
+        #expect(store.entries.map(\.body) == ["Walked to work"])
+        #expect(exists(appStore))
+        #expect(!exists(groupStore))
+        #expect(!defaults.bool(forKey: SharedJournal.inGroupKey))
     }
 
-    @Test("if the move fails part way, the app keeps the old journal where it was")
-    func failedMoveKeepsOldJournal() throws {
-        let appDirectory = try temporaryDirectory("app")
-        let oldURL = appDirectory.appending(path: "Foresight.store")
-        try Data("old".utf8).write(to: oldURL)
-        // A file where the group directory should be makes creating it fail.
-        let blocked = try temporaryDirectory("blocked").appending(path: "file")
-        try Data().write(to: blocked)
-        let url = SharedJournal.resolveStoreURL(groupDirectory: blocked.appending(path: "Application Support"), appDirectory: appDirectory)
-        #expect(url == oldURL)
-        #expect(try Data(contentsOf: oldURL) == Data("old".utf8))
+    @Test("a copy interrupted part way is replaced from the old journal on the next launch")
+    func interruptedCopy() throws {
+        try writeJournal(at: appStore, body: "Walked to work")
+        // What a launch that died mid-copy could leave: a torn main file, a stray partial, no log.
+        try FileManager.default.createDirectory(at: groupDirectory, withIntermediateDirectories: true)
+        try Data("torn".utf8).write(to: groupStore)
+        try Data("torn".utf8).write(to: URL(fileURLWithPath: groupStore.path + ".partial"))
+        let (_, store) = try SharedJournal.open(groupDirectory: groupDirectory, appDirectory: appDirectory, defaults: defaults, using: openJournal)
+        #expect(store.entries.map(\.body) == ["Walked to work"])
+        #expect(!exists(appStore))
+    }
+
+    @Test("once the journal is in the group, an old app-directory copy never replaces it")
+    func groupJournalWins() throws {
+        try writeJournal(at: groupStore, body: "In the group")
+        defaults.set(true, forKey: SharedJournal.inGroupKey)
+        // Left by a launch that ended after the group opened but before cleaning up.
+        try writeJournal(at: appStore, body: "Stale copy")
+        let (_, store) = try SharedJournal.open(groupDirectory: groupDirectory, appDirectory: appDirectory, defaults: defaults, using: openJournal)
+        #expect(store.entries.map(\.body) == ["In the group"])
+        #expect(!exists(appStore))
+    }
+
+    @Test("a build that loses the group shows an error instead of an empty journal")
+    func groupUnreachable() throws {
+        defaults.set(true, forKey: SharedJournal.inGroupKey)
+        #expect(throws: SharedJournalError.groupUnreachable) {
+            try SharedJournal.open(groupDirectory: nil, appDirectory: appDirectory, defaults: defaults, using: openJournal)
+        }
+        #expect(!exists(appStore))
     }
 
     @Test("the widget opens the journal read-only")
     func readOnlyContainer() throws {
-        let url = try temporaryDirectory("group").appending(path: "Foresight.store")
-        do {
-            let container = try ForesightPersistence.makeContainer(storeURL: url)
-            let store = JournalStore(modelContext: container.mainContext, modelContainer: container)
-            let entry = try store.saveLog(body: "Late coffee\nThen couldn't sleep", eventAt: .now, categoryIDs: [])
-            _ = try store.createCheckIn(for: entry, phase: .delayed, dueAt: .now.addingTimeInterval(60))
-        }
-        let container = try ForesightPersistence.makeContainer(storeURL: url, allowsSave: false)
-        let items = CheckInWidgetPlan.items(from: try ModelContext(container).fetch(FetchDescriptor<OutcomeCheckIn>()))
+        try writeJournal(at: groupStore, body: "Late coffee\nThen couldn't sleep")
+        let container = try ForesightPersistence.makeContainer(storeURL: groupStore, allowsSave: false)
+        let context = ModelContext(container)
+        let items = CheckInWidgetPlan.items(from: try context.fetch(FetchDescriptor<OutcomeCheckIn>()))
         #expect(items.map(\.text) == ["Late coffee"])
+        context.insert(JournalCategory(name: "Widget"))
+        #expect(throws: (any Error).self) { try context.save() }
     }
 }
 
