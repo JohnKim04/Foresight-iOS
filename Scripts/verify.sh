@@ -25,7 +25,8 @@ cd "$project_root"
 xcodegen generate --spec project.yml
 
 # CI can pin a simulator with VERIFY_SIMULATOR_UDID, skip the final install/launch
-# with VERIFY_SKIP_LAUNCH=1, and keep test results with VERIFY_RESULT_BUNDLE_PATH.
+# with VERIFY_SKIP_LAUNCH=1, skip the UI tests with VERIFY_SKIP_UI_TESTS=1, and keep
+# test results with VERIFY_RESULT_BUNDLE_PATH.
 simulator_udid="${VERIFY_SIMULATOR_UDID:-}"
 if [[ -z "$simulator_udid" ]]; then
   devices_json="$(xcrun simctl list devices available --json)"
@@ -63,12 +64,18 @@ if [[ -n "${VERIFY_RESULT_BUNDLE_PATH:-}" ]]; then
   result_bundle_args=(-resultBundlePath "$VERIFY_RESULT_BUNDLE_PATH")
 fi
 
+skip_args=()
+if [[ "${VERIFY_SKIP_UI_TESTS:-}" == "1" ]]; then
+  skip_args=(-skip-testing:ForesightUITests)
+fi
+
 xcodebuild test \
   -project Foresight.xcodeproj \
   -scheme "$scheme" \
   -destination "platform=iOS Simulator,id=$simulator_udid" \
   -derivedDataPath "$derived_data" \
   "${result_bundle_args[@]}" \
+  "${skip_args[@]}" \
   CODE_SIGNING_ALLOWED=NO \
   CODE_SIGNING_REQUIRED=NO
 
