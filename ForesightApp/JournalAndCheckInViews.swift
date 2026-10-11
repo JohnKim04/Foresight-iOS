@@ -5,6 +5,8 @@ enum JournalDateScope: String, CaseIterable, Identifiable { case recent, all, cu
 
 struct JournalRootView: View {
     let store: JournalStore
+    /// Set by the widget's Log button; opens a new log.
+    @Binding var newLogRequest: Bool
     let openSettings: () -> Void
     @State private var query = ""
     @State private var categoryID: UUID?
@@ -70,6 +72,11 @@ struct JournalRootView: View {
             }
             .navigationDestination(for: UUID.self) { JournalDetailView(store: store, entryID: $0) }
             .fullScreenCover(item: $editor) { JournalEditorView(store: store, request: $0) }
+            .onChange(of: newLogRequest, initial: true) { _, requested in
+                guard requested else { return }
+                editor = EditorRequest(entryID: nil)
+                newLogRequest = false
+            }
         }
     }
 

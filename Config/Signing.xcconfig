@@ -7,6 +7,12 @@ DEVELOPMENT_TEAM =
 CODE_SIGNING_ALLOWED = NO
 CODE_SIGNING_REQUIRED = NO
 
+// The App Group lets the widget read the journal. A team that can't use App Groups can clear
+// these two in Signing.local.xcconfig; the app then keeps the journal to itself and the
+// widget asks to open Foresight.
+FORESIGHT_APP_ENTITLEMENTS = ForesightApp/Foresight.entitlements
+FORESIGHT_WIDGET_ENTITLEMENTS = ForesightWidget/ForesightWidget.entitlements
+
 #include? "Signing.local.xcconfig"
 
 CODE_SIGNING_ALLOWED[sdk=iphonesimulator*] = NO

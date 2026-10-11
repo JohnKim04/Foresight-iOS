@@ -21,6 +21,8 @@ final class JournalStore {
     @ObservationIgnored var onCheckInsChanged: (@MainActor ([OutcomeCheckIn]) -> Void)?
     /// Called after every successful load, so suggestion nudges follow every journal change.
     @ObservationIgnored var onJournalChanged: (@MainActor (JournalStore) -> Void)?
+    /// Called after every successful load, so the widget follows every journal change.
+    @ObservationIgnored var onLoaded: (@MainActor () -> Void)?
     /// Called after the journal is erased, so notification history about it goes too.
     @ObservationIgnored var onReset: (@MainActor () -> Void)?
 
@@ -48,6 +50,7 @@ final class JournalStore {
             initializationError = nil
             onCheckInsChanged?(checkIns)
             onJournalChanged?(self)
+            onLoaded?()
         } catch {
             initializationError = "Your journal could not be opened. \(error.localizedDescription)"
         }

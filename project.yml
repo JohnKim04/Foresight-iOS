@@ -13,6 +13,13 @@ settings:
     GENERATE_INFOPLIST_FILE: NO
     # Override in Config/Signing.local.xcconfig if these bundle IDs are taken by another Apple team.
     BUNDLE_ID_PREFIX: com.foresight
+  configs:
+    # The app and its widget share the journal through this App Group. Debug and Release are
+    # separate apps, so each gets its own group.
+    Debug:
+      APP_GROUP_IDENTIFIER: group.$(BUNDLE_ID_PREFIX).journal.testing
+    Release:
+      APP_GROUP_IDENTIFIER: group.$(BUNDLE_ID_PREFIX).journal
 configs:
   Debug: debug
   Release: release
@@ -22,8 +29,12 @@ targets:
     platform: iOS
     sources:
       - path: ForesightApp
+        excludes:
+          - "*.entitlements"
       - path: Resources
         buildPhase: resources
+    dependencies:
+      - target: ForesightWidget
     # Device signing lives in Config/Signing.xcconfig, which includes a gitignored
     # Config/Signing.local.xcconfig for the team ID. See "Run on your iPhone" in the README.
     configFiles:
@@ -35,7 +46,8 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         PRODUCT_MODULE_NAME: Foresight
         SUPPORTS_MACCATALYST: NO
-        CODE_SIGN_ENTITLEMENTS: ""
+        # Set in Config/Signing.xcconfig, so a team without App Groups can turn it off locally.
+        CODE_SIGN_ENTITLEMENTS: $(FORESIGHT_APP_ENTITLEMENTS)
       configs:
         Debug:
           PRODUCT_BUNDLE_IDENTIFIER: $(BUNDLE_ID_PREFIX).journal.testing
@@ -44,6 +56,34 @@ targets:
         Release:
           PRODUCT_BUNDLE_IDENTIFIER: $(BUNDLE_ID_PREFIX).journal
           PRODUCT_NAME: Foresight
+  ForesightWidget:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: ForesightWidget
+        excludes:
+          - "*.entitlements"
+          - Info.plist
+      # The widget reads the journal with the app's own models.
+      - path: ForesightApp/Models.swift
+      - path: ForesightApp/ForesightSchema.swift
+      - path: ForesightApp/SharedJournal.swift
+    configFiles:
+      Debug: Config/Signing.xcconfig
+      Release: Config/Signing.xcconfig
+    settings:
+      base:
+        INFOPLIST_FILE: ForesightWidget/Info.plist
+        CODE_SIGN_ENTITLEMENTS: $(FORESIGHT_WIDGET_ENTITLEMENTS)
+        PRODUCT_NAME: ForesightWidget
+        SKIP_INSTALL: YES
+        SUPPORTS_MACCATALYST: NO
+      configs:
+        Debug:
+          PRODUCT_BUNDLE_IDENTIFIER: $(BUNDLE_ID_PREFIX).journal.testing.widget
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
+        Release:
+          PRODUCT_BUNDLE_IDENTIFIER: $(BUNDLE_ID_PREFIX).journal.widget
   ForesightTests:
     type: bundle.unit-test
     platform: iOS

@@ -338,6 +338,8 @@ enum ReminderDestination: Equatable {
     case answer(CheckInTarget)
     /// A category's later evidence on Patterns, from a tapped suggestion nudge.
     case evidence(UUID)
+    /// A new log, from the widget.
+    case newLog
 }
 
 /// Turns a tapped, answered or snoozed reminder into app state. The root view consumes `destination`.
@@ -386,6 +388,24 @@ final class CheckInReminderRouter {
             try? store.answer(checkIn, response: value, notSure: false, note: "", excludedFromAnalysis: false)
             // The app may only be awake for this; clear the reminder before returning.
             await reminders.waitForPendingWork()
+        }
+    }
+}
+
+extension CheckInReminderRouter {
+    /// A widget tap. A check-in link opens like a tapped reminder: its answer sheet while it's
+    /// still pending, otherwise the Check In tab.
+    func open(_ link: ForesightLink) {
+        switch link {
+        case .newLog: destination = .newLog
+        case .checkIns: destination = .checkIns
+        case .checkIn(let id):
+            let checkIn = store?.checkIns.first { $0.id == id }
+            if let checkIn, checkIn.status == .pending, let entry = checkIn.entry {
+                destination = .answer(CheckInTarget(entryID: entry.id, checkInID: checkIn.id))
+            } else {
+                destination = .checkIns
+            }
         }
     }
 }

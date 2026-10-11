@@ -64,6 +64,15 @@ jobs:
           VERIFY_RESULT_BUNDLE_PATH: ${{ github.workspace }}/build/TestResults.xcresult
         run: ./Scripts/verify.sh
 
+      # Cloud sessions without a Mac can't run XcodeGen; they commit this file after a project.yml change.
+      - name: Upload generated project
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: GeneratedProject
+          path: Foresight.xcodeproj/project.pbxproj
+          if-no-files-found: ignore
+
       - name: Upload test results
         if: failure() || cancelled()
         uses: actions/upload-artifact@v6
