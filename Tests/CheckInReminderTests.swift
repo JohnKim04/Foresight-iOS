@@ -395,6 +395,78 @@ struct CheckInReminderSchedulerTests {
         #expect(router.destination == nil)
     }
 
+    @Test("a reminder offers every answer, best first, then the snooze")
+    func answerActions() throws {
+        let actions = SystemReminderNotificationCenter.checkInActions
+        #expect(actions.map(\.title) == ["Much better", "A little better", "About the same", "A little worse", "Much worse", "Remind me in an hour"])
+        // Answering runs in the background; none of the buttons opens the app or needs an unlock.
+        #expect(actions.allSatisfy { $0.options.isEmpty })
+        for value in OutcomeValue.allCases {
+            let response = try #require(ReminderResponse(requestIdentifier: CheckInReminderPlan.identifier(for: UUID()), actionIdentifier: CheckInReminderPlan.answerActionIdentifier(for: value)))
+            #expect(response.action == .answer(value))
+        }
+        #expect(ReminderResponse(requestIdentifier: CheckInReminderPlan.identifier(for: UUID()), actionIdentifier: "CHECK_IN_ANSWER_7") == nil)
+        #expect(ReminderResponse(requestIdentifier: CheckInReminderPlan.identifier(for: UUID()), actionIdentifier: "CHECK_IN_ANSWER_") == nil)
+    }
+
+    @Test("answering from the notification records the check-in and clears its reminder")
+    func answerFromNotification() async throws {
+        let (store, scheduler, center) = try makeSubject()
+        let router = CheckInReminderRouter(reminders: scheduler, now: { fixedNow })
+        router.store = store
+        let delegate = CheckInReminderNotificationDelegate { router }
+        let checkIn = try scheduledCheckIn(store, in: 60)
+        let other = try scheduledCheckIn(store, in: 600)
+        let identifier = CheckInReminderPlan.identifier(for: checkIn.id)
+        await scheduler.waitForPendingWork()
+        await center.setDelivered([identifier])
+        #expect(dueCheckInCount(store.snapshot, now: fixedNow.addingTimeInterval(700)) == 2)
+
+        await delegate.handle(requestIdentifier: identifier, actionIdentifier: CheckInReminderPlan.answerActionIdentifier(for: .aLittleWorse), body: "Stayed up late")
+
+        #expect(checkIn.status == .answered)
+        #expect(checkIn.overall == .aLittleWorse)
+        #expect(checkIn.answeredAt == fixedNow)
+        #expect(checkIn.note.isEmpty)
+        #expect(!checkIn.excludedFromAnalysis)
+        #expect(other.status == .pending)
+        #expect(router.destination == nil)
+        #expect(await center.pending.keys.sorted() == [CheckInReminderPlan.identifier(for: other.id)])
+        #expect(await center.delivered.isEmpty)
+        // The Check In tab's badge counts from the store, so it drops with the answer.
+        #expect(dueCheckInCount(store.snapshot, now: fixedNow.addingTimeInterval(700)) == 1)
+    }
+
+    @Test("answering from a notification doesn't overwrite an answer given first in the app")
+    func answerAfterAnswered() async throws {
+        let (store, scheduler, _) = try makeSubject()
+        let router = CheckInReminderRouter(reminders: scheduler, now: { fixedNow })
+        router.store = store
+        let checkIn = try scheduledCheckIn(store, in: 60)
+        try store.answer(checkIn, response: .muchBetter, notSure: false, note: "Slept well", excludedFromAnalysis: false)
+        let skipped = try scheduledCheckIn(store, in: 120)
+        try store.skip(skipped)
+        for target in [checkIn, skipped] {
+            await router.handle(try #require(ReminderResponse(requestIdentifier: CheckInReminderPlan.identifier(for: target.id), actionIdentifier: CheckInReminderPlan.answerActionIdentifier(for: .muchWorse))))
+        }
+        #expect(checkIn.overall == .muchBetter)
+        #expect(checkIn.note == "Slept well")
+        #expect(skipped.status == .skipped)
+        #expect(skipped.overall == nil)
+    }
+
+    @Test("an answer that can't be saved asks again in an hour")
+    func answerWithoutStore() async throws {
+        let center = FakeReminderCenter()
+        let scheduler = CheckInReminderScheduler(center: center, now: { fixedNow })
+        let router = CheckInReminderRouter(reminders: scheduler, now: { fixedNow })
+        let id = UUID()
+        await router.handle(try #require(ReminderResponse(requestIdentifier: CheckInReminderPlan.identifier(for: id), actionIdentifier: CheckInReminderPlan.answerActionIdentifier(for: .same), body: "Stayed up late")))
+        let reminder = try #require(await center.pending[CheckInReminderPlan.identifier(for: id)])
+        #expect(reminder.fireAt == fixedNow.addingTimeInterval(3_600))
+        #expect(reminder.body == "Stayed up late")
+    }
+
     @Test("snoozing while the journal can't be read re-posts the reminder from its own text")
     func snoozeWithoutStore() async throws {
         let center = FakeReminderCenter()
