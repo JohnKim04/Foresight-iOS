@@ -143,7 +143,8 @@ struct OutcomeAnalyticsTests {
         let weeks = activityBuckets(logs, category: workout, granularity: .week, now: now)
         #expect(weeks.last?.count == 1)
         #expect(weeks.dropLast().last?.count == 2)
-        #expect(weeks.reduce(0) { $0 + $1.count } == 3)
+        let total = weeks.reduce(0) { $0 + $1.count }
+        #expect(total == 3)
         #expect(Set(weeks.map(\.label)).count == 8, "Each week needs its own label for the chart's x axis")
     }
 }
