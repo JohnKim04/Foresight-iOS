@@ -18,6 +18,9 @@ struct CheckInReminder: Equatable, Sendable {
     let fireAt: Date
     let title: String
     let body: String
+    /// The app icon count to show once this fires: every check-in due by then. Nil leaves the
+    /// count as it is.
+    var badge: Int? = nil
 }
 
 /// A notification request that is already scheduled with the system.
@@ -25,6 +28,7 @@ struct ScheduledReminder: Equatable, Sendable {
     let identifier: String
     let fireAt: Date?
     let body: String
+    var badge: Int? = nil
 }
 
 struct ReminderChanges: Equatable, Sendable {
@@ -82,7 +86,12 @@ enum CheckInReminderPlan {
             .filter { $0.fireAt > now }
             .sorted { ($0.fireAt, $0.source.checkInID.uuidString) < ($1.fireAt, $1.source.checkInID.uuidString) }
             .prefix(limit)
-            .map { CheckInReminder(identifier: identifier(for: $0.source.checkInID), checkInID: $0.source.checkInID, fireAt: $0.fireAt, title: title, body: body(for: $0.source.entryBody)) }
+            .map { CheckInReminder(identifier: identifier(for: $0.source.checkInID), checkInID: $0.source.checkInID, fireAt: $0.fireAt, title: title, body: body(for: $0.source.entryBody), badge: dueCount(sources, at: $0.fireAt)) }
+    }
+
+    /// How many check-ins are waiting for an answer at `date`, for the app icon.
+    static func dueCount(_ sources: [ReminderSource], at date: Date) -> Int {
+        sources.filter { $0.dueAt <= date }.count
     }
 
     /// Calendar triggers have one-second precision. Rounding up means a reminder never fires
@@ -91,8 +100,10 @@ enum CheckInReminderPlan {
         Date(timeIntervalSinceReferenceDate: dueAt.timeIntervalSinceReferenceDate.rounded(.up))
     }
 
+    /// Rounds before checking quiet hours, so a check-in due a fraction of a second before
+    /// they start doesn't buzz at their first second.
     static func fireDate(for dueAt: Date, quietHours: QuietHours, calendar: Calendar) -> Date {
-        fireDate(for: quietHours.deferring(dueAt, calendar: calendar))
+        fireDate(for: quietHours.deferring(fireDate(for: dueAt), calendar: calendar))
     }
 
     /// A check-in is due at an instant, not a wall-clock time. Components in UTC, with the
@@ -121,16 +132,17 @@ enum CheckInReminderPlan {
         let toRemove = Set(ours.map(\.identifier)).subtracting(desiredIDs).sorted()
         let toAdd = desired.filter { reminder in
             guard let existing = scheduledByID[reminder.identifier], let fireAt = existing.fireAt else { return true }
-            return abs(fireAt.timeIntervalSince(reminder.fireAt)) >= 1 || existing.body != reminder.body
+            return abs(fireAt.timeIntervalSince(reminder.fireAt)) >= 1 || existing.body != reminder.body || existing.badge != reminder.badge
         }
         return ReminderChanges(toAdd: toAdd, toRemove: toRemove)
     }
 
-    /// Delivered reminders whose check-in was answered, skipped or deleted.
-    static func staleDelivered(_ delivered: [String], pendingCheckInIDs: Set<UUID>) -> [String] {
+    /// Delivered reminders whose check-in was answered, skipped or deleted, or moved to later,
+    /// since a check-in that isn't due yet has nothing to answer.
+    static func staleDelivered(_ delivered: [String], dueCheckInIDs: Set<UUID>) -> [String] {
         delivered.filter { identifier in
             guard let checkInID = checkInID(fromIdentifier: identifier) else { return false }
-            return !pendingCheckInIDs.contains(checkInID)
+            return !dueCheckInIDs.contains(checkInID)
         }
     }
 }
@@ -143,6 +155,7 @@ protocol ReminderNotificationCenter: Sendable {
     func add(_ reminder: CheckInReminder) async throws
     func removeScheduled(_ identifiers: [String]) async
     func removeDelivered(_ identifiers: [String]) async
+    func setBadgeCount(_ count: Int) async
 }
 
 struct SystemReminderNotificationCenter: ReminderNotificationCenter {
@@ -155,7 +168,7 @@ struct SystemReminderNotificationCenter: ReminderNotificationCenter {
     }
 
     func requestAuthorization() async -> Bool {
-        (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])) ?? false
+        (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])) ?? false
     }
 
     func scheduledReminders() async -> [ScheduledReminder] {
@@ -163,7 +176,8 @@ struct SystemReminderNotificationCenter: ReminderNotificationCenter {
             ScheduledReminder(
                 identifier: request.identifier,
                 fireAt: (request.trigger as? UNCalendarNotificationTrigger)?.nextTriggerDate(),
-                body: request.content.body
+                body: request.content.body,
+                badge: request.content.badge?.intValue
             )
         }
     }
@@ -179,6 +193,7 @@ struct SystemReminderNotificationCenter: ReminderNotificationCenter {
         content.sound = .default
         content.categoryIdentifier = CheckInReminderPlan.categoryIdentifier
         content.threadIdentifier = CheckInReminderPlan.threadIdentifier
+        content.badge = reminder.badge.map { NSNumber(value: $0) }
         let trigger = UNCalendarNotificationTrigger(dateMatching: CheckInReminderPlan.triggerComponents(for: reminder.fireAt), repeats: false)
         try await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: reminder.identifier, content: content, trigger: trigger))
     }
@@ -191,6 +206,10 @@ struct SystemReminderNotificationCenter: ReminderNotificationCenter {
     func removeDelivered(_ identifiers: [String]) async {
         guard !identifiers.isEmpty else { return }
         UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: identifiers)
+    }
+
+    func setBadgeCount(_ count: Int) async {
+        try? await UNUserNotificationCenter.current().setBadgeCount(count)
     }
 
     /// Answering from the notification records the check-in in the background, without unlocking,
@@ -217,6 +236,7 @@ struct InertReminderNotificationCenter: ReminderNotificationCenter {
     func add(_ reminder: CheckInReminder) async throws { }
     func removeScheduled(_ identifiers: [String]) async { }
     func removeDelivered(_ identifiers: [String]) async { }
+    func setBadgeCount(_ count: Int) async { }
 }
 
 /// Keeps the system's scheduled reminders in step with the journal's pending check-ins.
@@ -295,12 +315,17 @@ final class CheckInReminderScheduler {
 
     private func reconcile(_ sources: [ReminderSource]) async {
         authorization = await center.authorization()
+        let date = now()
+        let active = authorization == .allowed && isEnabled()
         let delivered = await center.deliveredIdentifiers()
         // With reminders turned off, delivered ones go too, as nudges do.
-        let pending = isEnabled() ? Set(sources.map(\.checkInID)) : []
-        await center.removeDelivered(CheckInReminderPlan.staleDelivered(delivered, pendingCheckInIDs: pending))
-        let desired = authorization == .allowed && isEnabled()
-            ? CheckInReminderPlan.reminders(for: sources, now: now(), quietHours: quietHours(), calendar: calendar())
+        let due = isEnabled() ? Set(sources.filter { $0.dueAt <= date }.map(\.checkInID)) : []
+        await center.removeDelivered(CheckInReminderPlan.staleDelivered(delivered, dueCheckInIDs: due))
+        // The icon counts what is waiting now, including check-ins that fell due while
+        // reminders couldn't reach the phone; each scheduled reminder raises it as it fires.
+        await center.setBadgeCount(active ? CheckInReminderPlan.dueCount(sources, at: date) : 0)
+        let desired = active
+            ? CheckInReminderPlan.reminders(for: sources, now: date, quietHours: quietHours(), calendar: calendar())
             : []
         let changes = CheckInReminderPlan.changes(desired: desired, scheduled: await center.scheduledReminders())
         await center.removeScheduled(changes.toRemove)
@@ -420,7 +445,7 @@ final class CheckInReminderNotificationDelegate: NSObject, UNUserNotificationCen
     }
 
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification) async -> UNNotificationPresentationOptions {
-        [.banner, .list, .sound]
+        [.banner, .list, .sound, .badge]
     }
 
     // UIKit asserts that this completion handler runs on the main thread. The async form of this
