@@ -27,10 +27,13 @@ struct HelpSuggestion: Identifiable {
     var headline: String { "\(category.name) has tended to be followed by feeling better later." }
     var evidence: String { "Better in \(betterCount) of \(numericCount) later check-ins · \(evidenceDepth.rawValue)" }
 
-    var context: String? {
+    var context: String? { context(showingUsualTime: true) }
+
+    /// `showingUsualTime` is false when the card already says it once for several suggestions.
+    func context(showingUsualTime: Bool) -> String? {
         var notes: [String] = []
         if loggedToday { notes.append("Already logged today.") }
-        else if usualTimeOfDay { notes.append("You’ve often logged it around this time of day.") }
+        else if usualTimeOfDay { if showingUsualTime { notes.append("You’ve often logged it around this time of day.") } }
         else if let days = daysSinceLastLog, days >= 2 { notes.append("Last logged \(days) days ago.") }
         if mostlyWeekends { notes.append("Mostly logged on weekends.") }
         if worseRightAfter { notes.append("It tended to feel worse right after.") }
@@ -52,6 +55,13 @@ enum HelpSuggestionCopy {
     static let footnote = "From your later check-ins over the last 90 days. These are patterns, not causes."
     /// Leads the suggestion shown right after a check-in that felt worse.
     static let afterWorseIntro = "One pattern from your own later check-ins, in case it’s useful now:"
+
+    /// One line for the card when two or more suggestions are near their usual time of day.
+    static func sharedUsualTimeNote(_ suggestions: [HelpSuggestion]) -> String? {
+        let names = suggestions.filter { $0.usualTimeOfDay && !$0.loggedToday }.map(\.category.name)
+        guard names.count >= 2 else { return nil }
+        return "You’ve often logged \(names.formatted(.list(type: .and))) around this time of day."
+    }
 
     static func emptyMessage(_ report: HelpSuggestionReport) -> String {
         if report.patternCount > 0 { return "No category has been followed by feeling better clearly and recently enough yet. Keep checking in later and this will update." }
