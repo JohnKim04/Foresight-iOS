@@ -53,15 +53,29 @@ if [[ -z "$team_id" ]]; then
   team_id="$(config_value DEVELOPMENT_TEAM)"
   [[ "$team_id" == "YOURTEAMID" ]] && team_id=""
 fi
+# Team IDs in the subjects (OU) of the Apple Development certificates Xcode made for you.
+certificate_teams() {
+  security find-certificate -a -c "Apple Development" -p 2>/dev/null | awk '
+    /BEGIN CERTIFICATE/ { pem = "" }
+    { pem = pem $0 "\n" }
+    /END CERTIFICATE/ { cmd = "openssl x509 -noout -subject"; printf "%s", pem | cmd; close(cmd) }' \
+    | sed -n -E 's/.*OU ?= ?([A-Z0-9]{10}).*/\1/p' | sort -u || true
+}
+
 if [[ -z "$team_id" ]]; then
-  # Xcode lists the teams of every account in Settings > Accounts here.
+  # Xcode lists the teams of every account in Settings > Accounts here. The setting isn't
+  # documented, so fall back to the signing certificates.
   teams=("${(@f)$(defaults read com.apple.dt.Xcode IDEProvisioningTeamByIdentifier 2>/dev/null \
     | sed -n -E 's/.*teamID = "?([A-Z0-9]{10})"?;.*/\1/p' | sort -u || true)}")
   teams=(${teams:#})
+  if (( ${#teams} == 0 )); then
+    teams=("${(@f)$(certificate_teams)}")
+    teams=(${teams:#})
+  fi
   if (( ${#teams} == 1 )); then
     team_id="${teams[1]}"
   elif (( ${#teams} > 1 )); then
-    print "Xcode is signed in to more than one team (${teams[*]}). Pick one with --team."
+    print "Found more than one team (${teams[*]}). Pick one with --team."
     exit 2
   else
     print "Couldn't find your team. Sign in under Xcode > Settings > Accounts, or pass --team."
@@ -107,16 +121,26 @@ fi
 devices_json="$(mktemp)"
 trap 'rm -f "$devices_json"' EXIT
 xcrun devicectl list devices --json-output "$devices_json" >/dev/null
-device="$(jq -c --arg q "$device_query" '
+# Paired iPhones and iPads, plugged-in ones first. tunnelState can read "disconnected" for a phone
+# on a cable until Xcode opens a tunnel, so go by the cable instead.
+matches="$(jq -c --arg q "$device_query" '
   [.result.devices[]
    | select(.hardwareProperties.platform == "iOS" and .hardwareProperties.reality == "physical")
+   | select((.connectionProperties.pairingState // "paired") == "paired")
    | select($q == "" or .deviceProperties.name == $q or .hardwareProperties.udid == $q or .identifier == $q)]
-  | sort_by(.connectionProperties.tunnelState != "connected")
-  | first // empty' "$devices_json")"
-if [[ -z "$device" ]]; then
+  | sort_by(.connectionProperties.transportType != "wired")' "$devices_json")"
+wired_count="$(jq '[.[] | select(.connectionProperties.transportType == "wired")] | length' <<< "$matches")"
+match_count="$(jq 'length' <<< "$matches")"
+if (( match_count == 0 )); then
   print "No iPhone found${device_query:+ matching \"$device_query\"}. Connect it with a cable, unlock it, and tap Trust if it asks."
   exit 3
 fi
+if (( match_count > 1 && wired_count != 1 )) && [[ -z "$device_query" ]]; then
+  print "More than one device could be the iPhone. Plug in just the one you want, or pick it with --device:"
+  jq -r '.[] | "  \(.deviceProperties.name)  iOS \(.deviceProperties.osVersionNumber // "?")  \(.connectionProperties.transportType // "not connected")  \(.hardwareProperties.udid)"' <<< "$matches"
+  exit 3
+fi
+device="$(jq -c 'first' <<< "$matches")"
 
 device_udid="$(jq -r '.hardwareProperties.udid' <<< "$device")"
 device_name="$(jq -r '.deviceProperties.name' <<< "$device")"
@@ -137,6 +161,9 @@ fi
 
 cd "$project_root"
 xcodegen generate --spec project.yml
+if ! git diff --quiet -- Foresight.xcodeproj 2>/dev/null; then
+  print "Note: regenerating changed Foresight.xcodeproj. That's harmless for the install; discard it with git checkout -- Foresight.xcodeproj."
+fi
 
 # Automatic signing registers the iPhone, the app IDs and the App Group with your team.
 xcodebuild build \
@@ -152,10 +179,19 @@ app_path="$derived_data/Build/Products/$configuration-iphoneos/$app_name.app"
 bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app_path/Info.plist")"
 xcrun devicectl device install app --device "$device_udid" "$app_path"
 
-if ! xcrun devicectl device process launch --device "$device_udid" "$bundle_id" >/dev/null 2>&1; then
+if ! launch_output="$(xcrun devicectl device process launch --device "$device_udid" "$bundle_id" 2>&1)"; then
   print ""
-  print "$app_name is installed. The first time, iOS won't open it until you trust your developer profile:"
-  print "Settings > General > VPN & Device Management > your Apple account > Trust. Then open $app_name."
-  exit 0
+  if [[ "${(L)launch_output}" == *trust* ]]; then
+    print "$app_name is installed. The first time, iOS won't open it until you trust your developer profile:"
+    print "Settings > General > VPN & Device Management > your Apple account > Trust. Then open $app_name."
+    exit 0
+  fi
+  if [[ "${(L)launch_output}" == *lock* ]]; then
+    print "$app_name is installed, but the iPhone is locked. Unlock it and open $app_name."
+    exit 4
+  fi
+  print "$app_name is installed, but it didn't open:"
+  print -r -- "$launch_output"
+  exit 4
 fi
 print "$app_name is running on $device_name. Run this again within 7 days to keep it opening."
