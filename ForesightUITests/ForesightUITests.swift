@@ -6,9 +6,12 @@ final class ForesightUITests: XCTestCase {
 
     override func setUpWithError() throws {
         continueAfterFailure = false
-        app = XCUIApplication()
-        app.launchArguments = ["-in-memory-store", "-hasCompletedOnboarding", "YES"]
-        app.launch()
+        // XCTest's setUp isn't main-actor isolated, but it runs on the main thread.
+        MainActor.assumeIsolated {
+            app = XCUIApplication()
+            app.launchArguments = ["-in-memory-store", "-hasCompletedOnboarding", "YES"]
+            app.launch()
+        }
     }
 
     /// Saves the new-log editor, then leaves the post-log check-in step without answering.
