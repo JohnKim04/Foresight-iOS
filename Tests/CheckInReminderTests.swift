@@ -122,9 +122,9 @@ struct CheckInReminderPlanTests {
         let edited = CheckInReminderPlan.reminders(for: [source(in: 1_800, body: "New text")], now: now)[0]
         let obsolete = CheckInReminderPlan.identifier(for: UUID())
         let scheduled = [
-            ScheduledReminder(identifier: unchanged.identifier, fireAt: unchanged.fireAt, body: unchanged.body),
-            ScheduledReminder(identifier: moved.identifier, fireAt: moved.fireAt.addingTimeInterval(-3_600), body: moved.body),
-            ScheduledReminder(identifier: edited.identifier, fireAt: edited.fireAt, body: "Old text"),
+            ScheduledReminder(identifier: unchanged.identifier, fireAt: unchanged.fireAt, body: unchanged.body, badge: unchanged.badge),
+            ScheduledReminder(identifier: moved.identifier, fireAt: moved.fireAt.addingTimeInterval(-3_600), body: moved.body, badge: moved.badge),
+            ScheduledReminder(identifier: edited.identifier, fireAt: edited.fireAt, body: "Old text", badge: edited.badge),
             ScheduledReminder(identifier: obsolete, fireAt: now.addingTimeInterval(60), body: ""),
             ScheduledReminder(identifier: "daily-reflection", fireAt: now.addingTimeInterval(60), body: "")
         ]
