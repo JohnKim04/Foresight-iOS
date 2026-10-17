@@ -308,15 +308,28 @@ final class ForesightUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Next"].waitForExistence(timeout: 3))
         for _ in 0..<3 { app.buttons["Next"].tap() }
         XCTAssertTrue(app.staticTexts["Spot what repeats."].waitForExistence(timeout: 3))
-        app.buttons["Start journaling"].tap()
+        XCTAssertTrue(app.buttons["Write your first log"].exists)
+        app.buttons["Look around first"].tap()
         XCTAssertTrue(app.buttons["New log"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.textViews["What happened?"].exists)
 
         app.terminate()
         app.launchArguments = ["-in-memory-store"]
         app.launch()
         XCTAssertTrue(app.buttons["New log"].waitForExistence(timeout: 3))
-        XCTAssertFalse(app.buttons["Start journaling"].exists)
+        XCTAssertFalse(app.buttons["Write your first log"].exists)
         XCTAssertFalse(app.buttons["Next"].exists)
+    }
+
+    func testOnboardingEndsInTheFirstLog() {
+        app.terminate()
+        app.launchArguments = ["-in-memory-store", "-reset-onboarding"]
+        app.launch()
+        XCTAssertTrue(app.buttons["Next"].waitForExistence(timeout: 3))
+        for _ in 0..<3 { app.buttons["Next"].tap() }
+        XCTAssertTrue(app.buttons["Write your first log"].waitForExistence(timeout: 3))
+        app.buttons["Write your first log"].tap()
+        XCTAssertTrue(app.textViews["What happened?"].waitForExistence(timeout: 5))
     }
 
     func testSavingALogAsksHowYouFeelAndSchedulesALaterCheckIn() {

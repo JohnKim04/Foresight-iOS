@@ -196,6 +196,13 @@ func closestInsightProgress(entries: [JournalEntry], checkIns: [OutcomeCheckIn],
 
 enum ForesightFormat {
     static func listDate(_ date: Date) -> String { date.formatted(.dateTime.month(.abbreviated).day().hour().minute()) }
-    static func detailDate(_ date: Date) -> String { date.formatted(.dateTime.year().month(.abbreviated).day().hour().minute()) }
+    /// Leaves the year out for dates in the current year, where it's only noise ("Oct 8, 6:40 PM").
+    static func detailDate(_ date: Date, now: Date = .now, calendar: Calendar = .current) -> String {
+        var style = Date.FormatStyle.dateTime.month(.abbreviated).day().hour().minute()
+        style.calendar = calendar
+        style.timeZone = calendar.timeZone
+        if !calendar.isDate(date, equalTo: now, toGranularity: .year) { style = style.year() }
+        return date.formatted(style)
+    }
     static func accessibleDate(_ date: Date) -> String { date.formatted(.dateTime.weekday(.wide).year().month(.wide).day().hour().minute()) }
 }
