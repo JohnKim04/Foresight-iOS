@@ -10,6 +10,7 @@ actor FakeReminderCenter: ReminderNotificationCenter {
     private(set) var pending: [String: CheckInReminder] = [:]
     private(set) var delivered: [String] = []
     private(set) var addCount = 0
+    private(set) var badgeCount = 0
     private var grantsPermission = true
 
     init(status: ReminderAuthorization = .allowed) { self.status = status }
@@ -26,7 +27,7 @@ actor FakeReminderCenter: ReminderNotificationCenter {
         return grantsPermission
     }
     func scheduledReminders() -> [ScheduledReminder] {
-        pending.values.map { ScheduledReminder(identifier: $0.identifier, fireAt: $0.fireAt, body: $0.body) }
+        pending.values.map { ScheduledReminder(identifier: $0.identifier, fireAt: $0.fireAt, body: $0.body, badge: $0.badge) }
     }
     func deliveredIdentifiers() -> [String] { delivered }
     func add(_ reminder: CheckInReminder) {
@@ -35,6 +36,7 @@ actor FakeReminderCenter: ReminderNotificationCenter {
     }
     func removeScheduled(_ identifiers: [String]) { identifiers.forEach { pending[$0] = nil } }
     func removeDelivered(_ identifiers: [String]) { delivered.removeAll { identifiers.contains($0) } }
+    func setBadgeCount(_ count: Int) { badgeCount = count }
 }
 
 struct CheckInReminderPlanTests {
@@ -131,12 +133,32 @@ struct CheckInReminderPlanTests {
         #expect(changes.toRemove == [obsolete])
     }
 
-    @Test("clears delivered reminders only for check-ins that are no longer pending")
+    @Test("clears delivered reminders only for check-ins that are no longer due")
     func staleDelivered() {
         let stillDue = UUID()
         let answered = UUID()
         let delivered = [CheckInReminderPlan.identifier(for: stillDue), CheckInReminderPlan.identifier(for: answered), "daily-reflection"]
-        #expect(CheckInReminderPlan.staleDelivered(delivered, pendingCheckInIDs: [stillDue]) == [CheckInReminderPlan.identifier(for: answered)])
+        #expect(CheckInReminderPlan.staleDelivered(delivered, dueCheckInIDs: [stillDue]) == [CheckInReminderPlan.identifier(for: answered)])
+    }
+
+    @Test("each reminder carries the icon count for when it fires, overdue check-ins included")
+    func badges() {
+        let overdue = source(in: -600)
+        let soon = source(in: 600)
+        let late = source(in: 7_200)
+        let reminders = CheckInReminderPlan.reminders(for: [late, overdue, soon], now: now)
+        #expect(reminders.map(\.checkInID) == [soon.checkInID, late.checkInID])
+        #expect(reminders.map(\.badge) == [2, 3])
+        #expect(CheckInReminderPlan.dueCount([late, overdue, soon], at: now) == 1)
+    }
+
+    @Test("diff replaces a reminder whose icon count changed")
+    func diffBadge() {
+        let reminder = CheckInReminderPlan.reminders(for: [source(in: 600)], now: now)[0]
+        let scheduled = ScheduledReminder(identifier: reminder.identifier, fireAt: reminder.fireAt, body: reminder.body, badge: 2)
+        #expect(CheckInReminderPlan.changes(desired: [reminder], scheduled: [scheduled]).toAdd == [reminder])
+        let current = ScheduledReminder(identifier: reminder.identifier, fireAt: reminder.fireAt, body: reminder.body, badge: reminder.badge)
+        #expect(CheckInReminderPlan.changes(desired: [reminder], scheduled: [current]).toAdd.isEmpty)
     }
 
     @Test("parses taps and snoozes, ignoring other actions")
@@ -275,15 +297,85 @@ struct CheckInReminderSchedulerTests {
         #expect(scheduler.authorization == .denied)
     }
 
+    /// The scheduler's clock and switch, which a test moves while the store stays at `fixedNow`,
+    /// so check-ins can be created ahead and then fall due.
+    private final class Clock {
+        var now: Date
+        var remindersOn = true
+        init(now: Date) { self.now = now }
+    }
+
+    private func makeSubject(clock: Clock) throws -> (JournalStore, CheckInReminderScheduler, FakeReminderCenter) {
+        let store = try makeStore()
+        let center = FakeReminderCenter()
+        let scheduler = CheckInReminderScheduler(center: center, now: { clock.now }, isEnabled: { clock.remindersOn })
+        scheduler.attach(to: store)
+        return (store, scheduler, center)
+    }
+
     @Test("removes a delivered reminder once its check-in is answered")
     func clearsDelivered() async throws {
-        let (store, scheduler, center) = try makeSubject()
+        let clock = Clock(now: fixedNow)
+        let (store, scheduler, center) = try makeSubject(clock: clock)
         let checkIn = try scheduledCheckIn(store)
         let other = try scheduledCheckIn(store, in: 9_000)
+        clock.now = fixedNow.addingTimeInterval(10_000)
         await center.setDelivered([CheckInReminderPlan.identifier(for: checkIn.id), CheckInReminderPlan.identifier(for: other.id)])
         try store.answer(checkIn, response: .aLittleBetter, notSure: false, note: "", excludedFromAnalysis: false)
         await scheduler.waitForPendingWork()
         #expect(await center.delivered == [CheckInReminderPlan.identifier(for: other.id)])
+    }
+
+    @Test("removes a delivered reminder once its check-in is moved to later")
+    func clearsDeliveredOnReschedule() async throws {
+        let clock = Clock(now: fixedNow)
+        let (store, scheduler, center) = try makeSubject(clock: clock)
+        let checkIn = try scheduledCheckIn(store, in: 60)
+        let identifier = CheckInReminderPlan.identifier(for: checkIn.id)
+        clock.now = fixedNow.addingTimeInterval(120)
+        await center.setDelivered([identifier])
+        scheduler.resync()
+        await scheduler.waitForPendingWork()
+        #expect(await center.delivered == [identifier])
+
+        // The store's own clock is still at fixedNow, so any later time counts as the future.
+        try store.reschedule(checkIn, to: fixedNow.addingTimeInterval(3_600))
+        await scheduler.waitForPendingWork()
+        #expect(await center.delivered.isEmpty)
+        #expect(await center.pending[identifier]?.fireAt == fixedNow.addingTimeInterval(3_600))
+    }
+
+    @Test("the app icon counts due check-ins, and clears when reminders can't be shown")
+    func iconBadge() async throws {
+        let clock = Clock(now: fixedNow)
+        let (store, scheduler, center) = try makeSubject(clock: clock)
+        let first = try scheduledCheckIn(store, in: 60)
+        _ = try scheduledCheckIn(store, in: 600)
+        _ = try scheduledCheckIn(store, in: 7_200)
+        await scheduler.waitForPendingWork()
+        #expect(await center.badgeCount == 0)
+        #expect(await center.pending.values.map(\.badge).compactMap { $0 }.sorted() == [1, 2, 3])
+
+        clock.now = fixedNow.addingTimeInterval(700)
+        scheduler.resync()
+        await scheduler.waitForPendingWork()
+        #expect(await center.badgeCount == 2)
+
+        try store.answer(first, response: .same, notSure: false, note: "", excludedFromAnalysis: false)
+        await scheduler.waitForPendingWork()
+        #expect(await center.badgeCount == 1)
+        #expect(await center.pending.values.compactMap(\.badge) == [2])
+
+        clock.remindersOn = false
+        scheduler.resync()
+        await scheduler.waitForPendingWork()
+        #expect(await center.badgeCount == 0)
+
+        clock.remindersOn = true
+        await center.setStatus(.denied)
+        scheduler.resync()
+        await scheduler.waitForPendingWork()
+        #expect(await center.badgeCount == 0)
     }
 
     @Test("tapping a reminder opens that check-in")
