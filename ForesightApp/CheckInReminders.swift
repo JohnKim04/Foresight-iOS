@@ -431,8 +431,13 @@ final class CheckInReminderNotificationDelegate: NSObject, UNUserNotificationCen
         // The SDK doesn't mark the handler Sendable; it is only called once, on the main actor.
         nonisolated(unsafe) let completion = completionHandler
         Task { @MainActor in
+            // An answer or snooze from the notification saves to the journal in the App Group
+            // with the app in the background. Ask for time to finish, so iOS doesn't suspend the
+            // app while it holds the store's file lock and kill it for that (0xdead10cc).
+            let backgroundTime = BackgroundTime(name: "Check-in reminder response")
             await handle(requestIdentifier: identifier, actionIdentifier: action, body: body)
             completion()
+            backgroundTime.end()
         }
     }
 
@@ -443,6 +448,24 @@ final class CheckInReminderNotificationDelegate: NSObject, UNUserNotificationCen
         } else if let nudge = NudgeResponse(requestIdentifier: requestIdentifier, actionIdentifier: actionIdentifier) {
             router().handle(nudge)
         }
+    }
+}
+
+/// A background task held while work finishes. Ends once, by `end()` or when the time runs out.
+@MainActor
+final class BackgroundTime {
+    private var identifier = UIBackgroundTaskIdentifier.invalid
+
+    init(name: String) {
+        identifier = UIApplication.shared.beginBackgroundTask(withName: name) {
+            self.end()
+        }
+    }
+
+    func end() {
+        guard identifier != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(identifier)
+        identifier = .invalid
     }
 }
 

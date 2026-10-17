@@ -15,6 +15,10 @@ enum SharedJournal {
     /// Set once the journal has opened from the group container. From then on the group copy is
     /// the journal, and the app-directory copy (if any is left) is not.
     static let inGroupKey = "journalIsInAppGroup"
+    /// Set while the app-directory journal is being copied into the group, so a group store left
+    /// by an interrupted copy can be told apart from a journal that was already there.
+    static let copyingKey = "journalCopyIntoAppGroupStarted"
+    static let backupPrefix = "Foresight-backup-"
 
     static var appGroupIdentifier: String? {
         guard let identifier = Bundle.main.object(forInfoDictionaryKey: appGroupInfoKey) as? String,
@@ -42,6 +46,9 @@ enum SharedJournal {
     /// copies it afresh over whatever an interrupted earlier attempt left in the group, and only
     /// deletes it after the group copy opens. If the group copy won't open, it is thrown away and
     /// the app-directory store opens instead, to be tried again next launch.
+    ///
+    /// A journal already in the group that this copy didn't start (say, one a build without App
+    /// Groups was reset away from) is moved to a backup beside it, never overwritten.
     static func open<Value>(
         groupDirectory: URL?,
         appDirectory: URL,
@@ -58,10 +65,20 @@ enum SharedJournal {
         }
         let groupStore = groupDirectory.appending(path: storeFileName)
         if !inGroup, fileManager.fileExists(atPath: appStore.path) {
+            if !defaults.bool(forKey: copyingKey), fileManager.fileExists(atPath: groupStore.path) {
+                // Not ours to replace. If it can't be moved aside, keep using the app-directory store.
+                do {
+                    try backUpStore(at: groupStore, fileManager: fileManager)
+                } catch {
+                    return try open(appStore)
+                }
+            }
+            defaults.set(true, forKey: copyingKey)
             do {
                 try copyStore(from: appStore, to: groupStore, fileManager: fileManager)
             } catch {
                 removeStore(at: groupStore, fileManager: fileManager)
+                defaults.removeObject(forKey: copyingKey)
                 return try open(appStore)
             }
             let value: Value
@@ -69,14 +86,17 @@ enum SharedJournal {
                 value = try open(groupStore)
             } catch {
                 removeStore(at: groupStore, fileManager: fileManager)
+                defaults.removeObject(forKey: copyingKey)
                 return try open(appStore)
             }
             defaults.set(true, forKey: inGroupKey)
+            defaults.removeObject(forKey: copyingKey)
             removeStore(at: appStore, fileManager: fileManager)
             return value
         }
         let value = try open(groupStore)
         defaults.set(true, forKey: inGroupKey)
+        defaults.removeObject(forKey: copyingKey)
         // A copy left behind by a launch that ended between opening the group and cleaning up.
         removeStore(at: appStore, fileManager: fileManager)
         return value
@@ -93,6 +113,35 @@ enum SharedJournal {
         let partial = URL(fileURLWithPath: destination.path + ".partial")
         try fileManager.copyItem(at: source, to: partial)
         try fileManager.moveItem(at: partial, to: destination)
+    }
+
+    /// Moves a store's files to `Foresight-backup-<time>.store` in the same directory, main file
+    /// last so a backup never has a main file without its log. If a move fails, the ones already
+    /// made are undone. Returns the backup's URL.
+    @discardableResult
+    static func backUpStore(at url: URL, date: Date = .now, fileManager: FileManager = .default) throws -> URL {
+        let stamp = date.formatted(.iso8601.year().month().day().time(includingFractionalSeconds: false).timeSeparator(.omitted).dateSeparator(.omitted))
+        var backup = url.deletingLastPathComponent().appending(path: "\(backupPrefix)\(stamp).store")
+        var attempt = 1
+        while storeFileSuffixes.contains(where: { fileManager.fileExists(atPath: backup.path + $0) }) {
+            attempt += 1
+            backup = url.deletingLastPathComponent().appending(path: "\(backupPrefix)\(stamp)-\(attempt).store")
+        }
+        var moved: [String] = []
+        do {
+            for suffix in ["-wal", "-shm", ""] where fileManager.fileExists(atPath: url.path + suffix) {
+                try fileManager.moveItem(at: URL(fileURLWithPath: url.path + suffix), to: URL(fileURLWithPath: backup.path + suffix))
+                moved.append(suffix)
+            }
+        } catch {
+            // Put back what moved, so the store stays whole where it was.
+            for suffix in moved {
+                try? fileManager.moveItem(at: URL(fileURLWithPath: backup.path + suffix), to: URL(fileURLWithPath: url.path + suffix))
+            }
+            throw error
+        }
+        try? fileManager.removeItem(at: URL(fileURLWithPath: url.path + ".partial"))
+        return backup
     }
 
     static func removeStore(at url: URL, fileManager: FileManager = .default) {
@@ -167,6 +216,23 @@ enum CheckInWidgetPlan {
             guard checkIn.phase == .delayed, checkIn.status == .pending, let dueAt = checkIn.dueAt, let entry = checkIn.entry else { return nil }
             let firstLine = entry.body.split(whereSeparator: \.isNewline).first.map(String.init) ?? entry.body
             return CheckInWidgetItem(checkInID: checkIn.id, dueAt: dueAt, text: firstLine.trimmingCharacters(in: .whitespaces))
+        }
+    }
+
+    /// The check-ins in the journal at `storeURL`, or nil when the widget can't read it: no shared
+    /// App Group, no journal there yet, or a store that won't open. It never writes or migrates
+    /// the journal; the app reloads every timeline after each change.
+    static func loadItems(storeURL: URL?) -> [CheckInWidgetItem]? {
+        guard let storeURL else { return nil }
+        // No journal in the group: the app hasn't opened since install, or keeps its journal outside
+        // the group. Ask for the app to be opened, and don't create a journal here.
+        guard FileManager.default.fileExists(atPath: storeURL.path) else { return nil }
+        do {
+            let container = try ForesightPersistence.makeContainer(storeURL: storeURL, allowsSave: false)
+            let context = ModelContext(container)
+            return items(from: try context.fetch(FetchDescriptor<OutcomeCheckIn>()))
+        } catch {
+            return nil
         }
     }
 
