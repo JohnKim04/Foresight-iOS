@@ -52,6 +52,8 @@ enum HelpSuggestionCopy {
     static let footnote = "From your later check-ins over the last 90 days. These are patterns, not causes."
     /// Leads the suggestion shown right after a check-in that felt worse.
     static let afterWorseIntro = "One pattern from your own later check-ins, in case it’s useful now:"
+    /// The Journal card's dismiss button.
+    static let hideForToday = "Hide for today"
 
     static func emptyMessage(_ report: HelpSuggestionReport) -> String {
         if report.patternCount > 0 { return "No category has been followed by feeling better clearly and recently enough yet. Keep checking in later and this will update." }
@@ -142,6 +144,21 @@ func helpSuggestions(entries: [JournalEntry], checkIns: [OutcomeCheckIn], catego
 /// isn't for the log just rated, since that log is what was followed by feeling worse.
 func suggestionAfterWorseCheckIn(_ report: HelpSuggestionReport, excluding categoryIDs: Set<UUID>) -> HelpSuggestion? {
     report.suggestions.first { !categoryIDs.contains($0.category.id) }
+}
+
+/// The suggestion shown at the top of Journal: the strongest one not already logged today,
+/// so the card goes quiet once you've done what it points to.
+func journalSuggestion(_ report: HelpSuggestionReport) -> HelpSuggestion? {
+    report.suggestions.first { !$0.loggedToday }
+}
+
+/// Remembers the day the Journal suggestion was hidden, so it comes back the next day.
+enum JournalSuggestionState {
+    static let hiddenDayKey = "journalSuggestion.hiddenDay"
+
+    static func isHidden(hiddenDay: String, now: Date = .now, calendar: Calendar = .current) -> Bool {
+        hiddenDay == localDayKey(now, calendar: calendar)
+    }
 }
 
 /// The lower end of the Wilson score interval for `successes` out of `trials`, at about 84%
