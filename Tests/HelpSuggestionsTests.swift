@@ -337,7 +337,7 @@ struct HelpSuggestionsTests {
         let stretchLogs = logs(stretch, count: 5, firstDay: 3)
         let result = report(walkLogs + stretchLogs, answers(walkLogs, [.aLittleBetter]) + answers(stretchLogs, [.aLittleBetter]), [walk, stretch])
         #expect(result.suggestions.count == 2)
-        #expect(result.suggestions.allSatisfy(\.usualTimeOfDay))
+        #expect(result.suggestions.filter(\.usualTimeOfDay).count == 2)
         let note = try #require(HelpSuggestionCopy.sharedUsualTimeNote(result.suggestions))
         #expect(note.contains("Walk") && note.contains("Stretch") && note.hasSuffix("around this time of day."))
         expectNonCausal([note])
