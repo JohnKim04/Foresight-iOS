@@ -1,13 +1,15 @@
-// Copy to Signing.local.xcconfig (gitignored) to sign device builds with your Apple team.
-// Your team ID is shown in Xcode > Settings > Accounts.
+// Scripts/install-on-iphone.sh writes Signing.local.xcconfig (gitignored) for you. To set it up by
+// hand instead, copy this file there. Your team ID is shown in Xcode > Settings > Accounts.
 
 DEVELOPMENT_TEAM = YOURTEAMID
 CODE_SIGNING_ALLOWED = YES
 
-// Uncomment if com.foresight.journal(.testing) is already registered to another team.
+// Bundle IDs and App Group IDs are unique across all Apple teams; the install script uses
+// com.foresight.<your team ID, lowercased>. Changing it later installs a separate, empty app.
 // BUNDLE_ID_PREFIX = com.yourname
 
-// Uncomment if Xcode says your team doesn't support the App Groups capability. Foresight still
-// runs; the widget just can't show check-ins.
+// Free Apple accounts can use App Groups. Uncomment these only if Xcode can't register the group
+// for your team. Foresight still runs; the widget just can't show check-ins. Decide before you
+// start journaling: a build without the group can't see a journal that has moved into it.
 // FORESIGHT_APP_ENTITLEMENTS =
 // FORESIGHT_WIDGET_ENTITLEMENTS =
