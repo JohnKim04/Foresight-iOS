@@ -129,27 +129,21 @@ struct OutcomeAnalyticsTests {
         #expect(describeAverageOutcome(2) == "much better")
     }
 
-    @Test("compares calendar-aligned activity weeks")
-    func weekComparison() {
-        let workout = category()
-        let current = entry(workout, offsetDays: 0)
-        let comparison = periodComparison([current], category: workout, granularity: .week, now: now)
-        #expect(comparison.currentCount == 1)
-        #expect(comparison.previousCount == 0)
-    }
-
     @Test("builds eight weekly and six monthly buckets")
     func activityBucketCounts() {
         #expect(activityBuckets([], category: nil, granularity: .week, now: now).count == 8)
         #expect(activityBuckets([], category: nil, granularity: .month, now: now).count == 6)
     }
 
-    @Test("calculates category activity changes")
-    func activityTrends() {
+    @Test("counts a category's logs per week, ending with this week")
+    func weeklyCategoryCounts() {
         let workout = category()
-        let log = entry(workout)
-        let trends = categoryTrends([log], categories: [workout], range: .thirty, now: now)
-        #expect(trends.first?.currentCount == 1)
-        #expect(trends.first?.change == 1)
+        let other = category("Reading")
+        let logs = [entry(workout), entry(workout, offsetDays: -7), entry(workout, offsetDays: -7), entry(other)]
+        let weeks = activityBuckets(logs, category: workout, granularity: .week, now: now)
+        #expect(weeks.last?.count == 1)
+        #expect(weeks.dropLast().last?.count == 2)
+        #expect(weeks.reduce(0) { $0 + $1.count } == 3)
+        #expect(Set(weeks.map(\.label)).count == 8, "Each week needs its own label for the chart's x axis")
     }
 }
