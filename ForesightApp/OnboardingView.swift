@@ -1,8 +1,10 @@
 import SwiftUI
 
 /// A short first-run walkthrough of the core loop: log, check in, see patterns.
+/// It ends on the first log, so a new journal doesn't open empty.
 struct OnboardingView: View {
-    let onFinish: () -> Void
+    /// Called with `true` when the person chose to write their first log right away.
+    let onFinish: (_ startFirstLog: Bool) -> Void
     @State private var page = 0
 
     private struct Page {
@@ -10,13 +12,14 @@ struct OnboardingView: View {
         let kicker: String
         let title: String
         let detail: String
+        let preview: OnboardingPreview
     }
 
     private let pages = [
-        Page(symbol: nil, kicker: "Welcome to Foresight", title: "See what tends to follow.", detail: "A journal for the things you do and how they turn out."),
-        Page(symbol: "square.and.pencil", kicker: "1 · Log", title: "Write down what happened.", detail: "A line is enough: a workout, a late night, an hour of scrolling. Add a category so similar moments line up later."),
-        Page(symbol: "checkmark.circle", kicker: "2 · Check in", title: "Say how it felt, twice.", detail: "Rate how you feel right after you log, then again a few hours later. Check In shows what's due, and a reminder can tell you."),
-        Page(symbol: "chart.xyaxis.line", kicker: "3 · Patterns", title: "Spot what repeats.", detail: "After a handful of check-ins, Patterns shows what usually came before feeling better or worse. It describes what happened, not what caused it.")
+        Page(symbol: nil, kicker: "Welcome to Foresight", title: "See what tends to follow.", detail: "A journal for the things you do and how they turn out.", preview: .loop),
+        Page(symbol: "square.and.pencil", kicker: "1 · Log", title: "Write down what happened.", detail: "A line is enough: a workout, a late night, an hour of scrolling. Add a category so similar moments line up later.", preview: .log),
+        Page(symbol: "checkmark.circle", kicker: "2 · Check in", title: "Say how it felt, twice.", detail: "Rate how you feel right after you log, then again a few hours later. Check In shows what's due, and a reminder can tell you.", preview: .checkIn),
+        Page(symbol: "chart.xyaxis.line", kicker: "3 · Patterns", title: "Spot what repeats.", detail: "After a handful of check-ins, Patterns shows what usually came before feeling better or worse. It describes what happened, not what caused it.", preview: .pattern)
     ]
 
     private var isLastPage: Bool { page == pages.count - 1 }
@@ -26,7 +29,7 @@ struct OnboardingView: View {
             HStack {
                 Spacer()
                 if !isLastPage {
-                    Button("Skip", action: onFinish)
+                    Button("Skip") { onFinish(false) }
                         .buttonStyle(ForesightQuietButtonStyle(tone: .foresightMuted))
                 }
             }
@@ -51,13 +54,23 @@ struct OnboardingView: View {
             .accessibilityHidden(true)
             .padding(.bottom, 20)
 
-            Button(isLastPage ? "Start journaling" : "Next") {
-                if isLastPage { onFinish() } else { withAnimation(.snappy(duration: 0.3)) { page += 1 } }
+            Button(isLastPage ? "Write your first log" : "Next") {
+                if isLastPage { onFinish(true) } else { withAnimation(.snappy(duration: 0.3)) { page += 1 } }
             }
             .buttonStyle(ForesightPrimaryButtonStyle())
             .frame(maxWidth: 420)
             .padding(.horizontal, 24)
-            .padding(.bottom, 24)
+
+            // The slot keeps its height on every page so the pages don't jump at the end.
+            ZStack {
+                if isLastPage {
+                    Button("Look around first") { onFinish(false) }
+                        .buttonStyle(ForesightQuietButtonStyle(tone: .foresightMuted))
+                }
+            }
+            .frame(minHeight: 44)
+            .padding(.top, 4)
+            .padding(.bottom, 12)
         }
         .background(Color.foresightCanvas)
     }
@@ -88,12 +101,133 @@ struct OnboardingView: View {
                     .font(.body)
                     .foregroundStyle(Color.foresightMuted)
                     .fixedSize(horizontal: false, vertical: true)
+                OnboardingPreviewCard(preview: page.preview)
+                    .padding(.top, 20)
             }
             .frame(maxWidth: 520, alignment: .leading)
             .padding(.horizontal, 28)
-            .padding(.top, 48)
+            .padding(.top, 32)
             .frame(maxWidth: .infinity)
         }
         .scrollBounceBehavior(.basedOnSize)
+    }
+}
+
+/// A small, made-up example of each step, so the page shows what the step looks like.
+private enum OnboardingPreview { case loop, log, checkIn, pattern }
+
+private struct OnboardingPreviewCard: View {
+    let preview: OnboardingPreview
+
+    var body: some View {
+        ForesightCard {
+            switch preview {
+            case .loop: loop
+            case .log: log
+            case .checkIn: checkIn
+            case .pattern: pattern
+            }
+        }
+        // Decorative: the page text already says everything the example shows.
+        .accessibilityHidden(true)
+    }
+
+    private var loop: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            loopRow("square.and.pencil", "Log what you did")
+            loopRow("checkmark.circle", "Check in on how it felt")
+            loopRow("chart.xyaxis.line", "See what tends to follow")
+        }
+    }
+
+    private func loopRow(_ symbol: String, _ text: String) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: symbol)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Color.foresightSage)
+                .frame(width: 34, height: 34)
+                .background(Color.foresightSoftSage, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            Text(text)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(Color.foresightInk)
+        }
+    }
+
+    private var log: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Today, 6:40 PM")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(Color.foresightSage)
+            Text("Went for an evening run by the river.")
+                .font(ForesightType.journalBody)
+                .foregroundStyle(Color.foresightInk)
+            chip("Exercise")
+        }
+    }
+
+    private var checkIn: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("How do you feel now?")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Color.foresightInk)
+            HStack(spacing: 6) {
+                ForEach([-2, -1, 0, 1, 2], id: \.self) { value in
+                    let selected = value == 1
+                    Text(value > 0 ? "+\(value)" : "\(value)")
+                        .font(ForesightType.control)
+                        .foregroundStyle(selected ? Color.white : Color.foresightInk)
+                        .frame(maxWidth: .infinity, minHeight: 38)
+                        .background(selected ? Color.foresightAction : Color.foresightRaised, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                }
+            }
+            HStack {
+                Text("Worse")
+                Spacer()
+                Text("Same")
+                Spacer()
+                Text("Better")
+            }
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(Color.foresightMuted)
+            Label("Check in again in 2 hours", systemImage: "bell")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Color.foresightSage)
+        }
+    }
+
+    private var pattern: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Often followed by feeling better")
+                .font(ForesightType.insight)
+                .foregroundStyle(Color.foresightInk)
+            patternRow("Exercise", count: 4, of: 5)
+            patternRow("Time outside", count: 3, of: 4)
+        }
+    }
+
+    private func patternRow(_ name: String, count: Int, of total: Int) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text(name).font(.subheadline.weight(.semibold)).foregroundStyle(Color.foresightInk)
+                Spacer()
+                Text("Better \(count) of \(total) times").font(.caption).foregroundStyle(Color.foresightMuted)
+            }
+            GeometryReader { proxy in
+                Capsule().fill(Color.foresightLine)
+                    .overlay(alignment: .leading) {
+                        Capsule().fill(Color.foresightSageMid).frame(width: proxy.size.width * CGFloat(count) / CGFloat(total))
+                    }
+            }
+            .frame(height: 6)
+        }
+    }
+
+    private func chip(_ text: String) -> some View {
+        Text(text)
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(Color.foresightSage)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(Color.foresightSoftSage, in: Capsule())
     }
 }

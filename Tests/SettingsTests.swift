@@ -257,3 +257,23 @@ struct JournalExportTests {
         #expect(JournalExport(snapshot: store.snapshot, exportedAt: fixedNow).entries.isEmpty)
     }
 }
+
+struct LoopingWheelRowsTests {
+    @Test("the last hour sits right before the first, so the wheel wraps")
+    func wraps() {
+        let rows = LoopingWheelRows(count: 23)
+        let lastHour = rows.centeredRow(for: 22)
+        #expect(rows.index(ofRow: lastHour + 1) == 0)
+        #expect(rows.index(ofRow: rows.centeredRow(for: 0) - 1) == 22)
+    }
+
+    @Test("centered rows leave room to scroll a long way either way")
+    func centered() {
+        let rows = LoopingWheelRows(count: 24)
+        for index in [0, 12, 23] {
+            let row = rows.centeredRow(for: index)
+            #expect(rows.index(ofRow: row) == index)
+            #expect(row >= 24 * 50 && row < rows.rowCount - 24 * 50)
+        }
+    }
+}

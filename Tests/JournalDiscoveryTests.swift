@@ -143,6 +143,16 @@ struct JournalDiscoveryTests {
         #expect(!ForesightFormat.listDate(now).contains(":" ) || ForesightFormat.listDate(now).split(separator: ":").count == 2)
     }
 
+    @Test("leaves the year out of detail dates only within the current year")
+    func detailDateYear() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let sameYear = ForesightFormat.detailDate(now, now: now.addingTimeInterval(60 * 60 * 24 * 30), calendar: calendar)
+        let lastYear = ForesightFormat.detailDate(now, now: now.addingTimeInterval(60 * 60 * 24 * 200), calendar: calendar)
+        #expect(!sameYear.contains("2024"))
+        #expect(lastYear.contains("2024"))
+    }
+
     @Test("formats outcome labels faithfully")
     func formatsOutcomes() {
         #expect(OutcomeValue.muchWorse.title == "Much worse")
