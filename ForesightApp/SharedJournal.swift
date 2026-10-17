@@ -96,6 +96,7 @@ enum SharedJournal {
         }
         let value = try open(groupStore)
         defaults.set(true, forKey: inGroupKey)
+        defaults.removeObject(forKey: copyingKey)
         // A copy left behind by a launch that ended between opening the group and cleaning up.
         removeStore(at: appStore, fileManager: fileManager)
         return value
@@ -115,7 +116,8 @@ enum SharedJournal {
     }
 
     /// Moves a store's files to `Foresight-backup-<time>.store` in the same directory, main file
-    /// last so a backup never has a main file without its log. Returns the backup's URL.
+    /// last so a backup never has a main file without its log. If a move fails, the ones already
+    /// made are undone. Returns the backup's URL.
     @discardableResult
     static func backUpStore(at url: URL, date: Date = .now, fileManager: FileManager = .default) throws -> URL {
         let stamp = date.formatted(.iso8601.year().month().day().time(includingFractionalSeconds: false).timeSeparator(.omitted).dateSeparator(.omitted))
@@ -125,8 +127,18 @@ enum SharedJournal {
             attempt += 1
             backup = url.deletingLastPathComponent().appending(path: "\(backupPrefix)\(stamp)-\(attempt).store")
         }
-        for suffix in ["-wal", "-shm", ""] where fileManager.fileExists(atPath: url.path + suffix) {
-            try fileManager.moveItem(at: URL(fileURLWithPath: url.path + suffix), to: URL(fileURLWithPath: backup.path + suffix))
+        var moved: [String] = []
+        do {
+            for suffix in ["-wal", "-shm", ""] where fileManager.fileExists(atPath: url.path + suffix) {
+                try fileManager.moveItem(at: URL(fileURLWithPath: url.path + suffix), to: URL(fileURLWithPath: backup.path + suffix))
+                moved.append(suffix)
+            }
+        } catch {
+            // Put back what moved, so the store stays whole where it was.
+            for suffix in moved {
+                try? fileManager.moveItem(at: URL(fileURLWithPath: backup.path + suffix), to: URL(fileURLWithPath: url.path + suffix))
+            }
+            throw error
         }
         try? fileManager.removeItem(at: URL(fileURLWithPath: url.path + ".partial"))
         return backup

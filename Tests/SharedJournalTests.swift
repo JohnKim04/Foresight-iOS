@@ -134,6 +134,30 @@ struct SharedJournalStoreTests {
         #expect(!exists(groupStore, "-wal"))
     }
 
+    /// Fails to move a store's main file, after its log has moved.
+    private final class MainFileWontMove: FileManager {
+        struct Refused: Error { }
+        override func moveItem(at srcURL: URL, to dstURL: URL) throws {
+            if srcURL.pathExtension == "store" { throw Refused() }
+            try super.moveItem(at: srcURL, to: dstURL)
+        }
+    }
+
+    @Test("a backup that can't finish leaves the store whole where it was")
+    func backupRollsBack() throws {
+        try FileManager.default.createDirectory(at: groupDirectory, withIntermediateDirectories: true)
+        try Data("main".utf8).write(to: groupStore)
+        try Data("log".utf8).write(to: URL(fileURLWithPath: groupStore.path + "-wal"))
+        #expect(throws: MainFileWontMove.Refused.self) {
+            try SharedJournal.backUpStore(at: groupStore, fileManager: MainFileWontMove())
+        }
+        #expect(exists(groupStore))
+        #expect(exists(groupStore, "-wal"))
+        #expect(backups().isEmpty)
+        let leftovers = (try FileManager.default.contentsOfDirectory(atPath: groupDirectory.path)).filter { $0.hasPrefix(SharedJournal.backupPrefix) }
+        #expect(leftovers.isEmpty)
+    }
+
     @Test("once the journal is in the group, an old app-directory copy never replaces it")
     func groupJournalWins() throws {
         try writeJournal(at: groupStore, body: "In the group")
