@@ -415,6 +415,53 @@ struct JournalBackupTests {
         #expect(Set(SharedJournal.backups(in: root).map(\.url.lastPathComponent)) == Set(made.map(\.lastPathComponent)))
     }
 
+    @Test("no daily backup replaces good copies after most of the journal is deleted, until a month has passed")
+    func dailyBackupAfterMassDeletion() async throws {
+        var clock = now
+        let container = try ForesightPersistence.makeContainer(storeURL: storeURL)
+        let store = JournalStore(modelContext: container.mainContext, modelContainer: container, now: { clock })
+        for body in ["One", "Two", "Three", "Four"] { _ = try store.saveLog(body: body, eventAt: now, categoryIDs: []) }
+        let good = try #require(await store.takeAutomaticBackupIfDue())
+        for entry in store.entries.filter({ $0.body != "One" }) { try store.deleteEntry(entry) }
+
+        clock = now.addingTimeInterval(86_400)
+        #expect(await store.takeAutomaticBackupIfDue() == nil)
+        clock = now.addingTimeInterval(3 * 86_400)
+        #expect(await store.takeAutomaticBackupIfDue() == nil)
+        #expect(SharedJournal.backups(in: root).map(\.url.lastPathComponent) == [good.lastPathComponent])
+
+        // Half the logs is still a journal worth keeping.
+        _ = try store.saveLog(body: "Five", eventAt: clock, categoryIDs: [])
+        #expect(await store.takeAutomaticBackupIfDue() != nil)
+
+        #expect(!SharedJournal.hasShrunk(logCount: 1, since: SharedJournal.Backup(url: good, date: now, isAutomatic: true), newestLogCount: 4, now: now.addingTimeInterval(31 * 86_400)))
+        #expect(!SharedJournal.hasShrunk(logCount: 1, since: SharedJournal.Backup(url: good, date: now), newestLogCount: 4, now: now))
+        #expect(SharedJournal.hasShrunk(logCount: 1, since: SharedJournal.Backup(url: good, date: now, isAutomatic: true), newestLogCount: 4, now: now))
+    }
+
+    @Test("a backup being written isn't listed until it's complete, and an unfinished one is cleared away")
+    func backupWrittenInPlace() throws {
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let url = SharedJournal.newBackupURL(beside: storeURL, date: now, automatic: true)
+        let empty = try ForesightPersistence.makeContainer(storeURL: nil)
+        let archive = try JournalArchive(context: empty.mainContext)
+        try SharedJournal.writeStore(at: url) { partial in
+            try archive.write(toNewStoreAt: partial)
+            #expect(SharedJournal.backups(in: root).isEmpty)
+        }
+        #expect(SharedJournal.backups(in: root).map(\.url.lastPathComponent) == [url.lastPathComponent])
+        #expect(!exists(URL(fileURLWithPath: url.path + ".partial")))
+        #expect(try JournalArchive.counts(at: url).logs == 0)
+
+        let unfinished = URL(fileURLWithPath: SharedJournal.newBackupURL(beside: storeURL, date: now.addingTimeInterval(60), automatic: true).path + ".partial")
+        try Data("half".utf8).write(to: unfinished)
+        try Data("log".utf8).write(to: URL(fileURLWithPath: unfinished.path + "-wal"))
+        SharedJournal.removeUnfinishedBackups(in: root)
+        #expect(!exists(unfinished))
+        #expect(!exists(URL(fileURLWithPath: unfinished.path + "-wal")))
+        #expect(exists(url))
+    }
+
     @Test("a daily backup is due again when the last one is dated ahead of a clock that moved backward")
     func dailyBackupAfterClockChange() {
         let ahead = SharedJournal.Backup(url: storeURL, date: now.addingTimeInterval(3_600), isAutomatic: true)

@@ -260,7 +260,7 @@ struct SettingsView: View {
         }
     }
 
-    static let backupsFooter = "Copies of your journal, newest first. Foresight saves one each day you open it, and one of your journal as it is now before every restore. It keeps up to \(SharedJournal.backupLimit): a daily backup only replaces an older daily one or a backup over a week old, and a restore may remove the oldest other backup to make room."
+    static let backupsFooter = "Copies of your journal, newest first. Foresight saves one each day you open it, and one of your journal as it is now before every restore. It keeps up to \(SharedJournal.backupLimit): a daily backup only replaces an older daily one or a backup over a week old, and pauses for up to a month if most of your journal is deleted. A restore may remove the oldest other backup to make room."
 
     static func backupDate(_ date: Date) -> String {
         date.formatted(date: .abbreviated, time: .shortened)

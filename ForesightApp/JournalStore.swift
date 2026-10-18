@@ -293,26 +293,32 @@ extension JournalStore {
     }
 
     /// Takes the day's automatic backup, if one is due (see `SharedJournal.isAutomaticBackupDue`)
-    /// and the journal holds a log that isn't sample data. The journal is read and written to the
-    /// backup off the main thread, through its own context, in the same format a restore's safety
-    /// copy uses. It replaces only older automatic backups, or other backups at least
-    /// `SharedJournal.protectedBackupAge` old, and is skipped when there's no such room.
-    /// Returns the new backup's URL, or nil when none was kept.
+    /// and the journal holds a log that isn't sample data. The journal's records are copied out
+    /// here, in one go on the main context, then written to the backup off the main thread in the
+    /// same format a restore's safety copy uses. It replaces only older automatic backups, or other
+    /// backups at least `SharedJournal.protectedBackupAge` old, and is skipped when there's no such
+    /// room or the journal has shrunk to under half the newest automatic backup
+    /// (`SharedJournal.hasShrunk`). Returns the new backup's URL, or nil when none was kept.
     @discardableResult
     func takeAutomaticBackupIfDue() async -> URL? {
-        guard let storeURL, let modelContainer, !isTakingAutomaticBackup, entries.contains(where: { !$0.isFixture }) else { return nil }
+        guard let storeURL, !isTakingAutomaticBackup, entries.contains(where: { !$0.isFixture }) else { return nil }
         let date = now()
-        let existing = SharedJournal.backups(in: storeURL.deletingLastPathComponent())
+        let directory = storeURL.deletingLastPathComponent()
+        let existing = SharedJournal.backups(in: directory)
         guard SharedJournal.isAutomaticBackupDue(among: existing, now: date),
-              SharedJournal.backupsRemovedForAutomaticBackup(from: existing, now: date) != nil else { return nil }
+              SharedJournal.backupsRemovedForAutomaticBackup(from: existing, now: date) != nil,
+              let archive = try? JournalArchive(context: modelContext) else { return nil }
         let url = SharedJournal.newBackupURL(beside: storeURL, date: date, automatic: true)
         isTakingAutomaticBackup = true
         defer { isTakingAutomaticBackup = false }
         return await Task.detached(priority: .utility) { () -> URL? in
+            SharedJournal.removeUnfinishedBackups(in: directory)
+            let newest = existing.first
+            let newestLogCount = newest.flatMap { try? JournalArchive.counts(at: $0.url).logs }
+            if SharedJournal.hasShrunk(logCount: archive.entries.count, since: newest, newestLogCount: newestLogCount, now: date) { return nil }
             do {
-                try JournalArchive(context: ModelContext(modelContainer)).write(toNewStoreAt: url)
+                try SharedJournal.writeStore(at: url) { try archive.write(toNewStoreAt: $0) }
             } catch {
-                SharedJournal.removeStore(at: url)
                 return nil
             }
             return SharedJournal.finishAutomaticBackup(at: url, now: date) ? url : nil
@@ -358,14 +364,14 @@ extension JournalStore {
 }
 
 /// A journal's records copied out of SwiftData, so they can be written into another store.
-struct JournalArchive {
-    struct Category {
+struct JournalArchive: Sendable {
+    struct Category: Sendable {
         let id: UUID
         let name: String
         let archivedAt: Date?
     }
 
-    struct Entry {
+    struct Entry: Sendable {
         let id: UUID
         let body: String
         let eventAt: Date
@@ -375,7 +381,7 @@ struct JournalArchive {
         let categoryIDs: [UUID]
     }
 
-    struct CheckIn {
+    struct CheckIn: Sendable {
         let id: UUID
         let entryID: UUID?
         let phase: OutcomePhase
