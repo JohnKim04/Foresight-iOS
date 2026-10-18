@@ -219,6 +219,26 @@ final class ForesightUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Source logs"].waitForExistence(timeout: 3))
     }
 
+    func testJournalShowsTheTopSuggestionUntilHiddenForToday() {
+        // A new journal has nothing confident to suggest, so Journal stays quiet.
+        XCTAssertTrue(app.staticTexts["Notice what follows."].firstMatch.waitForExistence(timeout: 3))
+        XCTAssertFalse(app.buttons["journal.suggestion"].exists)
+        addSampleHistory()
+        // Demo history: Workout, Sleep and Social were mostly better later.
+        let suggestion = app.buttons["journal.suggestion"]
+        XCTAssertTrue(suggestion.waitForExistence(timeout: 3))
+        let category = ["Workout", "Sleep", "Social"].first { suggestion.label == "See the \($0) pattern" }
+        XCTAssertNotNil(category, suggestion.label)
+        suggestion.tap()
+        XCTAssertTrue(app.staticTexts["Source logs"].waitForExistence(timeout: 3))
+        XCTAssertEqual(app.buttons["Choose category"].value as? String, category)
+
+        app.tabBars.buttons["Journal"].tap()
+        XCTAssertTrue(suggestion.waitForExistence(timeout: 3))
+        app.buttons["journal.suggestion.hide"].tap()
+        XCTAssertTrue(suggestion.waitForNonExistence(timeout: 2))
+    }
+
     func testJournalDropdownsSelectAndDismissEachOther() {
         // The filters appear once the journal has a log.
         XCTAssertFalse(app.buttons["Choose category"].exists)

@@ -73,7 +73,7 @@ struct HelpSuggestionsTests {
         ]
         #expect(Set(messages).count == 3)
         #expect(messages[1].contains("Workout needs 1 more later check-in "))
-        expectNonCausal([HelpSuggestionCopy.title, HelpSuggestionCopy.afterWorseIntro] + messages)
+        expectNonCausal([HelpSuggestionCopy.title, HelpSuggestionCopy.afterWorseIntro, HelpSuggestionCopy.hideForToday] + messages)
         expectNonCausal([SuggestionNudgeCopy.title, SuggestionNudgeCopy.body(categoryName: "Workout", betterCount: 4, numericCount: 5, style: .specific), SuggestionNudgeCopy.body(categoryName: "Workout", betterCount: 4, numericCount: 5, style: .generic)])
         // The footnote is the disclaimer itself, so it names "causes" on purpose.
         #expect(HelpSuggestionCopy.footnote.hasSuffix("These are patterns, not causes."))
@@ -187,6 +187,34 @@ struct HelpSuggestionsTests {
         #expect(suggestionAfterWorseCheckIn(result, excluding: [])?.category.id == workout.id)
         #expect(suggestionAfterWorseCheckIn(result, excluding: [workout.id])?.category.id == social.id)
         #expect(suggestionAfterWorseCheckIn(result, excluding: [workout.id, social.id]) == nil)
+    }
+
+    @Test("Journal shows the strongest suggestion not already logged today")
+    func journalSuggestionSkipsLoggedToday() throws {
+        let workout = JournalCategory(name: "Workout")
+        let social = JournalCategory(name: "Social")
+        let workoutLogs = logs(workout, count: 10, hourOffset: 12)
+        let socialLogs = logs(social, count: 5, hourOffset: 12)
+        let checkIns = answers(workoutLogs, [.muchBetter]) + answers(socialLogs, [.aLittleBetter])
+        let quiet = report(workoutLogs + socialLogs, checkIns, [workout, social], limit: .max)
+        #expect(journalSuggestion(quiet)?.category.id == workout.id)
+
+        let today = JournalEntry(body: "Workout today", eventAt: now, createdAt: now, updatedAt: now, categories: [workout])
+        let afterWorkout = report(workoutLogs + socialLogs + [today], checkIns, [workout, social], limit: .max)
+        #expect(try #require(afterWorkout.suggestions.first { $0.category.id == workout.id }).loggedToday)
+        #expect(journalSuggestion(afterWorkout)?.category.id == social.id)
+
+        let bothToday = JournalEntry(body: "Dinner", eventAt: now, createdAt: now, updatedAt: now, categories: [social])
+        #expect(journalSuggestion(report(workoutLogs + socialLogs + [today, bothToday], checkIns, [workout, social], limit: .max)) == nil)
+        #expect(journalSuggestion(HelpSuggestionReport(suggestions: [], patternCount: 0, progress: nil)) == nil)
+    }
+
+    @Test("hiding the Journal suggestion lasts until the next day")
+    func journalSuggestionHiddenForToday() {
+        let today = localDayKey(now, calendar: calendar)
+        #expect(JournalSuggestionState.isHidden(hiddenDay: today, now: now, calendar: calendar))
+        #expect(!JournalSuggestionState.isHidden(hiddenDay: today, now: now.addingTimeInterval(86_400), calendar: calendar))
+        #expect(!JournalSuggestionState.isHidden(hiddenDay: "", now: now, calendar: calendar))
     }
 
     @Test("breaks equal scores by category name")

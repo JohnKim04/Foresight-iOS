@@ -19,6 +19,9 @@ struct JournalRootView: View {
     @State private var selectedDay = localDayKey(.now)
     @State private var editor: EditorRequest?
     @State private var navigationPath: [UUID] = []
+    @State private var suggestion: HelpSuggestion?
+    @AppStorage(JournalSuggestionState.hiddenDayKey) private var suggestionHiddenDay = ""
+    @Environment(CheckInReminderRouter.self) private var router
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private var filters: JournalFilters { JournalFilters(query: query, categoryID: categoryID, checkIn: checkInFilter) }
@@ -54,6 +57,7 @@ struct JournalRootView: View {
                                 .frame(width: 44, height: 44)
                                 .glassEffect(.regular, in: Circle())
                         }
+                        suggestionCard
                         // Filters have nothing to work on until the first log, so a new
                         // journal opens straight onto the prompt to write one.
                         if !store.entries.isEmpty { journalControls }
@@ -77,6 +81,22 @@ struct JournalRootView: View {
                 editor = EditorRequest(entryID: nil)
                 newLogRequest = false
             }
+            .onChange(of: HelpReportKey(store: store), initial: true) {
+                suggestion = journalSuggestion(helpSuggestions(entries: store.entries, checkIns: store.checkIns, categories: store.categories, limit: .max))
+            }
+        }
+    }
+
+    /// Only shown when there is a confident suggestion; it steps aside while searching.
+    @ViewBuilder private var suggestionCard: some View {
+        if let suggestion, query.isEmpty, !JournalSuggestionState.isHidden(hiddenDay: suggestionHiddenDay) {
+            JournalSuggestionCard(suggestion: suggestion) {
+                // The root view switches to Patterns and opens the evidence.
+                router.destination = .evidence(suggestion.category.id)
+            } onHide: {
+                withAnimation(.snappy) { suggestionHiddenDay = localDayKey(.now) }
+            }
+            .transition(.opacity)
         }
     }
 
@@ -240,6 +260,44 @@ struct JournalRootView: View {
     private func moveMonth(_ amount: Int) {
         calendarMonth = Calendar.current.date(byAdding: .month, value: amount, to: calendarMonth)!
         selectedDay = localDayKey(calendarMonth)
+    }
+}
+
+/// A compact version of the Patterns suggestion card for the top of Journal.
+struct JournalSuggestionCard: View {
+    let suggestion: HelpSuggestion
+    let onOpen: () -> Void
+    let onHide: () -> Void
+
+    var body: some View {
+        ForesightCard {
+            HStack(alignment: .top, spacing: 8) {
+                Button(action: onOpen) {
+                    HStack(alignment: .top, spacing: 10) {
+                        Capsule().fill(Color.foresightSageMid).frame(width: 5).frame(minHeight: 38)
+                        VStack(alignment: .leading, spacing: 4) {
+                            SectionKicker(text: HelpSuggestionCopy.title)
+                            Text(suggestion.headline).font(.subheadline).foregroundStyle(Color.foresightInk).multilineTextAlignment(.leading)
+                            Text(suggestion.evidence).font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.leading)
+                            if let context = suggestion.context { Text(context).font(.caption).foregroundStyle(Color.foresightSage).multilineTextAlignment(.leading) }
+                        }
+                        .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 0)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("See the \(suggestion.category.name) pattern")
+                .accessibilityIdentifier("journal.suggestion")
+                Button(HelpSuggestionCopy.hideForToday, systemImage: "xmark", action: onHide)
+                    .labelStyle(.iconOnly)
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(Color.foresightMuted)
+                    .frame(width: 32, height: 32)
+                    .contentShape(Rectangle())
+                    .accessibilityIdentifier("journal.suggestion.hide")
+            }
+        }
     }
 }
 

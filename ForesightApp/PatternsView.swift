@@ -72,7 +72,7 @@ struct PatternsRootView: View {
                 if let category = store.categories.first(where: { $0.id == request }) { showHelpEvidence(category) }
                 evidenceRequest = nil
             }
-            .onChange(of: helpReportKey, initial: true) {
+            .onChange(of: HelpReportKey(store: store), initial: true) {
                 helpReport = helpSuggestions(entries: store.entries, checkIns: store.checkIns, categories: store.categories)
                 pickDefaultOutcomeCategory()
             }
@@ -243,20 +243,6 @@ struct PatternsRootView: View {
         }
     }
 
-    /// Changes whenever the data or the hour does, so suggestions are recomputed
-    /// on edits rather than on every render.
-    private var helpReportKey: HelpReportKey {
-        HelpReportKey(
-            entryCount: store.entries.count,
-            latestEntryEdit: store.entries.map(\.updatedAt).max(),
-            checkInCount: store.checkIns.count,
-            latestCheckInEdit: store.checkIns.map(\.updatedAt).max(),
-            categoryCount: store.categories.count,
-            archivedCount: store.categories.filter(\.isArchived).count,
-            hour: Int(Date.now.timeIntervalSince1970 / 3600)
-        )
-    }
-
     @ViewBuilder private var helpedCard: some View {
         if let report = helpReport { helpedCardContent(report) }
     }
@@ -364,7 +350,9 @@ struct PatternsRootView: View {
     private func insightMarker(_ direction: OutcomeDirection) -> Color { switch direction { case .positive: .foresightSageMid; case .negative: .foresightNegative; case .neutral: .foresightMuted; case .mixed: .foresightWarning } }
 }
 
-private struct HelpReportKey: Equatable {
+/// Changes whenever the data or the hour does, so suggestions are recomputed
+/// on edits rather than on every render.
+struct HelpReportKey: Equatable {
     let entryCount: Int
     let latestEntryEdit: Date?
     let checkInCount: Int
@@ -372,6 +360,16 @@ private struct HelpReportKey: Equatable {
     let categoryCount: Int
     let archivedCount: Int
     let hour: Int
+
+    @MainActor init(store: JournalStore, now: Date = .now) {
+        entryCount = store.entries.count
+        latestEntryEdit = store.entries.map(\.updatedAt).max()
+        checkInCount = store.checkIns.count
+        latestCheckInEdit = store.checkIns.map(\.updatedAt).max()
+        categoryCount = store.categories.count
+        archivedCount = store.categories.filter(\.isArchived).count
+        hour = Int(now.timeIntervalSince1970 / 3600)
+    }
 }
 
 struct MetricBox: View {

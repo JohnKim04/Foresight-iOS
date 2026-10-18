@@ -15,6 +15,10 @@ struct ForesightApp: App {
         if ProcessInfo.processInfo.arguments.contains(OnboardingState.resetArgument) {
             UserDefaults.standard.removeObject(forKey: OnboardingState.completedKey)
         }
+        // A disposable journal starts with nothing hidden, so UI tests don't depend on earlier runs.
+        if ProcessInfo.processInfo.arguments.contains("-in-memory-store") {
+            UserDefaults.standard.removeObject(forKey: JournalSuggestionState.hiddenDayKey)
+        }
     }
 
     var body: some Scene {
