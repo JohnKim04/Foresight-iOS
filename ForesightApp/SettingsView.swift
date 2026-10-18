@@ -94,7 +94,7 @@ struct SettingsView: View {
                 Button("Restore", role: .destructive) { restore(backup) }
                 Button("Cancel", role: .cancel) { }
             } message: { backup in
-                Text("Your journal will be replaced with the one from \(Self.backupDate(backup.date)). Your journal as it is now is saved as a backup first, so you can switch back here.")
+                Text(Self.restoreMessage(for: backup, among: backups))
             }
             .alert("Erase your journal?", isPresented: $confirmErase) {
                 Button("Erase", role: .destructive, action: erase)
@@ -255,13 +255,23 @@ struct SettingsView: View {
         } header: {
             Text("Backups")
         } footer: {
-            Text("Earlier copies of your journal, newest first. Foresight keeps up to \(SharedJournal.backupLimit). Restoring one saves your journal as it is now here first.")
+            Text("Earlier copies of your journal, newest first. Restoring one saves your journal as it is now here first. Foresight keeps up to \(SharedJournal.backupLimit), so the oldest other backup may be removed to make room.")
                 .padding(.bottom, 8)
         }
     }
 
     static func backupDate(_ date: Date) -> String {
         date.formatted(date: .abbreviated, time: .shortened)
+    }
+
+    static func restoreMessage(for backup: JournalBackup, among backups: [JournalBackup]) -> String {
+        var text = "Your journal will be replaced with the one from \(backupDate(backup.date)). Your journal as it is now is saved as a backup first, so you can switch back here."
+        let removed = JournalStore.backupsRemovedByRestoring(backup, from: backups)
+        if !removed.isEmpty {
+            let dates = removed.map { backupDate($0.date) }.formatted(.list(type: .and))
+            text += " To make room, your \(removed.count == 1 ? "backup" : "backups") from \(dates) will be removed."
+        }
+        return text
     }
 
     static func backupDetail(_ backup: JournalBackup) -> String {

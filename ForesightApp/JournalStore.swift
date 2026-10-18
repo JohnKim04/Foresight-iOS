@@ -284,9 +284,15 @@ extension JournalStore {
     func backups() -> [JournalBackup] {
         guard let storeURL else { return [] }
         return SharedJournal.backups(in: storeURL.deletingLastPathComponent()).map { backup in
-            let archive = try? JournalArchive.read(from: backup.url)
-            return JournalBackup(url: backup.url, date: backup.date, logCount: archive?.entries.count, checkInCount: archive?.checkIns.count)
+            let counts = try? JournalArchive.counts(at: backup.url)
+            return JournalBackup(url: backup.url, date: backup.date, logCount: counts?.logs, checkInCount: counts?.checkIns)
         }
+    }
+
+    /// The backups in `backups` (newest first) that pruning deletes after restoring `restored`:
+    /// the new copy and `restored` are kept, then the newest of the rest up to the limit.
+    nonisolated static func backupsRemovedByRestoring(_ restored: JournalBackup, from backups: [JournalBackup]) -> [JournalBackup] {
+        Array(backups.filter { $0.id != restored.id }.dropFirst(max(0, SharedJournal.backupLimit - 2)))
     }
 
     /// Replaces the journal with the backup at `url`, after saving the journal as it is now as a
@@ -373,6 +379,18 @@ struct JournalArchive {
         let container = try ForesightPersistence.makeContainer(storeURL: url, allowsSave: false)
         // A context doesn't keep its container alive.
         return try withExtendedLifetime(container) { try JournalArchive(context: ModelContext(container)) }
+    }
+
+    /// How many logs, and check-ins with a log (the ones a restore keeps), the store at `url`
+    /// holds, counted without loading them.
+    static func counts(at url: URL) throws -> (logs: Int, checkIns: Int) {
+        let container = try ForesightPersistence.makeContainer(storeURL: url, allowsSave: false)
+        return try withExtendedLifetime(container) {
+            let context = ModelContext(container)
+            let logs = try context.fetchCount(FetchDescriptor<JournalEntry>())
+            let checkIns = try context.fetchCount(FetchDescriptor<OutcomeCheckIn>(predicate: #Predicate<OutcomeCheckIn> { $0.entry != nil }))
+            return (logs, checkIns)
+        }
     }
 
     /// Writes these records into a new store at `url`.

@@ -317,6 +317,10 @@ struct JournalBackupTests {
         let middle = try writeBackup(at: now.addingTimeInterval(7_200), bodies: ["Two"])
         let newest = try writeBackup(at: now.addingTimeInterval(10_800), bodies: ["Three"])
 
+        let listed = store.backups()
+        let restoring = try #require(listed.first { $0.url.lastPathComponent == oldest.lastPathComponent })
+        #expect(JournalStore.backupsRemovedByRestoring(restoring, from: listed).map(\.url.lastPathComponent) == [middle.lastPathComponent])
+
         let safetyCopy = try store.restoreBackup(at: oldest)
         #expect(store.entries.map(\.body) == ["One"])
         #expect(Set(SharedJournal.backups(in: root).map(\.url.lastPathComponent)) == Set([newest, oldest, safetyCopy].map(\.lastPathComponent)))
