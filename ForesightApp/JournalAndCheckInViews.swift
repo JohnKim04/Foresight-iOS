@@ -228,7 +228,7 @@ struct JournalRootView: View {
     private var timeline: some View {
         VStack(alignment: .leading, spacing: 16) {
             if entries.isEmpty {
-                EmptyState(title: matching.isEmpty ? "Start your journal" : "No matching logs", detail: matching.isEmpty ? "Write a short log about something that happened today." : "Try changing the search or filters.", actionTitle: matching.isEmpty ? "Write a log" : nil, action: matching.isEmpty ? { editor = EditorRequest(entryID: nil) } : nil)
+                emptyState
             } else {
                 ForEach(groupEntriesByDay(entries)) { group in
                     VStack(alignment: .leading, spacing: 8) {
@@ -236,11 +236,32 @@ struct JournalRootView: View {
                         ForEach(group.entries, id: \.id) { entry in JournalEntryRow(entry: entry, label: entryCheckInLabel(entry: entry, checkIns: store.checkIns)) { navigationPath.append(entry.id) } }
                     }
                 }
-                if olderCount > 0 {
-                    Button("Show \(olderCount) older \(olderCount == 1 ? "log" : "logs")") { dateScope = .all }
-                        .buttonStyle(ForesightSecondaryButtonStyle()).frame(maxWidth: .infinity)
-                }
             }
+            // Also under an empty state, when every match is older than the range.
+            if olderCount > 0 {
+                Button("Show \(olderCount) older \(olderCount == 1 ? "log" : "logs")") { dateScope = .all }
+                    .buttonStyle(ForesightSecondaryButtonStyle()).frame(maxWidth: .infinity)
+            }
+        }
+    }
+
+    private var isFiltering: Bool { !query.isEmpty || !activeFilters.isEmpty }
+
+    /// A new journal gets the prompt to write; a journal whose filters hide every log gets a way out.
+    @ViewBuilder private var emptyState: some View {
+        if store.entries.isEmpty {
+            EmptyState(title: "Start your journal", detail: "Write a short log about something that happened today.", actionTitle: "Write a log", action: { editor = EditorRequest(entryID: nil) })
+        } else {
+            EmptyState(title: "No matching logs", detail: "Try changing the search or filters.", actionTitle: isFiltering ? "Clear filters" : nil, action: isFiltering ? { clearFilters() } : nil)
+        }
+    }
+
+    private func clearFilters() {
+        withAnimation(.snappy(duration: 0.2)) {
+            query = ""
+            dateScope = .recent
+            categoryID = nil
+            checkInFilter = .all
         }
     }
 
@@ -276,10 +297,15 @@ struct JournalRootView: View {
                     }
                 }
             }
-            VStack(alignment: .leading, spacing: 8) {
-                Text(displayDay(selectedDay)).font(.headline).foregroundStyle(Color.foresightInk)
-                if selectedEntries.isEmpty { Text("No logs on this day.").foregroundStyle(Color.foresightMuted) }
-                ForEach(selectedEntries, id: \.id) { entry in JournalEntryRow(entry: entry, label: entryCheckInLabel(entry: entry, checkIns: store.checkIns)) { navigationPath.append(entry.id) } }
+            // Filters that hide every log say so, rather than leaving an empty month.
+            if entries.isEmpty && (isFiltering || store.entries.isEmpty) {
+                emptyState
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(displayDay(selectedDay)).font(.headline).foregroundStyle(Color.foresightInk)
+                    if selectedEntries.isEmpty { Text("No logs on this day.").foregroundStyle(Color.foresightMuted) }
+                    ForEach(selectedEntries, id: \.id) { entry in JournalEntryRow(entry: entry, label: entryCheckInLabel(entry: entry, checkIns: store.checkIns)) { navigationPath.append(entry.id) } }
+                }
             }
         }
     }

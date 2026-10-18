@@ -291,6 +291,7 @@ final class ForesightUITests: XCTestCase {
         let chip = app.buttons["Remove Check-in scheduled filter"]
         XCTAssertTrue(chip.waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["No matching logs"].exists)
+        XCTAssertTrue(app.buttons["Clear filters"].exists)
         chip.tap()
         XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "A log to filter")).firstMatch.waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["Last 30 days"].exists)
