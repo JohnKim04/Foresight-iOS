@@ -260,11 +260,12 @@ final class ForesightUITests: XCTestCase {
         // The Filter button appears once the journal has a log.
         XCTAssertFalse(app.buttons["journal.filter"].exists)
         app.buttons["New log"].tap()
-        app.textViews["What happened?"].tap()
-        app.textViews["What happened?"].typeText("A log to filter")
+        typeLog("A log to filter")
         saveNewLog()
 
         // The filters live behind one button, so the logs come first.
+        let log = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "A log to filter")).firstMatch
+        XCTAssertTrue(log.waitForExistence(timeout: 3), "The new log should show before any filter")
         XCTAssertTrue(app.buttons["journal.filter"].waitForExistence(timeout: 3))
         XCTAssertFalse(app.buttons["Choose category"].exists)
         XCTAssertTrue(app.staticTexts["Last 30 days"].exists)
@@ -302,8 +303,9 @@ final class ForesightUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["No matching logs"].exists)
         XCTAssertTrue(app.buttons["Clear filters"].exists)
         chip.tap()
-        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "A log to filter")).firstMatch.waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["Last 30 days"].exists)
+        XCTAssertTrue(chip.waitForNonExistence(timeout: 3), "Tapping the chip should remove its filter")
+        XCTAssertTrue(app.staticTexts["Last 30 days"].waitForExistence(timeout: 3))
+        XCTAssertTrue(log.waitForExistence(timeout: 3), "The log should come back once the filter is removed")
     }
 
     func testJournalCategoryDropdownUpdatesTheFilter() {
