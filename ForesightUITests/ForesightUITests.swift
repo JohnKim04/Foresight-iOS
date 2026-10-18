@@ -288,7 +288,9 @@ final class ForesightUITests: XCTestCase {
         // Tapping elsewhere in the sheet closes the open panel.
         category.tap()
         XCTAssertTrue(app.buttons["All categories"].waitForExistence(timeout: 2))
-        app.staticTexts["DATES"].tap()
+        // The match count sits below the triggers, clear of the panel, which opens upward
+        // in the half-height sheet and covers the headings above it.
+        app.staticTexts["1 log matches."].tap()
         XCTAssertFalse(app.buttons["All categories"].waitForExistence(timeout: 1))
 
         checkIn.tap()
@@ -304,8 +306,7 @@ final class ForesightUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Clear filters"].exists)
         chip.tap()
         XCTAssertTrue(chip.waitForNonExistence(timeout: 3), "Tapping the chip should remove its filter")
-        // The hierarchy is printed on failure, since CI keeps only the log.
-        XCTAssertTrue(app.staticTexts["Last 30 days"].waitForExistence(timeout: 3), app.debugDescription)
+        XCTAssertTrue(app.staticTexts["Last 30 days"].waitForExistence(timeout: 3))
         XCTAssertTrue(log.waitForExistence(timeout: 3), "The log should come back once the filter is removed")
     }
 
