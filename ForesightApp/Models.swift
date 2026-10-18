@@ -29,20 +29,10 @@ enum OutcomeValue: Int, Codable, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .muchWorse: "Much worse"
-        case .aLittleWorse: "A little worse"
-        case .same: "About the same"
-        case .aLittleBetter: "A little better"
+        case .aLittleWorse: "Worse"
+        case .same: "Same"
+        case .aLittleBetter: "Better"
         case .muchBetter: "Much better"
-        }
-    }
-
-    var shortTitle: String {
-        switch self {
-        case .muchWorse: "−2"
-        case .aLittleWorse: "−1"
-        case .same: "0"
-        case .aLittleBetter: "+1"
-        case .muchBetter: "+2"
         }
     }
 }

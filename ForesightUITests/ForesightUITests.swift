@@ -181,7 +181,7 @@ final class ForesightUITests: XCTestCase {
         app.tabBars.buttons["Check In"].tap()
         XCTAssertTrue(app.buttons["Answer early"].waitForExistence(timeout: 3))
         app.buttons["Answer early"].tap()
-        app.buttons["About the same"].tap()
+        app.buttons["Same"].tap()
         app.buttons["Save"].firstMatch.tap()
     }
 
@@ -365,14 +365,14 @@ final class ForesightUITests: XCTestCase {
         app.buttons["Save"].firstMatch.tap()
 
         XCTAssertTrue(app.staticTexts["How do you feel right now?"].waitForExistence(timeout: 3))
-        app.buttons["A little better"].tap()
-        XCTAssertTrue(app.staticTexts["Saved: a little better"].waitForExistence(timeout: 2))
+        app.buttons["Better"].tap()
+        XCTAssertTrue(app.staticTexts["Saved: better"].waitForExistence(timeout: 2))
         app.buttons["In 2 hours"].tap()
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Check-in set for")).firstMatch.waitForExistence(timeout: 2))
         app.buttons["post-log.done"].tap()
 
         openLog(named: "Went for an evening run")
-        XCTAssertTrue(app.staticTexts["A little better"].firstMatch.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["Better"].firstMatch.waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["Reschedule"].exists)
         app.tabBars.buttons["Check In"].tap()
         XCTAssertTrue(app.buttons["Answer early"].waitForExistence(timeout: 3))
@@ -389,9 +389,9 @@ final class ForesightUITests: XCTestCase {
         // Demo history has Workout, Sleep and Social mostly better later.
         let suggestion = app.buttons["post-log.suggestion"]
         XCTAssertFalse(suggestion.exists)
-        app.buttons["A little worse"].tap()
+        app.buttons["Worse"].tap()
         XCTAssertTrue(suggestion.waitForExistence(timeout: 2))
-        app.buttons["About the same"].tap()
+        app.buttons["Same"].tap()
         XCTAssertTrue(suggestion.waitForNonExistence(timeout: 2))
         app.buttons["Much worse"].tap()
         XCTAssertTrue(suggestion.waitForExistence(timeout: 2))

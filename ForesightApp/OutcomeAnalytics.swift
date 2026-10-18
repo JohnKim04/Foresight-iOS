@@ -57,9 +57,9 @@ func outcomeTrend(entries: [JournalEntry], checkIns: [OutcomeCheckIn], category:
 func describeAverageOutcome(_ average: Double) -> String {
     switch average {
     case ...(-1.5): "much worse"
-    case ..<(-0.25): "a little worse"
-    case ...0.25: "about the same"
-    case ..<1.5: "a little better"
+    case ..<(-0.25): "worse"
+    case ...0.25: "same"
+    case ..<1.5: "better"
     default: "much better"
     }
 }
@@ -146,9 +146,9 @@ func categoryOutcomeInsight(entries: [JournalEntry], checkIns: [OutcomeCheckIn],
     let dominantRate = Double(dominantCount) / Double(trend.numericCount)
     let detail: String
     if direction == .mixed {
-        detail = "\(trend.betterCount) better · \(trend.sameCount) same · \(trend.worseCount) worse"
+        detail = "\(trend.betterCount) better or much better · \(trend.sameCount) same · \(trend.worseCount) worse or much worse"
     } else {
-        let label = direction == .positive ? "better" : direction == .negative ? "worse" : "about the same"
+        let label = direction == .positive ? "better or much better" : direction == .negative ? "worse or much worse" : "same"
         detail = "\(Int((dominantRate * 100).rounded()))% \(label) · average \(describeAverageOutcome(average))"
     }
     let directionWeight = (direction == .positive || direction == .negative) ? 1.0 : direction == .mixed ? 0.35 : 0.2

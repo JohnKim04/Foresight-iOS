@@ -123,9 +123,9 @@ struct OutcomeAnalyticsTests {
     @Test("describes averages with stable wording")
     func averageDescriptions() {
         #expect(describeAverageOutcome(-2) == "much worse")
-        #expect(describeAverageOutcome(-1) == "a little worse")
-        #expect(describeAverageOutcome(0) == "about the same")
-        #expect(describeAverageOutcome(1) == "a little better")
+        #expect(describeAverageOutcome(-1) == "worse")
+        #expect(describeAverageOutcome(0) == "same")
+        #expect(describeAverageOutcome(1) == "better")
         #expect(describeAverageOutcome(2) == "much better")
     }
 
