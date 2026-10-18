@@ -329,6 +329,25 @@ struct HelpSuggestionsTests {
         #expect(second.context == "Last logged 3 days ago.")
     }
 
+    @Test("says the usual time once when several suggestions share it")
+    func sharedTimeOfDay() throws {
+        let walk = JournalCategory(name: "Walk")
+        let stretch = JournalCategory(name: "Stretch")
+        let walkLogs = logs(walk, count: 5, firstDay: 3)
+        let stretchLogs = logs(stretch, count: 5, firstDay: 3)
+        let result = report(walkLogs + stretchLogs, answers(walkLogs, [.aLittleBetter]) + answers(stretchLogs, [.aLittleBetter]), [walk, stretch])
+        #expect(result.suggestions.count == 2)
+        #expect(result.suggestions.filter(\.usualTimeOfDay).count == 2)
+        let note = try #require(HelpSuggestionCopy.sharedUsualTimeNote(result.suggestions))
+        #expect(note.contains("Walk") && note.contains("Stretch") && note.hasSuffix("around this time of day."))
+        expectNonCausal([note])
+        for suggestion in result.suggestions {
+            #expect(suggestion.context(showingUsualTime: false) == nil)
+        }
+        // A single suggestion keeps the line on its own row.
+        #expect(HelpSuggestionCopy.sharedUsualTimeNote(Array(result.suggestions.prefix(1))) == nil)
+    }
+
     @Test("says when it tended to feel worse right after")
     func rightAfterCaveat() throws {
         let workout = JournalCategory(name: "Workout")

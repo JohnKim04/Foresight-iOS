@@ -147,11 +147,8 @@ func recentCompletedCheckIns(_ journal: JournalSnapshot, limit: Int = 10) -> [Qu
 }
 
 enum TrendGranularity: String, CaseIterable, Identifiable, Hashable { case week, month; var id: String { rawValue }; var title: String { rawValue.capitalized } }
-enum TrendRange: Int, CaseIterable, Identifiable, Hashable { case seven = 7, thirty = 30, ninety = 90; var id: Int { rawValue }; var title: String { "\(rawValue)d" } }
 
 struct ActivityBucket: Identifiable { let date: Date; let label: String; let count: Int; var id: Date { date } }
-struct PeriodComparison { let currentCount: Int; let previousCount: Int; let change: Int; let currentLabel: String }
-struct CategoryActivityTrend: Identifiable { let category: JournalCategory; let currentCount: Int; let previousCount: Int; var change: Int { currentCount - previousCount }; var id: UUID { category.id } }
 
 func startOfPeriod(_ date: Date, granularity: TrendGranularity, calendar: Calendar = .current) -> Date {
     let day = startOfDay(date, calendar: calendar)
@@ -178,25 +175,4 @@ func activityBuckets(_ entries: [JournalEntry], category: JournalCategory?, gran
         let format = Date.FormatStyle().month(.abbreviated).day()
         return ActivityBucket(date: start, label: granularity == .week ? start.formatted(format) : start.formatted(.dateTime.month(.abbreviated)), count: logs.count)
     }
-}
-
-func periodComparison(_ entries: [JournalEntry], category: JournalCategory?, granularity: TrendGranularity, now: Date = .now, calendar: Calendar = .current) -> PeriodComparison {
-    let current = startOfPeriod(now, granularity: granularity, calendar: calendar)
-    let next = shiftPeriod(current, by: 1, granularity: granularity, calendar: calendar)
-    let previous = shiftPeriod(current, by: -1, granularity: granularity, calendar: calendar)
-    func count(_ start: Date, _ end: Date) -> Int { entries.filter { (category == nil || $0.categories.contains(where: { $0.id == category!.id })) && $0.eventAt >= start && $0.eventAt < end }.count }
-    let currentCount = count(current, next)
-    let previousCount = count(previous, current)
-    return PeriodComparison(currentCount: currentCount, previousCount: previousCount, change: currentCount - previousCount, currentLabel: current.formatted(granularity == .week ? .dateTime.month(.abbreviated).day() : .dateTime.month(.wide).year()))
-}
-
-func categoryTrends(_ entries: [JournalEntry], categories: [JournalCategory], range: TrendRange, now: Date = .now, calendar: Calendar = .current) -> [CategoryActivityTrend] {
-    let currentStart = calendar.date(byAdding: .day, value: -(range.rawValue - 1), to: startOfDay(now, calendar: calendar))!
-    let end = calendar.date(byAdding: .day, value: 1, to: startOfDay(now, calendar: calendar))!
-    let prior = calendar.date(byAdding: .day, value: -range.rawValue, to: currentStart)!
-    return categories.map { category in
-        let current = entries.filter { $0.eventAt >= currentStart && $0.eventAt < end && $0.categories.contains(where: { $0.id == category.id }) }.count
-        let previous = entries.filter { $0.eventAt >= prior && $0.eventAt < currentStart && $0.categories.contains(where: { $0.id == category.id }) }.count
-        return CategoryActivityTrend(category: category, currentCount: current, previousCount: previous)
-    }.sorted { $0.currentCount != $1.currentCount ? $0.currentCount > $1.currentCount : $0.category.name < $1.category.name }
 }

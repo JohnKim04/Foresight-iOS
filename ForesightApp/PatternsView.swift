@@ -2,16 +2,10 @@ import Charts
 import SwiftUI
 import UIKit
 
-enum PatternsMode: String, CaseIterable, Identifiable { case activity, outcomes; var id: String { rawValue }; var title: String { rawValue.capitalized } }
-
 struct PatternsRootView: View {
     let store: JournalStore
     /// Set when a suggestion nudge is tapped; opens that category's later evidence.
     @Binding var evidenceRequest: UUID?
-    @State private var mode: PatternsMode = .outcomes
-    @State private var activityGranularity: TrendGranularity = .week
-    @State private var activityRange: TrendRange = .thirty
-    @State private var activityCategoryID: UUID?
     @State private var outcomeCategoryID: UUID?
     @State private var outcomeRange: OutcomeTrendRange = .ninety
     @State private var outcomePhase: OutcomePhase = .delayed
@@ -23,7 +17,6 @@ struct PatternsRootView: View {
     /// Bumped to scroll to the evidence, even when the category it shows was already selected.
     @State private var evidenceScrollRequest = 0
 
-    private var activityCategory: JournalCategory? { activityCategoryID.flatMap { id in store.categories.first { $0.id == id } } }
     private var outcomeCategory: JournalCategory? { outcomeCategoryID.flatMap { id in store.categories.first { $0.id == id } } }
 
     var body: some View {
@@ -42,28 +35,20 @@ struct PatternsRootView: View {
                                 // Charts and category pickers have nothing to show before the first log.
                                 EmptyState(title: "Nothing to compare yet", detail: "Write a few logs with categories and check in later. Patterns describes what tended to follow them.")
                             } else {
-                                ForesightSegmentedPicker(
-                                    selection: $mode,
-                                    options: PatternsMode.allCases.map { ($0, $0.title) }
-                                )
-                                if mode == .activity { activityView } else { outcomesView }
+                                outcomesView
                             }
                         }
                         .padding()
                     }
                 }
                 .background(Color.foresightCanvas)
-                .onChange(of: activityCategoryID) { oldValue, newValue in
-                    guard mode == .activity, oldValue != newValue else { return }
-                    withAnimation(.snappy) { proxy.scrollTo("activity-controls", anchor: .top) }
-                }
                 .onChange(of: outcomeCategoryID) { oldValue, newValue in
                     if isPickingCategoryForUser { isPickingCategoryForUser = false; return }
-                    guard mode == .outcomes, oldValue != newValue else { return }
+                    guard oldValue != newValue else { return }
                     withAnimation(.snappy) { proxy.scrollTo("outcome-controls", anchor: .top) }
                 }
                 .onChange(of: evidenceScrollRequest) {
-                    // Waits a turn so Outcomes has laid out if the mode just switched to it.
+                    // Waits a turn so the evidence has laid out for a newly picked category.
                     Task { @MainActor in withAnimation(.snappy) { proxy.scrollTo("outcome-controls", anchor: .top) } }
                 }
             }
@@ -79,73 +64,6 @@ struct PatternsRootView: View {
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .navigationDestination(for: UUID.self) { JournalDetailView(store: store, entryID: $0) }
-        }
-    }
-
-    private var activityView: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            ForesightCard {
-                VStack(alignment: .leading, spacing: 13) {
-                    SectionKicker(text: "Activity")
-                    Text("Choose what to compare").font(ForesightType.sectionTitle).foregroundStyle(Color.foresightInk)
-                    Text("The chart and totals below follow this category.").font(.subheadline).foregroundStyle(Color.foresightMuted)
-                    ForesightDropdown(
-                        id: "patterns.activity.category",
-                        selection: $activityCategoryID,
-                        options: categoryOptions(firstTitle: "All logs", firstID: "all-logs"),
-                        style: .fullWidth(systemImage: "tag.fill", label: "Category"),
-                        accessibilityLabel: "Choose category",
-                        accessibilityValue: activityCategory?.name ?? "All logs"
-                    )
-                    ForesightSegmentedPicker(
-                        selection: $activityGranularity,
-                        options: TrendGranularity.allCases.map { ($0, $0.title) }
-                    )
-                    let comparison = periodComparison(store.entries, category: activityCategory, granularity: activityGranularity)
-                    HStack(spacing: 10) {
-                        MetricBox(value: "\(comparison.currentCount)", label: comparison.currentLabel)
-                        MetricBox(value: comparison.change == 0 ? "No change" : "\(comparison.change > 0 ? "+" : "")\(comparison.change)", label: "vs. previous \(activityGranularity.rawValue)")
-                    }
-                    let buckets = activityBuckets(store.entries, category: activityCategory, granularity: activityGranularity)
-                    Chart(buckets) { bucket in
-                        BarMark(x: .value("Period", bucket.date), y: .value("Logs", bucket.count))
-                            .foregroundStyle(Color.foresightSage.gradient)
-                            .cornerRadius(4)
-                    }
-                    .chartYAxis { AxisMarks(position: .leading) }
-                    .chartXAxis { AxisMarks(values: .automatic(desiredCount: activityGranularity == .week ? 4 : 6)) }
-                    .frame(height: 200)
-                    Text(activityGranularity == .week ? "Eight calendar-aligned weeks" : "Six calendar-aligned months").font(.caption).foregroundStyle(.secondary)
-                }
-            }
-            .id("activity-controls")
-            ForesightCard {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack { SectionKicker(text: "Explore another category"); Spacer(); Picker("Range", selection: $activityRange) { ForEach(TrendRange.allCases) { Text($0.title).tag($0) } }.pickerStyle(.menu) }
-                    Text("Tap a row to load that category in the chart above.").font(.caption).foregroundStyle(Color.foresightMuted)
-                    let trends = categoryTrends(store.entries, categories: store.categories, range: activityRange)
-                        .filter { $0.category.id != activityCategoryID }
-                    if trends.allSatisfy({ $0.currentCount == 0 && $0.previousCount == 0 }) {
-                        Text("Tag logs to compare activity by category.").foregroundStyle(.secondary)
-                    } else {
-                        ForEach(trends) { trend in
-                            Button { activityCategoryID = trend.category.id } label: {
-                                HStack {
-                                    Text(trend.category.name + (trend.category.isArchived ? " (archived)" : "")).foregroundStyle(.primary)
-                                    Spacer()
-                                    Text("\(trend.currentCount)").font(.headline).foregroundStyle(Color.foresightSage)
-                                    Text(trend.change == 0 ? "—" : "\(trend.change > 0 ? "+" : "")\(trend.change)").font(.caption.weight(.bold)).foregroundStyle(trend.change < 0 ? Color.secondary : Color.foresightSage)
-                                    Image(systemName: "chevron.up").font(.caption.weight(.bold)).foregroundStyle(Color.foresightMuted)
-                                }
-                                .padding(.vertical, 7)
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("View \(trend.category.name) activity")
-                            if trend.id != trends.last?.id { Divider() }
-                        }
-                    }
-                }
-            }
         }
     }
 
@@ -223,6 +141,7 @@ struct PatternsRootView: View {
                     if trend.notSureCount + trend.skippedCount + trend.pendingCount > 0 { Text("\(trend.notSureCount) unsure · \(trend.skippedCount) skipped · \(trend.pendingCount) pending are not included in the average").font(.caption).foregroundStyle(.secondary) }
                 }
             }
+            logFrequencyCard(category)
             if let shift = phaseComparisonInsight(entries: store.entries, checkIns: store.checkIns, category: category, range: outcomeRange) { NarrativeCard(kicker: "Timing shift", headline: shift.headline, detail: shift.detail, color: Color.foresightSoftSage) }
             if let change = outcomeChangeInsight(entries: store.entries, checkIns: store.checkIns, category: category, phase: outcomePhase, range: outcomeRange) { NarrativeCard(kicker: "Changing over time", headline: change.headline, detail: change.detail, color: Color.foresightWarm) }
             if !sourceEntries.isEmpty {
@@ -243,6 +162,38 @@ struct PatternsRootView: View {
         }
     }
 
+    /// How often the category is logged, so its evidence can be read against how much of it there is.
+    private func logFrequencyCard(_ category: JournalCategory) -> some View {
+        let weeks = activityBuckets(store.entries, category: category, granularity: .week)
+        let thisWeek = weeks.last?.count ?? 0
+        let lastWeek = weeks.dropLast().last?.count ?? 0
+        // Every other week, ending on this one, so the labels don't crowd.
+        let axisLabels = weeks.indices.filter { (weeks.count - 1 - $0) % 2 == 0 }.map { weeks[$0].label }
+        return ForesightCard {
+            VStack(alignment: .leading, spacing: 12) {
+                SectionKicker(text: "How often")
+                Text("\(category.name) logs per week").font(.subheadline.weight(.semibold)).foregroundStyle(Color.foresightInk)
+                HStack(spacing: 8) {
+                    MetricBox(value: "\(thisWeek)", label: "this week")
+                    MetricBox(value: "\(lastWeek)", label: "last week")
+                    MetricBox(value: "\(weeks.reduce(0) { $0 + $1.count })", label: "last 8 weeks")
+                }
+                // Labels, not dates, on the x axis: a band per week keeps the last bar off the edge.
+                Chart(weeks) { week in
+                    BarMark(x: .value("Week", week.label), y: .value("Logs", week.count))
+                        .foregroundStyle(Color.foresightSage.gradient)
+                        .cornerRadius(4)
+                }
+                .chartYAxis { AxisMarks(position: .leading) }
+                .chartXAxis { AxisMarks(values: axisLabels) }
+                .frame(height: 140)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("\(category.name) logs per week")
+                Text("Eight weeks, each starting on Monday.").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
     @ViewBuilder private var helpedCard: some View {
         if let report = helpReport { helpedCardContent(report) }
     }
@@ -254,6 +205,9 @@ struct PatternsRootView: View {
                 if report.suggestions.isEmpty {
                     Text(HelpSuggestionCopy.emptyMessage(report)).font(.subheadline).foregroundStyle(Color.foresightMuted)
                 } else {
+                    // Said once for the card when several suggestions share it, instead of on each row.
+                    let sharedTimeNote = HelpSuggestionCopy.sharedUsualTimeNote(report.suggestions)
+                    if let sharedTimeNote { Text(sharedTimeNote).font(.caption).foregroundStyle(Color.foresightSage) }
                     ForEach(report.suggestions) { suggestion in
                         Button { showHelpEvidence(suggestion.category) } label: {
                             HStack(alignment: .top, spacing: 10) {
@@ -261,7 +215,7 @@ struct PatternsRootView: View {
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(suggestion.headline).font(.subheadline).foregroundStyle(Color.foresightInk).multilineTextAlignment(.leading)
                                     Text(suggestion.evidence).font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.leading)
-                                    if let context = suggestion.context { Text(context).font(.caption).foregroundStyle(Color.foresightSage).multilineTextAlignment(.leading) }
+                                    if let context = suggestion.context(showingUsualTime: sharedTimeNote == nil) { Text(context).font(.caption).foregroundStyle(Color.foresightSage).multilineTextAlignment(.leading) }
                                 }
                                 Spacer()
                                 Image(systemName: "chevron.right").font(.caption.weight(.bold)).foregroundStyle(Color.foresightMuted)
@@ -299,7 +253,6 @@ struct PatternsRootView: View {
     }
 
     private func showHelpEvidence(_ category: JournalCategory) {
-        mode = .outcomes
         outcomePhase = .delayed
         outcomeRange = helpSuggestionRange
         outcomeCategoryID = category.id
@@ -330,7 +283,7 @@ struct PatternsRootView: View {
                                 Capsule().fill(insightMarker(insight.direction)).frame(width: 5, height: 38)
                                 VStack(alignment: .leading, spacing: 3) { Text(insight.headline).font(.subheadline).multilineTextAlignment(.leading); Text("\(insight.evidenceDepth.rawValue) · \(insight.detail)").font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.leading) }
                                 Spacer()
-                                Image(systemName: "chevron.up")
+                                Image(systemName: "chevron.right")
                                     .font(.caption.weight(.bold))
                                     .foregroundStyle(Color.foresightMuted)
                             }

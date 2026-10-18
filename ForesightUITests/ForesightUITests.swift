@@ -298,16 +298,17 @@ final class ForesightUITests: XCTestCase {
         XCTAssertTrue(other.waitForNonExistence(timeout: 3), "Logs outside the selected category should be filtered out")
     }
 
-    func testPatternsActivityDropdownUpdatesSelection() {
+    func testPatternsIsOneScreenWithWeeklyCounts() {
         addSampleHistory()
         app.tabBars.buttons["Patterns"].tap()
-        app.buttons["Activity"].tap()
 
         let category = app.buttons["Choose category"]
         XCTAssertTrue(category.waitForExistence(timeout: 3))
+        XCTAssertFalse(app.buttons["Activity"].exists, "Patterns no longer has an Activity mode")
         category.tap()
         app.buttons["Workout"].tap()
         XCTAssertEqual(category.value as? String, "Workout")
+        XCTAssertTrue(app.staticTexts["Workout logs per week"].waitForExistence(timeout: 3))
     }
 
     func testCheckInSourceLogDoesNotOpenFromOutsideCard() {
