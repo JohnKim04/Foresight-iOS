@@ -15,6 +15,8 @@ struct SettingsView: View {
     @State private var quietEnd: Int
     @State private var confirmErase = false
     @State private var confirmRemoveSample = false
+    @State private var backups: [JournalBackup] = []
+    @State private var backupToRestore: JournalBackup?
     @State private var message: String?
     /// Kept apart from `message` so it shows under the button that caused it.
     @State private var sampleMessage: String?
@@ -43,6 +45,9 @@ struct SettingsView: View {
                 quietHoursSection
                 categoriesSection
                 dataSection
+                if !backups.isEmpty {
+                    backupsSection
+                }
                 #if ENABLE_DEVELOPMENT_FIXTURES
                 sampleDataSection
                 #endif
@@ -57,6 +62,7 @@ struct SettingsView: View {
             }
             // Picks up a permission changed in iOS Settings while this screen was away.
             .task { reminders.resync() }
+            .task { backups = store.backups() }
             .onChange(of: remindersEnabled) { _, isOn in
                 preferences.remindersEnabled = isOn
                 preferencesChanged(turnedOn: isOn)
@@ -84,6 +90,12 @@ struct SettingsView: View {
                 }
                 Button("Cancel", role: .cancel) { }
             } message: { Text("All sample logs and check-ins will be removed. Your own logs and check-ins will stay.") }
+            .alert("Restore this backup?", isPresented: Binding(get: { backupToRestore != nil }, set: { if !$0 { backupToRestore = nil } }), presenting: backupToRestore) { backup in
+                Button("Restore", role: .destructive) { restore(backup) }
+                Button("Cancel", role: .cancel) { }
+            } message: { backup in
+                Text(Self.restoreMessage(for: backup, among: backups))
+            }
             .alert("Erase your journal?", isPresented: $confirmErase) {
                 Button("Erase", role: .destructive, action: erase)
                 Button("Cancel", role: .cancel) { }
@@ -231,6 +243,42 @@ struct SettingsView: View {
         }
     }
 
+    private var backupsSection: some View {
+        Section {
+            ForEach(backups) { backup in
+                Button { backupToRestore = backup } label: {
+                    SettingLabel(title: Self.backupDate(backup.date), detail: Self.backupDetail(backup), systemImage: "clock.arrow.circlepath")
+                }
+                .disabled(!backup.isReadable)
+                .accessibilityIdentifier("settings.backup")
+            }
+        } header: {
+            Text("Backups")
+        } footer: {
+            Text("Earlier copies of your journal, newest first. Restoring one saves your journal as it is now here first. Foresight keeps up to \(SharedJournal.backupLimit), so the oldest other backup may be removed to make room.")
+                .padding(.bottom, 8)
+        }
+    }
+
+    static func backupDate(_ date: Date) -> String {
+        date.formatted(date: .abbreviated, time: .shortened)
+    }
+
+    static func restoreMessage(for backup: JournalBackup, among backups: [JournalBackup]) -> String {
+        var text = "Your journal will be replaced with the one from \(backupDate(backup.date)). Your journal as it is now is saved as a backup first, so you can switch back here."
+        let removed = JournalStore.backupsRemovedByRestoring(backup, from: backups)
+        if !removed.isEmpty {
+            let dates = removed.map { backupDate($0.date) }.formatted(.list(type: .and))
+            text += " To make room, your \(removed.count == 1 ? "backup" : "backups") from \(dates) will be removed."
+        }
+        return text
+    }
+
+    static func backupDetail(_ backup: JournalBackup) -> String {
+        guard let logs = backup.logCount, let checkIns = backup.checkInCount else { return "This backup can't be read." }
+        return "\(logs) \(logs == 1 ? "log" : "logs") and \(checkIns) \(checkIns == 1 ? "check-in" : "check-ins")"
+    }
+
     private var aboutSection: some View {
         Section {
             LabeledContent("Version", value: Self.version)
@@ -244,6 +292,18 @@ struct SettingsView: View {
         nudges.resync()
         // Turning a notification on is a clear moment to ask, if iOS hasn't asked yet.
         if turnedOn { Task { await reminders.requestAuthorizationIfNeeded(evenWhenRemindersAreOff: true) } }
+    }
+
+    private func restore(_ backup: JournalBackup) {
+        sampleMessage = nil
+        do {
+            try store.restoreBackup(at: backup.url)
+            message = "Your journal was restored from \(Self.backupDate(backup.date)). The journal it replaced is under Backups."
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+        } catch {
+            message = "The backup couldn't be restored, so your journal wasn't changed. \(error.localizedDescription)"
+        }
+        backups = store.backups()
     }
 
     private func erase() {

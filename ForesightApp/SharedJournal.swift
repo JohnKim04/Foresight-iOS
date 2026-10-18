@@ -117,18 +117,33 @@ enum SharedJournal {
         try fileManager.moveItem(at: partial, to: destination)
     }
 
-    /// Moves a store's files to `Foresight-backup-<time>.store` in the same directory, main file
-    /// last so a backup never has a main file without its log. If a move fails, the ones already
-    /// made are undone. Only the newest `backupLimit` backups are kept. Returns the backup's URL.
-    @discardableResult
-    static func backUpStore(at url: URL, date: Date = .now, fileManager: FileManager = .default) throws -> URL {
-        let stamp = date.formatted(.iso8601.year().month().day().time(includingFractionalSeconds: false).timeSeparator(.omitted).dateSeparator(.omitted))
+    /// The time in a backup's name, in UTC, to the second.
+    static let backupStampStyle = Date.ISO8601FormatStyle().year().month().day().time(includingFractionalSeconds: false).timeSeparator(.omitted).dateSeparator(.omitted)
+
+    /// A backup beside the journal, and when it was made.
+    struct Backup: Equatable, Sendable {
+        let url: URL
+        let date: Date
+    }
+
+    /// A free `Foresight-backup-<time>.store` name beside the store at `url`.
+    static func newBackupURL(beside url: URL, date: Date = .now, fileManager: FileManager = .default) -> URL {
+        let stamp = date.formatted(backupStampStyle)
         var backup = url.deletingLastPathComponent().appending(path: "\(backupPrefix)\(stamp).store")
         var attempt = 1
         while storeFileSuffixes.contains(where: { fileManager.fileExists(atPath: backup.path + $0) }) {
             attempt += 1
             backup = url.deletingLastPathComponent().appending(path: "\(backupPrefix)\(stamp)-\(attempt).store")
         }
+        return backup
+    }
+
+    /// Moves a store's files to `Foresight-backup-<time>.store` in the same directory, main file
+    /// last so a backup never has a main file without its log. If a move fails, the ones already
+    /// made are undone. Only the newest `backupLimit` backups are kept. Returns the backup's URL.
+    @discardableResult
+    static func backUpStore(at url: URL, date: Date = .now, fileManager: FileManager = .default) throws -> URL {
+        let backup = newBackupURL(beside: url, date: date, fileManager: fileManager)
         var moved: [String] = []
         do {
             for suffix in ["-wal", "-shm", ""] where fileManager.fileExists(atPath: url.path + suffix) {
@@ -143,26 +158,49 @@ enum SharedJournal {
             throw error
         }
         try? fileManager.removeItem(at: URL(fileURLWithPath: url.path + ".partial"))
-        pruneBackups(in: url.deletingLastPathComponent(), sparing: backup, fileManager: fileManager)
+        pruneBackups(in: url.deletingLastPathComponent(), sparing: [backup], fileManager: fileManager)
         return backup
     }
 
+    /// The backups in `directory`, newest first by the time in their names.
+    static func backups(in directory: URL, fileManager: FileManager = .default) -> [Backup] {
+        sortedBackupNames(in: directory, fileManager: fileManager).map { name in
+            let url = directory.appending(path: name)
+            let date = (try? backupStampStyle.parse(backupStamp(of: name).stamp))
+                ?? ((try? fileManager.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date)
+                ?? .distantPast
+            return Backup(url: url, date: date)
+        }
+    }
+
     /// Deletes all but the newest `keeping` backups in `directory`, newest by the time in their names.
-    /// `sparing` (the backup just made) is always kept and counts toward `keeping`, even if a clock
-    /// that moved backward gave it an older name than the rest.
-    static func pruneBackups(in directory: URL, keeping: Int = backupLimit, sparing spared: URL? = nil, fileManager: FileManager = .default) {
+    /// `sparing` (say, the backup just made) are always kept and count toward `keeping`, even if a
+    /// clock that moved backward gave them older names than the rest.
+    static func pruneBackups(in directory: URL, keeping: Int = backupLimit, sparing spared: [URL] = [], fileManager: FileManager = .default) {
+        let sparedNames = Set(spared.map { $0.lastPathComponent })
+        let names = sortedBackupNames(in: directory, fileManager: fileManager)
+        let sparedCount = names.filter { sparedNames.contains($0) }.count
+        for name in names.filter({ !sparedNames.contains($0) }).dropFirst(max(0, keeping - sparedCount)) {
+            removeStore(at: directory.appending(path: name), fileManager: fileManager)
+        }
+    }
+
+    private static func sortedBackupNames(in directory: URL, fileManager: FileManager) -> [String] {
         let names = (try? fileManager.contentsOfDirectory(atPath: directory.path)) ?? []
-        let backups = names
-            .filter { $0.hasPrefix(backupPrefix) && $0.hasSuffix(".store") && $0 != spared?.lastPathComponent }
+        return names
+            .filter { $0.hasPrefix(backupPrefix) && $0.hasSuffix(".store") }
             .map { name -> (name: String, stamp: String, attempt: Int) in
-                // "Foresight-backup-<stamp>.store", or "-<stamp>-<attempt>.store" for one made in the same second.
-                let parts = name.dropFirst(backupPrefix.count).dropLast(".store".count).split(separator: "-")
-                return (name, String(parts.first ?? ""), parts.count > 1 ? Int(parts[1]) ?? 1 : 1)
+                let parsed = backupStamp(of: name)
+                return (name, parsed.stamp, parsed.attempt)
             }
             .sorted { $0.stamp != $1.stamp ? $0.stamp > $1.stamp : $0.attempt > $1.attempt }
-        for backup in backups.dropFirst(max(0, keeping - (spared == nil ? 0 : 1))) {
-            removeStore(at: directory.appending(path: backup.name), fileManager: fileManager)
-        }
+            .map { $0.name }
+    }
+
+    /// "Foresight-backup-<stamp>.store", or "-<stamp>-<attempt>.store" for one made in the same second.
+    private static func backupStamp(of name: String) -> (stamp: String, attempt: Int) {
+        let parts = name.dropFirst(backupPrefix.count).dropLast(".store".count).split(separator: "-")
+        return (String(parts.first ?? ""), parts.count > 1 ? Int(parts[1]) ?? 1 : 1)
     }
 
     static func removeStore(at url: URL, fileManager: FileManager = .default) {
