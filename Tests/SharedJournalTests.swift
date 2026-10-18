@@ -87,9 +87,75 @@ struct SharedJournalStoreTests {
         try FileManager.default.createDirectory(at: groupDirectory, withIntermediateDirectories: true)
         try Data("torn".utf8).write(to: groupStore)
         try Data("torn".utf8).write(to: URL(fileURLWithPath: groupStore.path + ".partial"))
+        defaults.set(true, forKey: SharedJournal.copyingKey)
         let (_, store) = try SharedJournal.open(groupDirectory: groupDirectory, appDirectory: appDirectory, defaults: defaults, using: openJournal)
         #expect(store.entries.map(\.body) == ["Walked to work"])
         #expect(!exists(appStore))
+        #expect(backups().isEmpty)
+        #expect(!defaults.bool(forKey: SharedJournal.copyingKey))
+    }
+
+    private func backups() -> [URL] {
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: groupDirectory.path)) ?? []
+        return names.filter { $0.hasPrefix(SharedJournal.backupPrefix) && $0.hasSuffix(".store") }.sorted().map { groupDirectory.appending(path: $0) }
+    }
+
+    @Test("a group journal left behind by a reset is backed up, not overwritten, when the group comes back")
+    func resetJournalIsBackedUp() throws {
+        // The journal moved into the group, then a build without App Groups was reset and started
+        // a new journal in the app's directory. Now the group is reachable again.
+        try writeJournal(at: groupStore, body: "Months of logs")
+        try writeJournal(at: appStore, body: "After the reset")
+        let (_, store) = try SharedJournal.open(groupDirectory: groupDirectory, appDirectory: appDirectory, defaults: defaults, using: openJournal)
+        #expect(store.entries.map(\.body) == ["After the reset"])
+        #expect(!exists(appStore))
+        #expect(defaults.bool(forKey: SharedJournal.inGroupKey))
+
+        let backup = try #require(backups().first)
+        #expect(backups().count == 1)
+        let (_, saved) = try openJournal(backup)
+        #expect(saved.entries.map(\.body) == ["Months of logs"])
+    }
+
+    @Test("backups taken in the same second get their own names")
+    func backupNames() throws {
+        let date = Date(timeIntervalSince1970: 1_790_000_000)
+        try FileManager.default.createDirectory(at: groupDirectory, withIntermediateDirectories: true)
+        try Data("one".utf8).write(to: groupStore)
+        let first = try SharedJournal.backUpStore(at: groupStore, date: date)
+        try Data("two".utf8).write(to: groupStore)
+        try Data("log".utf8).write(to: URL(fileURLWithPath: groupStore.path + "-wal"))
+        let second = try SharedJournal.backUpStore(at: groupStore, date: date)
+        #expect(first != second)
+        #expect(try String(contentsOf: first, encoding: .utf8) == "one")
+        #expect(try String(contentsOf: second, encoding: .utf8) == "two")
+        #expect(exists(second, "-wal"))
+        #expect(!exists(groupStore))
+        #expect(!exists(groupStore, "-wal"))
+    }
+
+    /// Fails to move a store's main file, after its log has moved.
+    private final class MainFileWontMove: FileManager {
+        struct Refused: Error { }
+        override func moveItem(at srcURL: URL, to dstURL: URL) throws {
+            if srcURL.pathExtension == "store" { throw Refused() }
+            try super.moveItem(at: srcURL, to: dstURL)
+        }
+    }
+
+    @Test("a backup that can't finish leaves the store whole where it was")
+    func backupRollsBack() throws {
+        try FileManager.default.createDirectory(at: groupDirectory, withIntermediateDirectories: true)
+        try Data("main".utf8).write(to: groupStore)
+        try Data("log".utf8).write(to: URL(fileURLWithPath: groupStore.path + "-wal"))
+        #expect(throws: MainFileWontMove.Refused.self) {
+            try SharedJournal.backUpStore(at: groupStore, fileManager: MainFileWontMove())
+        }
+        #expect(exists(groupStore))
+        #expect(exists(groupStore, "-wal"))
+        #expect(backups().isEmpty)
+        let leftovers = (try FileManager.default.contentsOfDirectory(atPath: groupDirectory.path)).filter { $0.hasPrefix(SharedJournal.backupPrefix) }
+        #expect(leftovers.isEmpty)
     }
 
     @Test("once the journal is in the group, an old app-directory copy never replaces it")
@@ -121,6 +187,15 @@ struct SharedJournalStoreTests {
         #expect(items.map(\.text) == ["Late coffee"])
         context.insert(JournalCategory(name: "Widget"))
         #expect(throws: (any Error).self) { try context.save() }
+    }
+
+    @Test("the widget asks for the app to be opened until there's a journal in the group")
+    func widgetWithoutJournal() throws {
+        #expect(CheckInWidgetPlan.loadItems(storeURL: nil) == nil)
+        #expect(CheckInWidgetPlan.loadItems(storeURL: groupStore) == nil)
+        #expect(!exists(groupStore))
+        try writeJournal(at: groupStore, body: "Late coffee")
+        #expect(CheckInWidgetPlan.loadItems(storeURL: groupStore)?.map(\.text) == ["Late coffee"])
     }
 }
 

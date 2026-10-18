@@ -19,20 +19,10 @@ struct CheckInsEntry: TimelineEntry, Sendable {
     let state: CheckInWidgetState?
 }
 
-/// Reads the journal the app keeps in the App Group container. It never writes or migrates it;
-/// the app reloads every timeline after each change.
+/// Reads the journal the app keeps in the App Group container.
 enum CheckInWidgetStore {
     static func loadItems() -> [CheckInWidgetItem]? {
-        guard let url = SharedJournal.sharedStoreURL else { return nil }
-        // No journal yet: the app hasn't been opened. Don't create one here.
-        guard FileManager.default.fileExists(atPath: url.path) else { return [] }
-        do {
-            let container = try ForesightPersistence.makeContainer(storeURL: url, allowsSave: false)
-            let context = ModelContext(container)
-            return CheckInWidgetPlan.items(from: try context.fetch(FetchDescriptor<OutcomeCheckIn>()))
-        } catch {
-            return nil
-        }
+        CheckInWidgetPlan.loadItems(storeURL: SharedJournal.sharedStoreURL)
     }
 }
 

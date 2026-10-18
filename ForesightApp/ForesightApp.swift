@@ -105,6 +105,8 @@ final class AppDatabase {
         } else {
             // Resetting a build that can't reach the group starts a new journal outside it.
             if SharedJournal.groupDirectory == nil { UserDefaults.standard.removeObject(forKey: SharedJournal.inGroupKey) }
+            // A copy into the group that was under way is over; the next one backs up what it finds.
+            UserDefaults.standard.removeObject(forKey: SharedJournal.copyingKey)
             if let lastStoreURL { SharedJournal.removeStore(at: lastStoreURL) }
             open(inMemory: false)
         }

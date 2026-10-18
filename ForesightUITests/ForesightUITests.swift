@@ -2,13 +2,18 @@ import XCTest
 
 @MainActor
 final class ForesightUITests: XCTestCase {
-    private var app: XCUIApplication!
+    // Set once in setUp, before any test reads it.
+    nonisolated(unsafe) private var app: XCUIApplication!
 
     override func setUpWithError() throws {
         continueAfterFailure = false
-        app = XCUIApplication()
-        app.launchArguments = ["-in-memory-store", "-hasCompletedOnboarding", "YES"]
-        app.launch()
+        // XCTest's setUp isn't main-actor isolated, but it runs on the main thread.
+        app = MainActor.assumeIsolated {
+            let app = XCUIApplication()
+            app.launchArguments = ["-in-memory-store", "-hasCompletedOnboarding", "YES"]
+            app.launch()
+            return app
+        }
     }
 
     /// Saves the new-log editor, then leaves the post-log check-in step without answering.
