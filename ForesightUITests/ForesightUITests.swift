@@ -239,6 +239,15 @@ final class ForesightUITests: XCTestCase {
         XCTAssertTrue(suggestion.waitForNonExistence(timeout: 2))
     }
 
+    /// Types into the new-log editor, tapping it again if a tap during the cover's slide-in
+    /// didn't give it keyboard focus.
+    private func typeLog(_ text: String) {
+        let editor = app.textViews["What happened?"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 3))
+        for _ in 0..<3 where !((editor.value(forKey: "hasKeyboardFocus") as? Bool) ?? false) { editor.tap() }
+        editor.typeText(text)
+    }
+
     /// Opens the Journal's Filter sheet.
     private func openJournalFilters() {
         let filter = app.buttons["journal.filter"]
@@ -278,7 +287,7 @@ final class ForesightUITests: XCTestCase {
         // Tapping elsewhere in the sheet closes the open panel.
         category.tap()
         XCTAssertTrue(app.buttons["All categories"].waitForExistence(timeout: 2))
-        app.staticTexts["Filter logs"].tap()
+        app.staticTexts["DATES"].tap()
         XCTAssertFalse(app.buttons["All categories"].waitForExistence(timeout: 1))
 
         checkIn.tap()
@@ -302,13 +311,11 @@ final class ForesightUITests: XCTestCase {
         app.textFields["Create a category"].tap()
         app.textFields["Create a category"].typeText("Dropdown test")
         app.buttons["Add"].tap()
-        app.textViews["What happened?"].tap()
-        app.textViews["What happened?"].typeText("Only this category should match")
+        typeLog("Only this category should match")
         saveNewLog()
 
         app.buttons["New log"].tap()
-        app.textViews["What happened?"].tap()
-        app.textViews["What happened?"].typeText("Uncategorized log")
+        typeLog("Uncategorized log")
         saveNewLog()
 
         let matching = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Only this category should match")).firstMatch
