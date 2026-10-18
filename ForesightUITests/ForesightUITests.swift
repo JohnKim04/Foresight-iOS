@@ -304,7 +304,8 @@ final class ForesightUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Clear filters"].exists)
         chip.tap()
         XCTAssertTrue(chip.waitForNonExistence(timeout: 3), "Tapping the chip should remove its filter")
-        XCTAssertTrue(app.staticTexts["Last 30 days"].waitForExistence(timeout: 3))
+        // The hierarchy is printed on failure, since CI keeps only the log.
+        XCTAssertTrue(app.staticTexts["Last 30 days"].waitForExistence(timeout: 3), app.debugDescription)
         XCTAssertTrue(log.waitForExistence(timeout: 3), "The log should come back once the filter is removed")
     }
 
