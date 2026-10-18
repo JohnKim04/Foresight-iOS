@@ -26,6 +26,7 @@ struct SettingsView: View {
         self.reminders = reminders
         self.nudges = nudges
         self.preferences = preferences
+        preferences.repairEqualQuietHours()
         _remindersEnabled = State(initialValue: preferences.remindersEnabled)
         _nudgesEnabled = State(initialValue: preferences.nudgesEnabled)
         _quietHoursEnabled = State(initialValue: preferences.quietHoursEnabled)
@@ -97,6 +98,16 @@ struct SettingsView: View {
             if reminders.authorization == .denied {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Notifications are off for Foresight in iOS Settings, so nothing below can reach you.")
+                        .font(.subheadline)
+                        .foregroundStyle(Color.foresightInk)
+                    Button("Open iOS Settings") {
+                        if let url = URL(string: UIApplication.openNotificationSettingsURLString) { openURL(url) }
+                    }
+                }
+                .padding(.vertical, 4)
+            } else if reminders.authorization == .allowed && remindersEnabled && !reminders.badgesEnabled {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Badges are off for Foresight in iOS Settings, so the app icon won't count waiting check-ins. Reminders still arrive.")
                         .font(.subheadline)
                         .foregroundStyle(Color.foresightInk)
                     Button("Open iOS Settings") {

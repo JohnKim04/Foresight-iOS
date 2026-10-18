@@ -72,6 +72,15 @@ struct NotificationPreferences {
         quietHoursEnabled ? QuietHours(start: quietHoursStart, end: quietHoursEnd) : .off
     }
 
+    /// Equal ends mean never quiet, which the hour wheels can't show, since each leaves out the
+    /// other end's hour. Says so with the switch instead, and puts the wheels back on the usual hours.
+    func repairEqualQuietHours() {
+        guard quietHoursStart == quietHoursEnd else { return }
+        quietHoursEnabled = false
+        quietHoursStart = QuietHours.standard.start
+        quietHoursEnd = QuietHours.standard.end
+    }
+
     private func bool(_ key: String, default value: Bool) -> Bool {
         defaults.object(forKey: key) as? Bool ?? value
     }

@@ -143,7 +143,7 @@ struct JournalDiscoveryTests {
         #expect(!ForesightFormat.listDate(now).contains(":" ) || ForesightFormat.listDate(now).split(separator: ":").count == 2)
     }
 
-    @Test("leaves the year out of detail dates only within the current year")
+    @Test("leaves the year out of detail dates within the current year or a few months either side")
     func detailDateYear() {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "UTC")!
@@ -151,6 +151,15 @@ struct JournalDiscoveryTests {
         let lastYear = ForesightFormat.detailDate(now, now: now.addingTimeInterval(60 * 60 * 24 * 200), calendar: calendar)
         #expect(!sameYear.contains("2024"))
         #expect(lastYear.contains("2024"))
+
+        // Last week, seen in early January, and next week's check-in, seen in late December.
+        let newYear = calendar.date(from: DateComponents(year: 2025, month: 1, day: 3, hour: 12))!
+        let lastWeek = calendar.date(from: DateComponents(year: 2024, month: 12, day: 27, hour: 12))!
+        #expect(!ForesightFormat.detailDate(lastWeek, now: newYear, calendar: calendar).contains("2024"))
+        #expect(!ForesightFormat.detailDate(newYear, now: lastWeek, calendar: calendar).contains("2025"))
+        // The same day a year earlier is a year away, not a few months.
+        let yearAgo = calendar.date(from: DateComponents(year: 2024, month: 1, day: 3, hour: 12))!
+        #expect(ForesightFormat.detailDate(yearAgo, now: newYear, calendar: calendar).contains("2024"))
     }
 
     @Test("formats outcome labels faithfully")

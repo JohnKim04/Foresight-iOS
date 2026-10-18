@@ -134,6 +134,24 @@ struct SharedJournalStoreTests {
         #expect(!exists(groupStore, "-wal"))
     }
 
+    @Test("only the newest backups are kept")
+    func prunesOldBackups() throws {
+        try FileManager.default.createDirectory(at: groupDirectory, withIntermediateDirectories: true)
+        let start = Date(timeIntervalSince1970: 1_790_000_000)
+        var made: [URL] = []
+        // Two in the same second, so the numbered name has to count as the newer one.
+        for (index, offset) in [0, 3_600, 7_200, 7_200, 10_800].enumerated() {
+            try Data("journal \(index)".utf8).write(to: groupStore)
+            try Data("log".utf8).write(to: URL(fileURLWithPath: groupStore.path + "-wal"))
+            made.append(try SharedJournal.backUpStore(at: groupStore, date: start.addingTimeInterval(TimeInterval(offset))))
+        }
+        #expect(Set(backups()) == Set(made.suffix(SharedJournal.backupLimit)))
+        #expect(!exists(made[0], "-wal"))
+        #expect(!exists(made[1]))
+        #expect(exists(made[2], "-wal"))
+        #expect(try String(contentsOf: made[4], encoding: .utf8) == "journal 4")
+    }
+
     /// Fails to move a store's main file, after its log has moved.
     private final class MainFileWontMove: FileManager {
         struct Refused: Error { }

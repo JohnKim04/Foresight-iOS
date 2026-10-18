@@ -19,6 +19,8 @@ enum SharedJournal {
     /// by an interrupted copy can be told apart from a journal that was already there.
     static let copyingKey = "journalCopyIntoAppGroupStarted"
     static let backupPrefix = "Foresight-backup-"
+    /// Backups kept beside the journal; older ones are deleted as a new one is made.
+    static let backupLimit = 3
 
     static var appGroupIdentifier: String? {
         guard let identifier = Bundle.main.object(forInfoDictionaryKey: appGroupInfoKey) as? String,
@@ -117,7 +119,7 @@ enum SharedJournal {
 
     /// Moves a store's files to `Foresight-backup-<time>.store` in the same directory, main file
     /// last so a backup never has a main file without its log. If a move fails, the ones already
-    /// made are undone. Returns the backup's URL.
+    /// made are undone. Only the newest `backupLimit` backups are kept. Returns the backup's URL.
     @discardableResult
     static func backUpStore(at url: URL, date: Date = .now, fileManager: FileManager = .default) throws -> URL {
         let stamp = date.formatted(.iso8601.year().month().day().time(includingFractionalSeconds: false).timeSeparator(.omitted).dateSeparator(.omitted))
@@ -141,7 +143,24 @@ enum SharedJournal {
             throw error
         }
         try? fileManager.removeItem(at: URL(fileURLWithPath: url.path + ".partial"))
+        pruneBackups(in: url.deletingLastPathComponent(), fileManager: fileManager)
         return backup
+    }
+
+    /// Deletes all but the newest `keeping` backups in `directory`, newest by the time in their names.
+    static func pruneBackups(in directory: URL, keeping: Int = backupLimit, fileManager: FileManager = .default) {
+        let names = (try? fileManager.contentsOfDirectory(atPath: directory.path)) ?? []
+        let backups = names
+            .filter { $0.hasPrefix(backupPrefix) && $0.hasSuffix(".store") }
+            .map { name -> (name: String, stamp: String, attempt: Int) in
+                // "Foresight-backup-<stamp>.store", or "-<stamp>-<attempt>.store" for one made in the same second.
+                let parts = name.dropFirst(backupPrefix.count).dropLast(".store".count).split(separator: "-")
+                return (name, String(parts.first ?? ""), parts.count > 1 ? Int(parts[1]) ?? 1 : 1)
+            }
+            .sorted { $0.stamp != $1.stamp ? $0.stamp > $1.stamp : $0.attempt > $1.attempt }
+        for backup in backups.dropFirst(max(0, keeping)) {
+            removeStore(at: directory.appending(path: backup.name), fileManager: fileManager)
+        }
     }
 
     static func removeStore(at url: URL, fileManager: FileManager = .default) {

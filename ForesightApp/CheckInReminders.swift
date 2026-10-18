@@ -150,6 +150,8 @@ enum CheckInReminderPlan {
 protocol ReminderNotificationCenter: Sendable {
     func authorization() async -> ReminderAuthorization
     func requestAuthorization() async -> Bool
+    /// Whether iOS shows the app icon count, which the user can turn off on its own.
+    func badgesEnabled() async -> Bool
     func scheduledReminders() async -> [ScheduledReminder]
     func deliveredIdentifiers() async -> [String]
     func add(_ reminder: CheckInReminder) async throws
@@ -169,6 +171,18 @@ struct SystemReminderNotificationCenter: ReminderNotificationCenter {
 
     func requestAuthorization() async -> Bool {
         (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])) ?? false
+    }
+
+    /// Permission given before Foresight asked for badges doesn't include them. Asking again
+    /// with badges doesn't show a prompt once the user has chosen, so ask, then check again.
+    func badgesEnabled() async -> Bool {
+        let center = UNUserNotificationCenter.current()
+        var settings = await center.notificationSettings()
+        if settings.authorizationStatus == .authorized, settings.badgeSetting == .notSupported {
+            _ = try? await center.requestAuthorization(options: [.alert, .sound, .badge])
+            settings = await center.notificationSettings()
+        }
+        return settings.badgeSetting == .enabled
     }
 
     func scheduledReminders() async -> [ScheduledReminder] {
@@ -231,6 +245,7 @@ struct SystemReminderNotificationCenter: ReminderNotificationCenter {
 struct InertReminderNotificationCenter: ReminderNotificationCenter {
     func authorization() async -> ReminderAuthorization { .allowed }
     func requestAuthorization() async -> Bool { true }
+    func badgesEnabled() async -> Bool { true }
     func scheduledReminders() async -> [ScheduledReminder] { [] }
     func deliveredIdentifiers() async -> [String] { [] }
     func add(_ reminder: CheckInReminder) async throws { }
@@ -245,6 +260,8 @@ struct InertReminderNotificationCenter: ReminderNotificationCenter {
 @Observable
 final class CheckInReminderScheduler {
     private(set) var authorization: ReminderAuthorization = .notDetermined
+    /// False when reminders can arrive but iOS keeps the app icon count off, so Settings can say so.
+    private(set) var badgesEnabled = true
     @ObservationIgnored private let center: any ReminderNotificationCenter
     @ObservationIgnored private let now: () -> Date
     @ObservationIgnored private let calendar: () -> Calendar
@@ -317,6 +334,7 @@ final class CheckInReminderScheduler {
         authorization = await center.authorization()
         let date = now()
         let active = authorization == .allowed && isEnabled()
+        if active { badgesEnabled = await center.badgesEnabled() }
         let delivered = await center.deliveredIdentifiers()
         // With reminders turned off, delivered ones go too, as nudges do.
         let due = isEnabled() ? Set(sources.filter { $0.dueAt <= date }.map(\.checkInID)) : []

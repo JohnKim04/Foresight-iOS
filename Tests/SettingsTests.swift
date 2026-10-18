@@ -204,6 +204,25 @@ struct NotificationPreferencesTests {
         #expect(!preferences.nudgesEnabled)
         #expect(preferences.quietHoursStart == QuietHours.standard.start)
     }
+
+    @Test("equal quiet-hour ends become quiet hours turned off, with the wheels on the usual hours")
+    func repairsEqualQuietHours() throws {
+        let (preferences, _) = try makePreferences()
+        preferences.quietHoursStart = 9
+        preferences.quietHoursEnd = 9
+        #expect(preferences.quietHours == QuietHours(start: 9, end: 9))
+        preferences.repairEqualQuietHours()
+        #expect(!preferences.quietHoursEnabled)
+        #expect(preferences.quietHours == .off)
+        #expect(preferences.quietHoursStart == QuietHours.standard.start)
+        #expect(preferences.quietHoursEnd == QuietHours.standard.end)
+
+        preferences.quietHoursEnabled = true
+        preferences.quietHoursStart = 23
+        preferences.quietHoursEnd = 6
+        preferences.repairEqualQuietHours()
+        #expect(preferences.quietHours == QuietHours(start: 23, end: 6))
+    }
 }
 
 @MainActor

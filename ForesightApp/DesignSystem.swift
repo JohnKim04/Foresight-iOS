@@ -1,5 +1,35 @@
+import Combine
 import SwiftUI
 import UIKit
+
+// MARK: - Clock
+
+/// Keeps `now` current to the hour for views that depend on the time of day or the date. It moves
+/// on at each hour, when the app comes back to the front (sleeps pause while it's suspended) and
+/// on significant time changes (midnight, a new time zone, daylight saving).
+struct HourlyClock: ViewModifier {
+    @Binding var now: Date
+    @Environment(\.scenePhase) private var scenePhase
+
+    func body(content: Content) -> some View {
+        content
+            .task(id: now) {
+                let nextHour = Calendar.current.dateInterval(of: .hour, for: now)?.end ?? now.addingTimeInterval(3600)
+                try? await Task.sleep(for: .seconds(max(0, nextHour.timeIntervalSinceNow) + 0.5))
+                if !Task.isCancelled { now = .now }
+            }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { now = .now }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification).receive(on: DispatchQueue.main)) { _ in
+                now = .now
+            }
+    }
+}
+
+extension View {
+    func hourlyClock(_ now: Binding<Date>) -> some View { modifier(HourlyClock(now: now)) }
+}
 
 // MARK: - Brand tokens
 

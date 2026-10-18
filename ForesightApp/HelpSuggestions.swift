@@ -162,12 +162,26 @@ func journalSuggestion(_ report: HelpSuggestionReport) -> HelpSuggestion? {
     report.suggestions.first { !$0.loggedToday }
 }
 
-/// Remembers the day the Journal suggestion was hidden, so it comes back the next day.
+/// Remembers which categories' Journal suggestions were hidden today, so hiding one doesn't
+/// hide a different suggestion that comes up later in the day, and both come back tomorrow.
+/// Stored as the day key followed by the hidden category IDs: "2026-10-18 <id>,<id>".
 enum JournalSuggestionState {
-    static let hiddenDayKey = "journalSuggestion.hiddenDay"
+    static let hiddenKey = "journalSuggestion.hiddenCategories"
 
-    static func isHidden(hiddenDay: String, now: Date = .now, calendar: Calendar = .current) -> Bool {
-        hiddenDay == localDayKey(now, calendar: calendar)
+    static func isHidden(_ categoryID: UUID, stored: String, now: Date = .now, calendar: Calendar = .current) -> Bool {
+        hiddenToday(stored, now: now, calendar: calendar).contains(categoryID)
+    }
+
+    /// `stored` with `categoryID` added for today; categories hidden on earlier days are dropped.
+    static func hiding(_ categoryID: UUID, stored: String, now: Date = .now, calendar: Calendar = .current) -> String {
+        let ids = hiddenToday(stored, now: now, calendar: calendar).union([categoryID])
+        return "\(localDayKey(now, calendar: calendar)) \(ids.map(\.uuidString).sorted().joined(separator: ","))"
+    }
+
+    private static func hiddenToday(_ stored: String, now: Date, calendar: Calendar) -> Set<UUID> {
+        let parts = stored.split(separator: " ", maxSplits: 1)
+        guard parts.count == 2, parts[0] == localDayKey(now, calendar: calendar) else { return [] }
+        return Set(parts[1].split(separator: ",").compactMap { UUID(uuidString: String($0)) })
     }
 }
 
