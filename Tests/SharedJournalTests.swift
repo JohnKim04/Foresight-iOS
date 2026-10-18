@@ -231,6 +231,137 @@ struct SharedJournalStoreTests {
     }
 }
 
+@MainActor
+struct JournalBackupTests {
+    private let root = FileManager.default.temporaryDirectory.appendingPathComponent("JournalBackupTests-\(UUID().uuidString)", isDirectory: true)
+    private var storeURL: URL { root.appending(path: SharedJournal.storeFileName) }
+    private let now = Date(timeIntervalSince1970: 1_790_000_000)
+
+    private func openJournal(at url: URL? = nil, now date: Date? = nil) throws -> JournalStore {
+        let container = try ForesightPersistence.makeContainer(storeURL: url ?? storeURL)
+        let fixed = date ?? now
+        return JournalStore(modelContext: container.mainContext, modelContainer: container, now: { fixed })
+    }
+
+    /// A separate journal saved as a backup made at `date`.
+    private func writeBackup(at date: Date, bodies: [String]) throws -> URL {
+        let url = SharedJournal.newBackupURL(beside: storeURL, date: date)
+        let journal = try openJournal(at: url, now: date)
+        for body in bodies { _ = try journal.saveLog(body: body, eventAt: date, categoryIDs: []) }
+        return url
+    }
+
+    private func exists(_ url: URL) -> Bool { FileManager.default.fileExists(atPath: url.path) }
+
+    @Test("restoring a backup replaces the journal, and the copy it saves first undoes it")
+    func restoresAndUndoes() throws {
+        let store = try openJournal()
+        let workout = try #require(store.categories.first { $0.name == "Workout" })
+        let run = try store.saveLog(body: "Morning run", eventAt: now.addingTimeInterval(-3_600), categoryIDs: [workout.id])
+        let runID = run.id
+        let answered = try store.createCheckIn(for: run, phase: .immediate)
+        try store.answer(answered, response: .muchBetter, notSure: false, note: "Lighter all day", excludedFromAnalysis: false)
+        let scroll = try store.saveLog(body: "Late scroll", eventAt: now.addingTimeInterval(-600), categoryIDs: [])
+        _ = try store.createCheckIn(for: scroll, phase: .delayed, dueAt: now.addingTimeInterval(3_600))
+        try store.archiveCategory(try #require(store.categories.first { $0.name == "Sleep" }))
+
+        let other = try writeBackup(at: now.addingTimeInterval(-60), bodies: ["From another phone"])
+        let listed = try #require(store.backups().first)
+        #expect(store.backups().count == 1)
+        #expect(listed.url.lastPathComponent == other.lastPathComponent)
+        #expect(listed.date == now.addingTimeInterval(-60))
+        #expect(listed.logCount == 1)
+        #expect(listed.checkInCount == 0)
+
+        let safetyCopy = try store.restoreBackup(at: other)
+        #expect(store.entries.map(\.body) == ["From another phone"])
+        #expect(store.checkIns.isEmpty)
+        #expect(!store.categories.contains { $0.isArchived })
+        // The backup restored stays, beside the journal it replaced.
+        #expect(store.backups().map(\.url.lastPathComponent) == [safetyCopy, other].map(\.lastPathComponent))
+        #expect(store.backups().first?.logCount == 2)
+        #expect(store.backups().first?.checkInCount == 2)
+        #expect(store.backups().first?.date == now)
+
+        try store.restoreBackup(at: safetyCopy)
+        #expect(store.entries.map(\.body) == ["Late scroll", "Morning run"])
+        let restoredRun = try #require(store.entries.first { $0.body == "Morning run" })
+        #expect(restoredRun.categories.map(\.name) == ["Workout"])
+        let restoredAnswer = try #require(store.checkIns.first { $0.phase == .immediate })
+        #expect(restoredAnswer.entry?.id == runID)
+        #expect(restoredAnswer.overall == .muchBetter)
+        #expect(restoredAnswer.note == "Lighter all day")
+        let pending = try #require(store.checkIns.first { $0.phase == .delayed })
+        #expect(pending.status == .pending)
+        #expect(pending.dueAt == now.addingTimeInterval(3_600))
+        #expect(store.categories.first { $0.name == "Sleep" }?.isArchived == true)
+
+        // Restoring over the same journal after edits updates the records it shares.
+        _ = try store.saveLog(id: restoredRun.id, body: "Edited", eventAt: restoredRun.eventAt, categoryIDs: [])
+        try store.deleteEntry(try #require(store.entries.first { $0.body == "Late scroll" }))
+        _ = try store.saveLog(body: "Written after the backup", eventAt: now, categoryIDs: [])
+        try store.restoreBackup(at: safetyCopy)
+        #expect(store.entries.map(\.body) == ["Late scroll", "Morning run"])
+        #expect(store.entries.first { $0.body == "Morning run" }?.categories.map(\.name) == ["Workout"])
+        #expect(store.checkIns.count == 2)
+        #expect(exists(safetyCopy))
+        #expect(SharedJournal.backups(in: root).count == SharedJournal.backupLimit)
+    }
+
+    @Test("pruning after a restore keeps the copy it saved and the backup restored")
+    func pruningSparesRestore() throws {
+        let store = try openJournal()
+        _ = try store.saveLog(body: "Today", eventAt: now, categoryIDs: [])
+        // Made by a clock running ahead, so the copy the restore saves gets the oldest name.
+        let oldest = try writeBackup(at: now.addingTimeInterval(3_600), bodies: ["One"])
+        let middle = try writeBackup(at: now.addingTimeInterval(7_200), bodies: ["Two"])
+        let newest = try writeBackup(at: now.addingTimeInterval(10_800), bodies: ["Three"])
+
+        let safetyCopy = try store.restoreBackup(at: oldest)
+        #expect(store.entries.map(\.body) == ["One"])
+        #expect(Set(SharedJournal.backups(in: root).map(\.url.lastPathComponent)) == Set([newest, oldest, safetyCopy].map(\.lastPathComponent)))
+        #expect(!exists(middle))
+        let saved = try JournalArchive.read(from: safetyCopy)
+        #expect(saved.entries.map(\.body) == ["Today"])
+    }
+
+    @Test("a backup that can't be read is listed as such, and restoring it changes nothing")
+    func unreadableBackup() throws {
+        let store = try openJournal()
+        _ = try store.saveLog(body: "Keep me", eventAt: now, categoryIDs: [])
+        let broken = SharedJournal.newBackupURL(beside: storeURL, date: now.addingTimeInterval(-60))
+        try Data("not a journal".utf8).write(to: broken)
+
+        #expect(store.backups().map(\.isReadable) == [false])
+        #expect(throws: (any Error).self) { try store.restoreBackup(at: broken) }
+        #expect(store.entries.map(\.body) == ["Keep me"])
+        #expect(SharedJournal.backups(in: root).map(\.url.lastPathComponent) == [broken.lastPathComponent])
+    }
+
+    @Test("a journal kept in memory has no backups to restore")
+    func inMemoryJournal() throws {
+        let container = try ForesightPersistence.makeContainer(storeURL: nil)
+        let store = JournalStore(modelContext: container.mainContext, modelContainer: container)
+        #expect(store.storeURL == nil)
+        #expect(store.backups().isEmpty)
+        #expect(throws: JournalBackupError.noBackups) { try store.restoreBackup(at: storeURL) }
+    }
+
+    @Test("backups list newest first, with the time in their names")
+    func backupListing() throws {
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let first = SharedJournal.newBackupURL(beside: storeURL, date: now)
+        try Data("one".utf8).write(to: first)
+        let sameSecond = SharedJournal.newBackupURL(beside: storeURL, date: now)
+        try Data("two".utf8).write(to: sameSecond)
+        let later = SharedJournal.newBackupURL(beside: storeURL, date: now.addingTimeInterval(86_400))
+        try Data("three".utf8).write(to: later)
+        let listed = SharedJournal.backups(in: root)
+        #expect(listed.map(\.url.lastPathComponent) == [later, sameSecond, first].map(\.lastPathComponent))
+        #expect(listed.map(\.date) == [now.addingTimeInterval(86_400), now, now])
+    }
+}
+
 struct ForesightLinkTests {
     @Test("links round-trip through their URLs")
     func roundTrip() {

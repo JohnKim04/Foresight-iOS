@@ -252,3 +252,206 @@ final class JournalStore {
 }
 
 enum DemoDataState: Equatable { case none, partial, complete }
+
+// MARK: - Backups
+
+/// A backup beside the journal, as Settings lists it.
+struct JournalBackup: Identifiable, Equatable {
+    let url: URL
+    let date: Date
+    /// Nil when the backup can't be read.
+    let logCount: Int?
+    let checkInCount: Int?
+
+    var id: URL { url }
+    var isReadable: Bool { logCount != nil }
+}
+
+enum JournalBackupError: LocalizedError, Equatable {
+    case noBackups
+
+    var errorDescription: String? { "This journal doesn't keep backups." }
+}
+
+extension JournalStore {
+    /// The journal's store file, or nil for a journal kept in memory.
+    var storeURL: URL? {
+        guard let configuration = modelContainer?.configurations.first, !configuration.isStoredInMemoryOnly else { return nil }
+        return configuration.url
+    }
+
+    /// The backups beside the journal, newest first, with what each holds.
+    func backups() -> [JournalBackup] {
+        guard let storeURL else { return [] }
+        return SharedJournal.backups(in: storeURL.deletingLastPathComponent()).map { backup in
+            let archive = try? JournalArchive.read(from: backup.url)
+            return JournalBackup(url: backup.url, date: backup.date, logCount: archive?.entries.count, checkInCount: archive?.checkIns.count)
+        }
+    }
+
+    /// Replaces the journal with the backup at `url`, after saving the journal as it is now as a
+    /// new backup so the restore can be undone the same way. Pruning to the newest
+    /// `SharedJournal.backupLimit` afterwards always keeps that copy and the one restored.
+    /// Reminders, nudges and widgets follow through the usual reload. Returns the new backup's URL.
+    @discardableResult
+    func restoreBackup(at url: URL) throws -> URL {
+        guard let storeURL else { throw JournalBackupError.noBackups }
+        let restored = try JournalArchive.read(from: url)
+        let current = try JournalArchive(context: modelContext)
+        let safetyCopy = SharedJournal.newBackupURL(beside: storeURL, date: now())
+        do {
+            try current.write(toNewStoreAt: safetyCopy)
+        } catch {
+            SharedJournal.removeStore(at: safetyCopy)
+            throw error
+        }
+        do {
+            try restored.apply(to: modelContext)
+            try modelContext.save()
+        } catch {
+            // The journal is as it was, so its copy isn't needed and shouldn't crowd out an older backup.
+            modelContext.rollback()
+            SharedJournal.removeStore(at: safetyCopy)
+            reload()
+            throw error
+        }
+        reload()
+        SharedJournal.pruneBackups(in: storeURL.deletingLastPathComponent(), sparing: [safetyCopy, url])
+        return safetyCopy
+    }
+}
+
+/// A journal's records copied out of SwiftData, so they can be written into another store.
+struct JournalArchive {
+    struct Category {
+        let id: UUID
+        let name: String
+        let archivedAt: Date?
+    }
+
+    struct Entry {
+        let id: UUID
+        let body: String
+        let eventAt: Date
+        let createdAt: Date
+        let updatedAt: Date
+        let isFixture: Bool
+        let categoryIDs: [UUID]
+    }
+
+    struct CheckIn {
+        let id: UUID
+        let entryID: UUID?
+        let phase: OutcomePhase
+        let status: OutcomeStatus
+        let dueAt: Date?
+        let answeredAt: Date?
+        let overall: OutcomeValue?
+        let note: String
+        let excludedFromAnalysis: Bool
+        let createdAt: Date
+        let updatedAt: Date
+        let isFixture: Bool
+    }
+
+    var categories: [Category]
+    var entries: [Entry]
+    var checkIns: [CheckIn]
+
+    init(context: ModelContext) throws {
+        categories = try context.fetch(FetchDescriptor<JournalCategory>()).map { Category(id: $0.id, name: $0.name, archivedAt: $0.archivedAt) }
+        entries = try context.fetch(FetchDescriptor<JournalEntry>()).map {
+            Entry(id: $0.id, body: $0.body, eventAt: $0.eventAt, createdAt: $0.createdAt, updatedAt: $0.updatedAt, isFixture: $0.isFixture, categoryIDs: $0.categories.map { $0.id })
+        }
+        checkIns = try context.fetch(FetchDescriptor<OutcomeCheckIn>()).map {
+            CheckIn(id: $0.id, entryID: $0.entry?.id, phase: $0.phase, status: $0.status, dueAt: $0.dueAt, answeredAt: $0.answeredAt, overall: $0.overall, note: $0.note, excludedFromAnalysis: $0.excludedFromAnalysis, createdAt: $0.createdAt, updatedAt: $0.updatedAt, isFixture: $0.isFixture)
+        }
+    }
+
+    /// Reads the store at `url` without changing it.
+    static func read(from url: URL) throws -> JournalArchive {
+        let container = try ForesightPersistence.makeContainer(storeURL: url, allowsSave: false)
+        // A context doesn't keep its container alive.
+        return try withExtendedLifetime(container) { try JournalArchive(context: ModelContext(container)) }
+    }
+
+    /// Writes these records into a new store at `url`.
+    func write(toNewStoreAt url: URL) throws {
+        let container = try ForesightPersistence.makeContainer(storeURL: url)
+        try withExtendedLifetime(container) {
+            let context = ModelContext(container)
+            try apply(to: context)
+            try context.save()
+        }
+    }
+
+    /// Makes the journal in `context` match these records without saving: records it shares are
+    /// updated in place (so no unique ID is inserted twice), missing ones are added, and the rest
+    /// are deleted. A check-in whose log isn't here is left out, as the app never shows one.
+    func apply(to context: ModelContext) throws {
+        let existingCategories = Dictionary(try context.fetch(FetchDescriptor<JournalCategory>()).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let existingEntries = Dictionary(try context.fetch(FetchDescriptor<JournalEntry>()).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let existingCheckIns = Dictionary(try context.fetch(FetchDescriptor<OutcomeCheckIn>()).map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+
+        var categoryByID: [UUID: JournalCategory] = [:]
+        for item in categories {
+            let category: JournalCategory
+            if let existing = existingCategories[item.id] {
+                category = existing
+            } else {
+                category = JournalCategory(id: item.id, name: item.name)
+                context.insert(category)
+            }
+            category.name = item.name
+            category.archivedAt = item.archivedAt
+            categoryByID[item.id] = category
+        }
+
+        var entryByID: [UUID: JournalEntry] = [:]
+        for item in entries {
+            let entry: JournalEntry
+            if let existing = existingEntries[item.id] {
+                entry = existing
+            } else {
+                entry = JournalEntry(id: item.id, body: item.body, eventAt: item.eventAt)
+                context.insert(entry)
+            }
+            entry.body = item.body
+            entry.eventAt = item.eventAt
+            entry.createdAt = item.createdAt
+            entry.updatedAt = item.updatedAt
+            entry.isFixture = item.isFixture
+            entry.categories = item.categoryIDs.compactMap { categoryByID[$0] }
+            entryByID[item.id] = entry
+        }
+
+        var keptCheckIns = Set<UUID>()
+        for item in checkIns {
+            guard let entryID = item.entryID, let entry = entryByID[entryID] else { continue }
+            let checkIn: OutcomeCheckIn
+            if let existing = existingCheckIns[item.id] {
+                checkIn = existing
+                checkIn.entry = entry
+            } else {
+                checkIn = OutcomeCheckIn(id: item.id, entry: entry, phase: item.phase)
+                context.insert(checkIn)
+            }
+            checkIn.phase = item.phase
+            checkIn.status = item.status
+            checkIn.dueAt = item.dueAt
+            checkIn.answeredAt = item.answeredAt
+            checkIn.overall = item.overall
+            checkIn.note = item.note
+            checkIn.excludedFromAnalysis = item.excludedFromAnalysis
+            checkIn.createdAt = item.createdAt
+            checkIn.updatedAt = item.updatedAt
+            checkIn.isFixture = item.isFixture
+            keptCheckIns.insert(item.id)
+        }
+
+        // Check-ins go before logs, so a log's cascade never reaches one that was kept.
+        for (id, checkIn) in existingCheckIns where !keptCheckIns.contains(id) { context.delete(checkIn) }
+        for (id, entry) in existingEntries where entryByID[id] == nil { context.delete(entry) }
+        for (id, category) in existingCategories where categoryByID[id] == nil { context.delete(category) }
+    }
+}
