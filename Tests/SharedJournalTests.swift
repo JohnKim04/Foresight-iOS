@@ -351,6 +351,127 @@ struct JournalBackupTests {
         #expect(throws: JournalBackupError.noBackups) { try store.restoreBackup(at: storeURL) }
     }
 
+    @Test("a daily backup is taken at most once a day, only once there's a log, and restores like any other")
+    func dailyBackup() async throws {
+        var clock = now
+        let container = try ForesightPersistence.makeContainer(storeURL: storeURL)
+        let store = JournalStore(modelContext: container.mainContext, modelContainer: container, now: { clock })
+        #expect(await store.takeAutomaticBackupIfDue() == nil)
+        #expect(store.backups().isEmpty)
+
+        _ = try store.saveLog(body: "Morning run", eventAt: now, categoryIDs: [])
+        let first = try #require(await store.takeAutomaticBackupIfDue())
+        #expect(first.lastPathComponent.hasSuffix("-auto.store"))
+        let listed = try #require(store.backups().first)
+        #expect(listed.isAutomatic)
+        #expect(listed.date == now)
+        #expect(listed.logCount == 1)
+        #expect(SettingsView.backupDetail(listed) == "Daily backup with 1 log and 0 check-ins")
+
+        #expect(await store.takeAutomaticBackupIfDue() == nil)
+        clock = now.addingTimeInterval(23 * 3_600)
+        #expect(await store.takeAutomaticBackupIfDue() == nil)
+        clock = now.addingTimeInterval(24 * 3_600)
+        _ = try store.saveLog(body: "Late scroll", eventAt: clock, categoryIDs: [])
+        let second = try #require(await store.takeAutomaticBackupIfDue())
+        #expect(store.backups().map(\.url.lastPathComponent) == [second, first].map(\.lastPathComponent))
+        #expect(store.backups().first?.logCount == 2)
+
+        try store.restoreBackup(at: first)
+        #expect(store.entries.map(\.body) == ["Morning run"])
+    }
+
+    @Test("daily backups replace older daily ones, and other backups only once they're a week old")
+    func dailyBackupPruning() async throws {
+        var clock = now
+        let container = try ForesightPersistence.makeContainer(storeURL: storeURL)
+        let store = JournalStore(modelContext: container.mainContext, modelContainer: container, now: { clock })
+        _ = try store.saveLog(body: "Today", eventAt: now, categoryIDs: [])
+        // A journal moved aside at launch, then a restore of it, which saves a safety copy.
+        let movedAside = try writeBackup(at: now.addingTimeInterval(-60), bodies: ["From another phone"])
+        let safetyCopy = try store.restoreBackup(at: movedAside)
+
+        clock = now.addingTimeInterval(3_600)
+        let firstDaily = try #require(await store.takeAutomaticBackupIfDue())
+        #expect(Set(SharedJournal.backups(in: root).map(\.url.lastPathComponent)) == Set([movedAside, safetyCopy, firstDaily].map(\.lastPathComponent)))
+
+        // The next day's backup replaces the first daily one, not the copies a day old.
+        clock = now.addingTimeInterval(25 * 3_600)
+        let secondDaily = try #require(await store.takeAutomaticBackupIfDue())
+        #expect(Set(SharedJournal.backups(in: root).map(\.url.lastPathComponent)) == Set([movedAside, safetyCopy, secondDaily].map(\.lastPathComponent)))
+
+        // A week on, the oldest backup goes, whatever made it.
+        clock = now.addingTimeInterval(8 * 86_400)
+        let thirdDaily = try #require(await store.takeAutomaticBackupIfDue())
+        #expect(Set(SharedJournal.backups(in: root).map(\.url.lastPathComponent)) == Set([safetyCopy, secondDaily, thirdDaily].map(\.lastPathComponent)))
+    }
+
+    @Test("no daily backup is taken while every slot holds a recent backup made another way")
+    func dailyBackupWithoutRoom() async throws {
+        let store = try openJournal()
+        _ = try store.saveLog(body: "Today", eventAt: now, categoryIDs: [])
+        let made = try [3, 2, 1].map { try writeBackup(at: now.addingTimeInterval(TimeInterval(-$0 * 3_600)), bodies: ["Backup \($0)"]) }
+        #expect(await store.takeAutomaticBackupIfDue() == nil)
+        #expect(Set(SharedJournal.backups(in: root).map(\.url.lastPathComponent)) == Set(made.map(\.lastPathComponent)))
+    }
+
+    @Test("no daily backup replaces good copies after most of the journal is deleted, until a month has passed")
+    func dailyBackupAfterMassDeletion() async throws {
+        var clock = now
+        let container = try ForesightPersistence.makeContainer(storeURL: storeURL)
+        let store = JournalStore(modelContext: container.mainContext, modelContainer: container, now: { clock })
+        for body in ["One", "Two", "Three", "Four"] { _ = try store.saveLog(body: body, eventAt: now, categoryIDs: []) }
+        let good = try #require(await store.takeAutomaticBackupIfDue())
+        for entry in store.entries.filter({ $0.body != "One" }) { try store.deleteEntry(entry) }
+
+        clock = now.addingTimeInterval(86_400)
+        #expect(await store.takeAutomaticBackupIfDue() == nil)
+        clock = now.addingTimeInterval(3 * 86_400)
+        #expect(await store.takeAutomaticBackupIfDue() == nil)
+        #expect(SharedJournal.backups(in: root).map(\.url.lastPathComponent) == [good.lastPathComponent])
+
+        // Half the logs is still a journal worth keeping.
+        _ = try store.saveLog(body: "Five", eventAt: clock, categoryIDs: [])
+        #expect(await store.takeAutomaticBackupIfDue() != nil)
+
+        #expect(!SharedJournal.hasShrunk(logCount: 1, since: SharedJournal.Backup(url: good, date: now, isAutomatic: true), newestLogCount: 4, now: now.addingTimeInterval(31 * 86_400)))
+        #expect(!SharedJournal.hasShrunk(logCount: 1, since: SharedJournal.Backup(url: good, date: now), newestLogCount: 4, now: now))
+        #expect(SharedJournal.hasShrunk(logCount: 1, since: SharedJournal.Backup(url: good, date: now, isAutomatic: true), newestLogCount: 4, now: now))
+    }
+
+    @Test("a backup being written isn't listed until it's complete, and an unfinished one is cleared away")
+    func backupWrittenInPlace() throws {
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let url = SharedJournal.newBackupURL(beside: storeURL, date: now, automatic: true)
+        let empty = try ForesightPersistence.makeContainer(storeURL: nil)
+        let archive = try JournalArchive(context: empty.mainContext)
+        try SharedJournal.writeStore(at: url) { partial in
+            try archive.write(toNewStoreAt: partial)
+            #expect(SharedJournal.backups(in: root).isEmpty)
+        }
+        #expect(SharedJournal.backups(in: root).map(\.url.lastPathComponent) == [url.lastPathComponent])
+        #expect(!exists(URL(fileURLWithPath: url.path + ".partial")))
+        #expect(try JournalArchive.counts(at: url).logs == 0)
+
+        let unfinished = URL(fileURLWithPath: SharedJournal.newBackupURL(beside: storeURL, date: now.addingTimeInterval(60), automatic: true).path + ".partial")
+        try Data("half".utf8).write(to: unfinished)
+        try Data("log".utf8).write(to: URL(fileURLWithPath: unfinished.path + "-wal"))
+        SharedJournal.removeUnfinishedBackups(in: root)
+        #expect(!exists(unfinished))
+        #expect(!exists(URL(fileURLWithPath: unfinished.path + "-wal")))
+        #expect(exists(url))
+    }
+
+    @Test("a daily backup is due again when the last one is dated ahead of a clock that moved backward")
+    func dailyBackupAfterClockChange() {
+        let ahead = SharedJournal.Backup(url: storeURL, date: now.addingTimeInterval(3_600), isAutomatic: true)
+        let recent = SharedJournal.Backup(url: storeURL, date: now.addingTimeInterval(-3_600), isAutomatic: true)
+        let restoreCopy = SharedJournal.Backup(url: storeURL, date: now.addingTimeInterval(-60))
+        #expect(SharedJournal.isAutomaticBackupDue(among: [ahead], now: now))
+        #expect(SharedJournal.isAutomaticBackupDue(among: [restoreCopy], now: now))
+        #expect(!SharedJournal.isAutomaticBackupDue(among: [ahead, recent], now: now))
+    }
+
     @Test("backups list newest first, with the time in their names")
     func backupListing() throws {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

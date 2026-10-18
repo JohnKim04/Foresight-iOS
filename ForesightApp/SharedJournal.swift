@@ -21,6 +21,19 @@ enum SharedJournal {
     static let backupPrefix = "Foresight-backup-"
     /// Backups kept beside the journal; older ones are deleted as a new one is made.
     static let backupLimit = 3
+    /// Ends the name of a backup the app took on its own, before ".store".
+    static let automaticBackupSuffix = "-auto"
+    /// The app takes an automatic backup when the newest one is at least this old.
+    static let automaticBackupInterval: TimeInterval = 24 * 60 * 60
+    /// An automatic backup never removes a backup made another way (a restore's safety copy, or a
+    /// journal moved aside at launch) until it is this old, so a daily backup can't push one out
+    /// before the user has had a chance to find it in Settings.
+    static let protectedBackupAge: TimeInterval = 7 * 24 * 60 * 60
+    /// No automatic backup is taken while the journal holds under half the logs of the newest
+    /// backup, when that one is automatic and younger than this: three days of backups of a
+    /// journal mostly deleted by mistake would otherwise push out every good copy. After this
+    /// long the smaller journal is taken to be on purpose, and backups resume.
+    static let shrunkJournalPause: TimeInterval = 30 * 24 * 60 * 60
 
     static var appGroupIdentifier: String? {
         guard let identifier = Bundle.main.object(forInfoDictionaryKey: appGroupInfoKey) as? String,
@@ -124,16 +137,20 @@ enum SharedJournal {
     struct Backup: Equatable, Sendable {
         let url: URL
         let date: Date
+        /// Taken by the app on its own, once a day, rather than by a restore or at launch.
+        var isAutomatic = false
     }
 
-    /// A free `Foresight-backup-<time>.store` name beside the store at `url`.
-    static func newBackupURL(beside url: URL, date: Date = .now, fileManager: FileManager = .default) -> URL {
+    /// A free `Foresight-backup-<time>.store` name beside the store at `url`, ending in
+    /// `-auto.store` for an automatic backup.
+    static func newBackupURL(beside url: URL, date: Date = .now, automatic: Bool = false, fileManager: FileManager = .default) -> URL {
         let stamp = date.formatted(backupStampStyle)
-        var backup = url.deletingLastPathComponent().appending(path: "\(backupPrefix)\(stamp).store")
+        let ending = (automatic ? automaticBackupSuffix : "") + ".store"
+        var backup = url.deletingLastPathComponent().appending(path: "\(backupPrefix)\(stamp)\(ending)")
         var attempt = 1
         while storeFileSuffixes.contains(where: { fileManager.fileExists(atPath: backup.path + $0) }) {
             attempt += 1
-            backup = url.deletingLastPathComponent().appending(path: "\(backupPrefix)\(stamp)-\(attempt).store")
+            backup = url.deletingLastPathComponent().appending(path: "\(backupPrefix)\(stamp)-\(attempt)\(ending)")
         }
         return backup
     }
@@ -169,8 +186,75 @@ enum SharedJournal {
             let date = (try? backupStampStyle.parse(backupStamp(of: name).stamp))
                 ?? ((try? fileManager.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date)
                 ?? .distantPast
-            return Backup(url: url, date: date)
+            return Backup(url: url, date: date, isAutomatic: backupStamp(of: name).automatic)
         }
+    }
+
+    /// Whether the app should take an automatic backup now: none of `backups` is an automatic one
+    /// from the last `automaticBackupInterval`. One dated after `now` (a clock that moved
+    /// backward) doesn't count, so backups resume instead of waiting for the clock to catch up.
+    static func isAutomaticBackupDue(among backups: [Backup], now: Date) -> Bool {
+        !backups.contains { $0.isAutomatic && $0.date <= now && now.timeIntervalSince($0.date) < automaticBackupInterval }
+    }
+
+    /// The backups (from `backups`, newest first) to delete so one more fits within `keeping`,
+    /// or nil when it can't fit. Only automatic backups, and others at least `protectedBackupAge`
+    /// old, may go, oldest first.
+    static func backupsRemovedForAutomaticBackup(from backups: [Backup], now: Date, keeping: Int = backupLimit) -> [Backup]? {
+        let excess = backups.count + 1 - keeping
+        guard excess > 0 else { return [] }
+        let removable = backups.reversed().filter { $0.isAutomatic || now.timeIntervalSince($0.date) >= protectedBackupAge }
+        guard removable.count >= excess else { return nil }
+        return Array(removable.prefix(excess))
+    }
+
+    /// Whether a journal of `logCount` logs has shrunk to under half of `newest` (the newest
+    /// backup, holding `newestLogCount` logs) since it was taken, so no automatic backup should
+    /// replace the copies from before. Only an automatic `newest` counts: a restore's safety copy
+    /// or a journal moved aside marks a change the user chose. See `shrunkJournalPause`.
+    static func hasShrunk(logCount: Int, since newest: Backup?, newestLogCount: Int?, now: Date) -> Bool {
+        guard let newest, newest.isAutomatic, let newestLogCount, now.timeIntervalSince(newest.date) < shrunkJournalPause else { return false }
+        return logCount * 2 < newestLogCount
+    }
+
+    /// Writes a store with `write` under a temporary name beside `url`, then moves its files to
+    /// `url`, main file last, so a listing of backups never sees one half-written.
+    static func writeStore(at url: URL, fileManager: FileManager = .default, using write: (URL) throws -> Void) throws {
+        let partial = URL(fileURLWithPath: url.path + ".partial")
+        removeStore(at: partial, fileManager: fileManager)
+        do {
+            try write(partial)
+            for suffix in ["-wal", "-shm", ""] where fileManager.fileExists(atPath: partial.path + suffix) {
+                try fileManager.moveItem(atPath: partial.path + suffix, toPath: url.path + suffix)
+            }
+        } catch {
+            removeStore(at: partial, fileManager: fileManager)
+            removeStore(at: url, fileManager: fileManager)
+            throw error
+        }
+    }
+
+    /// Deletes what `writeStore` left of backups it never finished, say when the app was closed mid-write.
+    static func removeUnfinishedBackups(in directory: URL, fileManager: FileManager = .default) {
+        let names = (try? fileManager.contentsOfDirectory(atPath: directory.path)) ?? []
+        for name in names where name.hasPrefix(backupPrefix) && name.contains(".store.partial") {
+            try? fileManager.removeItem(at: directory.appending(path: name))
+        }
+    }
+
+    /// Makes room for the automatic backup just written at `url` by deleting what
+    /// `backupsRemovedForAutomaticBackup` names. If there is no room after all (say, a restore
+    /// filled the slots while it was being written), the new backup goes instead. Returns whether
+    /// it was kept.
+    @discardableResult
+    static func finishAutomaticBackup(at url: URL, now: Date, fileManager: FileManager = .default) -> Bool {
+        let others = backups(in: url.deletingLastPathComponent(), fileManager: fileManager).filter { $0.url.lastPathComponent != url.lastPathComponent }
+        guard let removed = backupsRemovedForAutomaticBackup(from: others, now: now) else {
+            removeStore(at: url, fileManager: fileManager)
+            return false
+        }
+        removed.forEach { removeStore(at: $0.url, fileManager: fileManager) }
+        return true
     }
 
     /// Deletes all but the newest `keeping` backups in `directory`, newest by the time in their names.
@@ -197,10 +281,14 @@ enum SharedJournal {
             .map { $0.name }
     }
 
-    /// "Foresight-backup-<stamp>.store", or "-<stamp>-<attempt>.store" for one made in the same second.
-    private static func backupStamp(of name: String) -> (stamp: String, attempt: Int) {
-        let parts = name.dropFirst(backupPrefix.count).dropLast(".store".count).split(separator: "-")
-        return (String(parts.first ?? ""), parts.count > 1 ? Int(parts[1]) ?? 1 : 1)
+    /// "Foresight-backup-<stamp>.store", or "-<stamp>-<attempt>.store" for one made in the same
+    /// second, either of them with "-auto" before ".store" for an automatic backup.
+    private static func backupStamp(of name: String) -> (stamp: String, attempt: Int, automatic: Bool) {
+        var base = name.dropFirst(backupPrefix.count).dropLast(".store".count)
+        let automatic = base.hasSuffix(automaticBackupSuffix)
+        if automatic { base = base.dropLast(automaticBackupSuffix.count) }
+        let parts = base.split(separator: "-")
+        return (String(parts.first ?? ""), parts.count > 1 ? Int(parts[1]) ?? 1 : 1, automatic)
     }
 
     static func removeStore(at url: URL, fileManager: FileManager = .default) {

@@ -184,7 +184,10 @@ struct ForesightRootView: View {
             reminders.resync()
             // Suggestions depend on the time of day, so re-plan nudges too.
             nudges.resync()
+            Task { await store.takeAutomaticBackupIfDue() }
         }
+        // The first activation can come before this view sees a phase change.
+        .task { await store.takeAutomaticBackupIfDue() }
         // Significant time changes cover time zone changes, daylight saving and midnight.
         // Reminders move with them too, since quiet hours are local times.
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification).receive(on: DispatchQueue.main)) { _ in
