@@ -8,6 +8,15 @@ enum JournalCheckInFilter: String, CaseIterable, Identifiable, Hashable {
 
     var id: String { rawValue }
     var title: String { rawValue.capitalized }
+    /// How the Journal's filter chip names it, so "None" isn't read on its own.
+    var chipTitle: String {
+        switch self {
+        case .all: "All check-ins"
+        case .none: "No check-in"
+        case .scheduled: "Check-in scheduled"
+        case .answered: "Checked in"
+        }
+    }
 }
 
 enum JournalViewMode: String, CaseIterable, Identifiable, Hashable {
@@ -16,6 +25,7 @@ enum JournalViewMode: String, CaseIterable, Identifiable, Hashable {
 
     var id: String { rawValue }
     var title: String { rawValue.capitalized }
+    var systemImage: String { self == .timeline ? "list.bullet" : "calendar" }
 }
 
 struct JournalFilters {
@@ -54,6 +64,18 @@ func startOfDay(_ date: Date, calendar: Calendar = .current) -> Date {
 func recentJournalRange(now: Date = .now, calendar: Calendar = .current) -> JournalDateRange {
     let end = startOfDay(now, calendar: calendar)
     return JournalDateRange(start: calendar.date(byAdding: .day, value: -29, to: end)!, end: end)
+}
+
+/// The Journal's chip for a custom range, such as "Oct 1 – Oct 18". The year only shows
+/// when the range reaches outside this year.
+func journalDateRangeTitle(start: Date, end: Date, now: Date = .now, calendar: Calendar = .current) -> String {
+    // A reversed range filters the same days, so it reads the same way round.
+    let (start, end) = start <= end ? (start, end) : (end, start)
+    let thisYear = calendar.component(.year, from: now)
+    let showsYear = calendar.component(.year, from: start) != thisYear || calendar.component(.year, from: end) != thisYear
+    let style: Date.FormatStyle = showsYear ? .dateTime.month(.abbreviated).day().year() : .dateTime.month(.abbreviated).day()
+    if calendar.isDate(start, inSameDayAs: end) { return start.formatted(style) }
+    return "\(start.formatted(style)) – \(end.formatted(style))"
 }
 
 func filterJournalEntries(_ entries: [JournalEntry], categories: [JournalCategory], checkIns: [OutcomeCheckIn], filters: JournalFilters) -> [JournalEntry] {
