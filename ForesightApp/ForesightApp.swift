@@ -218,7 +218,11 @@ struct ForesightRootView: View {
             SettingsView(store: store, reminders: reminders, nudges: nudges, preferences: preferences)
         }
         .fullScreenCover(isPresented: Binding(get: { !hasCompletedOnboarding }, set: { if !$0 { hasCompletedOnboarding = true } })) {
-            OnboardingView { hasCompletedOnboarding = true }
+            OnboardingView { startFirstLog in
+                hasCompletedOnboarding = true
+                // Goes through the router so the editor waits until onboarding has gone.
+                if startFirstLog { router.destination = .newLog }
+            }
         }
     }
 }

@@ -142,17 +142,14 @@ struct SettingsView: View {
             Text(title)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(Color.foresightMuted)
-            Picker(title, selection: selection) {
-                // The other end's hour is left out, since equal ends would mean never quiet.
-                ForEach((0..<24).filter { $0 != other }, id: \.self) { hour in Text(Self.hourLabel(hour)).tag(hour) }
-            }
-            .pickerStyle(.wheel)
-            .frame(height: 120)
-            // Wheels keep their full-size touch area unless clipped to it, so side by side
-            // they would steal each other's drags.
-            .compositingGroup()
-            .clipped()
-            .contentShape(Rectangle())
+            // The other end's hour is left out, since equal ends would mean never quiet.
+            LoopingHourWheel(title: title, selection: selection, hours: (0..<24).filter { $0 != other }, label: Self.hourLabel)
+                .frame(height: 120)
+                // Wheels keep their full-size touch area unless clipped to it, so side by side
+                // they would steal each other's drags.
+                .compositingGroup()
+                .clipped()
+                .contentShape(Rectangle())
         }
         .frame(maxWidth: .infinity)
     }
@@ -362,4 +359,119 @@ private struct CategorySettingsView: View {
         do { try change(); message = nil }
         catch { message = error.localizedDescription }
     }
+}
+
+/// Row math for a wheel that repeats its values, so scrolling past the last one comes back
+/// round to the first, like the Clock app's wheels.
+struct LoopingWheelRows {
+    /// Each pick recentres on the middle copy, so a few copies on either side are plenty.
+    static let copies = 20
+    let count: Int
+
+    var rowCount: Int { count * Self.copies }
+    func index(ofRow row: Int) -> Int { ((row % count) + count) % count }
+    /// The row in the middle copy for an index, so there's room to scroll either way.
+    func centeredRow(for index: Int) -> Int { count * (Self.copies / 2) + index }
+}
+
+/// An hour wheel that wraps from 11 PM back to 12 AM. SwiftUI's wheel picker stops at
+/// either end, so 11 PM to 12 AM meant scrolling through every hour in between.
+struct LoopingHourWheel: UIViewRepresentable {
+    let title: String
+    @Binding var selection: Int
+    let hours: [Int]
+    let label: @MainActor (Int) -> String
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    func makeUIView(context: Context) -> HourWheelView {
+        let picker = HourWheelView()
+        picker.dataSource = context.coordinator
+        picker.delegate = context.coordinator
+        picker.accessibilityLabel = title
+        picker.onStep = { [weak picker, coordinator = context.coordinator] step in
+            if let picker { coordinator.step(by: step, in: picker) }
+        }
+        picker.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        picker.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        picker.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+        return picker
+    }
+
+    func updateUIView(_ picker: HourWheelView, context: Context) {
+        let coordinator = context.coordinator
+        coordinator.parent = self
+        if coordinator.hours != hours {
+            coordinator.hours = hours
+            picker.reloadAllComponents()
+        }
+        coordinator.show(selection, in: picker)
+        picker.accessibilityValue = label(selection)
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: HourWheelView, context: Context) -> CGSize? {
+        CGSize(width: proposal.width ?? 140, height: proposal.height ?? 120)
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, UIPickerViewDataSource, UIPickerViewDelegate {
+        var parent: LoopingHourWheel
+        var hours: [Int]
+        private var rows: LoopingWheelRows { LoopingWheelRows(count: hours.count) }
+
+        init(_ parent: LoopingHourWheel) {
+            self.parent = parent
+            hours = parent.hours
+        }
+
+        func numberOfComponents(in pickerView: UIPickerView) -> Int { 1 }
+        func pickerView(_ pickerView: UIPickerView, numberOfRowsInComponent component: Int) -> Int { rows.rowCount }
+
+        func pickerView(_ pickerView: UIPickerView, titleForRow row: Int, forComponent component: Int) -> String? {
+            parent.label(hours[rows.index(ofRow: row)])
+        }
+
+        func pickerView(_ pickerView: UIPickerView, didSelectRow row: Int, inComponent component: Int) {
+            let index = rows.index(ofRow: row)
+            // Jump back to the middle copy (it looks the same) so the wheel never runs out.
+            pickerView.selectRow(rows.centeredRow(for: index), inComponent: 0, animated: false)
+            if parent.selection != hours[index] { parent.selection = hours[index] }
+        }
+
+        /// Moves one hour either way, for VoiceOver's swipe up and down.
+        func step(by delta: Int, in picker: UIPickerView) {
+            let current = picker.selectedRow(inComponent: 0)
+            guard current >= 0, !hours.isEmpty else { return }
+            let index = rows.index(ofRow: current + delta)
+            picker.selectRow(rows.centeredRow(for: index), inComponent: 0, animated: true)
+            if parent.selection != hours[index] { parent.selection = hours[index] }
+        }
+
+        /// Turns the wheel to an hour set from outside, leaving it alone if it's already there.
+        func show(_ hour: Int, in picker: UIPickerView) {
+            guard let index = hours.firstIndex(of: hour) else { return }
+            let current = picker.selectedRow(inComponent: 0)
+            if current >= 0, current < rows.rowCount, rows.index(ofRow: current) == index { return }
+            picker.selectRow(rows.centeredRow(for: index), inComponent: 0, animated: false)
+        }
+    }
+}
+
+/// The wheel reads as one adjustable control, so accessibility (and UI tests) don't walk
+/// every repeated row, which made each lookup on the Settings screen ten times slower.
+final class HourWheelView: UIPickerView {
+    var onStep: (@MainActor (Int) -> Void)?
+
+    override var isAccessibilityElement: Bool {
+        get { true }
+        set { }
+    }
+
+    override var accessibilityTraits: UIAccessibilityTraits {
+        get { .adjustable }
+        set { }
+    }
+
+    override func accessibilityIncrement() { onStep?(1) }
+    override func accessibilityDecrement() { onStep?(-1) }
 }
