@@ -12,6 +12,7 @@ struct ForesightApp: App {
     @State private var database = AppDatabase.shared
 
     init() {
+        UserDefaults.standard.removeObject(forKey: JournalSuggestionState.legacyHiddenDayKey)
         if ProcessInfo.processInfo.arguments.contains(OnboardingState.resetArgument) {
             UserDefaults.standard.removeObject(forKey: OnboardingState.completedKey)
         }

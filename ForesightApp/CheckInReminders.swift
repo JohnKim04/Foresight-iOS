@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import Synchronization
 import UIKit
 import UserNotifications
 
@@ -173,12 +174,16 @@ struct SystemReminderNotificationCenter: ReminderNotificationCenter {
         (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])) ?? false
     }
 
+    /// Set once badges have been asked for again this launch, so every sync doesn't repeat it.
+    private static let askedForBadges = Mutex(false)
+
     /// Permission given before Foresight asked for badges doesn't include them. Asking again
-    /// with badges doesn't show a prompt once the user has chosen, so ask, then check again.
+    /// with badges doesn't show a prompt once the user has chosen, so ask once a launch, then check again.
     func badgesEnabled() async -> Bool {
         let center = UNUserNotificationCenter.current()
         var settings = await center.notificationSettings()
-        if settings.authorizationStatus == .authorized, settings.badgeSetting == .notSupported {
+        if settings.authorizationStatus == .authorized, settings.badgeSetting == .notSupported,
+           Self.askedForBadges.withLock({ asked in defer { asked = true }; return !asked }) {
             _ = try? await center.requestAuthorization(options: [.alert, .sound, .badge])
             settings = await center.notificationSettings()
         }

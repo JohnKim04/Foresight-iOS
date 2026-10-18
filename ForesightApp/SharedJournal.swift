@@ -143,22 +143,24 @@ enum SharedJournal {
             throw error
         }
         try? fileManager.removeItem(at: URL(fileURLWithPath: url.path + ".partial"))
-        pruneBackups(in: url.deletingLastPathComponent(), fileManager: fileManager)
+        pruneBackups(in: url.deletingLastPathComponent(), sparing: backup, fileManager: fileManager)
         return backup
     }
 
     /// Deletes all but the newest `keeping` backups in `directory`, newest by the time in their names.
-    static func pruneBackups(in directory: URL, keeping: Int = backupLimit, fileManager: FileManager = .default) {
+    /// `sparing` (the backup just made) is always kept and counts toward `keeping`, even if a clock
+    /// that moved backward gave it an older name than the rest.
+    static func pruneBackups(in directory: URL, keeping: Int = backupLimit, sparing spared: URL? = nil, fileManager: FileManager = .default) {
         let names = (try? fileManager.contentsOfDirectory(atPath: directory.path)) ?? []
         let backups = names
-            .filter { $0.hasPrefix(backupPrefix) && $0.hasSuffix(".store") }
+            .filter { $0.hasPrefix(backupPrefix) && $0.hasSuffix(".store") && $0 != spared?.lastPathComponent }
             .map { name -> (name: String, stamp: String, attempt: Int) in
                 // "Foresight-backup-<stamp>.store", or "-<stamp>-<attempt>.store" for one made in the same second.
                 let parts = name.dropFirst(backupPrefix.count).dropLast(".store".count).split(separator: "-")
                 return (name, String(parts.first ?? ""), parts.count > 1 ? Int(parts[1]) ?? 1 : 1)
             }
             .sorted { $0.stamp != $1.stamp ? $0.stamp > $1.stamp : $0.attempt > $1.attempt }
-        for backup in backups.dropFirst(max(0, keeping)) {
+        for backup in backups.dropFirst(max(0, keeping - (spared == nil ? 0 : 1))) {
             removeStore(at: directory.appending(path: backup.name), fileManager: fileManager)
         }
     }

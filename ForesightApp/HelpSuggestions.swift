@@ -167,6 +167,8 @@ func journalSuggestion(_ report: HelpSuggestionReport) -> HelpSuggestion? {
 /// Stored as the day key followed by the hidden category IDs: "2026-10-18 <id>,<id>".
 enum JournalSuggestionState {
     static let hiddenKey = "journalSuggestion.hiddenCategories"
+    /// Where earlier builds kept the day the whole card was hidden. It named no category, so it's dropped.
+    static let legacyHiddenDayKey = "journalSuggestion.hiddenDay"
 
     static func isHidden(_ categoryID: UUID, stored: String, now: Date = .now, calendar: Calendar = .current) -> Bool {
         hiddenToday(stored, now: now, calendar: calendar).contains(categoryID)
