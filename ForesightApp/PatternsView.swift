@@ -347,7 +347,7 @@ struct OutcomeDistribution: View {
                     Color.foresightNegative.frame(width: proxy.size.width * CGFloat(trend.worseCount) / CGFloat(total))
                 }
             }.frame(height: 10).clipShape(Capsule())
-            Text("Better \(trend.betterCount) · Same \(trend.sameCount) · Worse \(trend.worseCount)").font(.caption).foregroundStyle(.secondary)
+            Text("Better or much better \(trend.betterCount) · Same \(trend.sameCount) · Worse or much worse \(trend.worseCount)").font(.caption).foregroundStyle(.secondary)
         }
     }
 }

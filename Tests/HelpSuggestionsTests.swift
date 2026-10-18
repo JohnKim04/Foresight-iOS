@@ -52,7 +52,7 @@ struct HelpSuggestionsTests {
         #expect(suggestion.betterCount == 4)
         #expect(suggestion.numericCount == 5)
         #expect(suggestion.headline == "Workout has tended to be followed by feeling better later.")
-        #expect(suggestion.evidence.hasPrefix("Better in 4 of 5 later check-ins"))
+        #expect(suggestion.evidence.hasPrefix("Better or much better in 4 of 5 later check-ins"))
         expectNonCausal([suggestion.headline, suggestion.evidence, suggestion.context ?? ""])
         #expect(result.progress == nil)
     }

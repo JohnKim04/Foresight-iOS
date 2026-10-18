@@ -25,7 +25,7 @@ struct HelpSuggestion: Identifiable {
     var id: UUID { category.id }
 
     var headline: String { "\(category.name) has tended to be followed by feeling better later." }
-    var evidence: String { "Better in \(betterCount) of \(numericCount) later check-ins · \(evidenceDepth.rawValue)" }
+    var evidence: String { "Better or much better in \(betterCount) of \(numericCount) later check-ins · \(evidenceDepth.rawValue)" }
 
     var context: String? { context(showingUsualTime: true) }
 
