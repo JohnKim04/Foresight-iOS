@@ -25,6 +25,8 @@ final class JournalStore {
     @ObservationIgnored var onLoaded: (@MainActor () -> Void)?
     /// Called after the journal is erased, so notification history about it goes too.
     @ObservationIgnored var onReset: (@MainActor () -> Void)?
+    /// Set while an automatic backup is being written, so two activations don't both take one.
+    @ObservationIgnored private var isTakingAutomaticBackup = false
 
     init(modelContext: ModelContext, modelContainer: ModelContainer? = nil, now: @escaping () -> Date = { .now }, makeID: @escaping () -> UUID = UUID.init) {
         self.modelContext = modelContext
@@ -262,6 +264,7 @@ struct JournalBackup: Identifiable, Equatable {
     /// Nil when the backup can't be read.
     let logCount: Int?
     let checkInCount: Int?
+    var isAutomatic = false
 
     var id: URL { url }
     var isReadable: Bool { logCount != nil }
@@ -285,8 +288,35 @@ extension JournalStore {
         guard let storeURL else { return [] }
         return SharedJournal.backups(in: storeURL.deletingLastPathComponent()).map { backup in
             let counts = try? JournalArchive.counts(at: backup.url)
-            return JournalBackup(url: backup.url, date: backup.date, logCount: counts?.logs, checkInCount: counts?.checkIns)
+            return JournalBackup(url: backup.url, date: backup.date, logCount: counts?.logs, checkInCount: counts?.checkIns, isAutomatic: backup.isAutomatic)
         }
+    }
+
+    /// Takes the day's automatic backup, if one is due (see `SharedJournal.isAutomaticBackupDue`)
+    /// and the journal holds a log that isn't sample data. The journal is read and written to the
+    /// backup off the main thread, through its own context, in the same format a restore's safety
+    /// copy uses. It replaces only older automatic backups, or other backups at least
+    /// `SharedJournal.protectedBackupAge` old, and is skipped when there's no such room.
+    /// Returns the new backup's URL, or nil when none was kept.
+    @discardableResult
+    func takeAutomaticBackupIfDue() async -> URL? {
+        guard let storeURL, let modelContainer, !isTakingAutomaticBackup, entries.contains(where: { !$0.isFixture }) else { return nil }
+        let date = now()
+        let existing = SharedJournal.backups(in: storeURL.deletingLastPathComponent())
+        guard SharedJournal.isAutomaticBackupDue(among: existing, now: date),
+              SharedJournal.backupsRemovedForAutomaticBackup(from: existing, now: date) != nil else { return nil }
+        let url = SharedJournal.newBackupURL(beside: storeURL, date: date, automatic: true)
+        isTakingAutomaticBackup = true
+        defer { isTakingAutomaticBackup = false }
+        return await Task.detached(priority: .utility) { () -> URL? in
+            do {
+                try JournalArchive(context: ModelContext(modelContainer)).write(toNewStoreAt: url)
+            } catch {
+                SharedJournal.removeStore(at: url)
+                return nil
+            }
+            return SharedJournal.finishAutomaticBackup(at: url, now: date) ? url : nil
+        }.value
     }
 
     /// The backups in `backups` (newest first) that pruning deletes after restoring `restored`:

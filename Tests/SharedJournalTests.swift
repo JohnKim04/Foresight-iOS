@@ -351,6 +351,80 @@ struct JournalBackupTests {
         #expect(throws: JournalBackupError.noBackups) { try store.restoreBackup(at: storeURL) }
     }
 
+    @Test("a daily backup is taken at most once a day, only once there's a log, and restores like any other")
+    func dailyBackup() async throws {
+        var clock = now
+        let container = try ForesightPersistence.makeContainer(storeURL: storeURL)
+        let store = JournalStore(modelContext: container.mainContext, modelContainer: container, now: { clock })
+        #expect(await store.takeAutomaticBackupIfDue() == nil)
+        #expect(store.backups().isEmpty)
+
+        _ = try store.saveLog(body: "Morning run", eventAt: now, categoryIDs: [])
+        let first = try #require(await store.takeAutomaticBackupIfDue())
+        #expect(first.lastPathComponent.hasSuffix("-auto.store"))
+        let listed = try #require(store.backups().first)
+        #expect(listed.isAutomatic)
+        #expect(listed.date == now)
+        #expect(listed.logCount == 1)
+        #expect(SettingsView.backupDetail(listed) == "Daily backup with 1 log and 0 check-ins")
+
+        #expect(await store.takeAutomaticBackupIfDue() == nil)
+        clock = now.addingTimeInterval(23 * 3_600)
+        #expect(await store.takeAutomaticBackupIfDue() == nil)
+        clock = now.addingTimeInterval(24 * 3_600)
+        _ = try store.saveLog(body: "Late scroll", eventAt: clock, categoryIDs: [])
+        let second = try #require(await store.takeAutomaticBackupIfDue())
+        #expect(store.backups().map(\.url.lastPathComponent) == [second, first].map(\.lastPathComponent))
+        #expect(store.backups().first?.logCount == 2)
+
+        try store.restoreBackup(at: first)
+        #expect(store.entries.map(\.body) == ["Morning run"])
+    }
+
+    @Test("daily backups replace older daily ones, and other backups only once they're a week old")
+    func dailyBackupPruning() async throws {
+        var clock = now
+        let container = try ForesightPersistence.makeContainer(storeURL: storeURL)
+        let store = JournalStore(modelContext: container.mainContext, modelContainer: container, now: { clock })
+        _ = try store.saveLog(body: "Today", eventAt: now, categoryIDs: [])
+        // A journal moved aside at launch, then a restore of it, which saves a safety copy.
+        let movedAside = try writeBackup(at: now.addingTimeInterval(-60), bodies: ["From another phone"])
+        let safetyCopy = try store.restoreBackup(at: movedAside)
+
+        clock = now.addingTimeInterval(3_600)
+        let firstDaily = try #require(await store.takeAutomaticBackupIfDue())
+        #expect(Set(SharedJournal.backups(in: root).map(\.url.lastPathComponent)) == Set([movedAside, safetyCopy, firstDaily].map(\.lastPathComponent)))
+
+        // The next day's backup replaces the first daily one, not the copies a day old.
+        clock = now.addingTimeInterval(25 * 3_600)
+        let secondDaily = try #require(await store.takeAutomaticBackupIfDue())
+        #expect(Set(SharedJournal.backups(in: root).map(\.url.lastPathComponent)) == Set([movedAside, safetyCopy, secondDaily].map(\.lastPathComponent)))
+
+        // A week on, the oldest backup goes, whatever made it.
+        clock = now.addingTimeInterval(8 * 86_400)
+        let thirdDaily = try #require(await store.takeAutomaticBackupIfDue())
+        #expect(Set(SharedJournal.backups(in: root).map(\.url.lastPathComponent)) == Set([safetyCopy, secondDaily, thirdDaily].map(\.lastPathComponent)))
+    }
+
+    @Test("no daily backup is taken while every slot holds a recent backup made another way")
+    func dailyBackupWithoutRoom() async throws {
+        let store = try openJournal()
+        _ = try store.saveLog(body: "Today", eventAt: now, categoryIDs: [])
+        let made = try [3, 2, 1].map { try writeBackup(at: now.addingTimeInterval(TimeInterval(-$0 * 3_600)), bodies: ["Backup \($0)"]) }
+        #expect(await store.takeAutomaticBackupIfDue() == nil)
+        #expect(Set(SharedJournal.backups(in: root).map(\.url.lastPathComponent)) == Set(made.map(\.lastPathComponent)))
+    }
+
+    @Test("a daily backup is due again when the last one is dated ahead of a clock that moved backward")
+    func dailyBackupAfterClockChange() {
+        let ahead = SharedJournal.Backup(url: storeURL, date: now.addingTimeInterval(3_600), isAutomatic: true)
+        let recent = SharedJournal.Backup(url: storeURL, date: now.addingTimeInterval(-3_600), isAutomatic: true)
+        let restoreCopy = SharedJournal.Backup(url: storeURL, date: now.addingTimeInterval(-60))
+        #expect(SharedJournal.isAutomaticBackupDue(among: [ahead], now: now))
+        #expect(SharedJournal.isAutomaticBackupDue(among: [restoreCopy], now: now))
+        #expect(!SharedJournal.isAutomaticBackupDue(among: [ahead, recent], now: now))
+    }
+
     @Test("backups list newest first, with the time in their names")
     func backupListing() throws {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

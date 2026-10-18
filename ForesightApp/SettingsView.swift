@@ -255,10 +255,12 @@ struct SettingsView: View {
         } header: {
             Text("Backups")
         } footer: {
-            Text("Earlier copies of your journal, newest first. Restoring one saves your journal as it is now here first. Foresight keeps up to \(SharedJournal.backupLimit), so the oldest other backup may be removed to make room.")
+            Text(Self.backupsFooter)
                 .padding(.bottom, 8)
         }
     }
+
+    static let backupsFooter = "Copies of your journal, newest first. Foresight saves one each day you open it, and one of your journal as it is now before every restore. It keeps up to \(SharedJournal.backupLimit): a daily backup only replaces an older daily one or a backup over a week old, and a restore may remove the oldest other backup to make room."
 
     static func backupDate(_ date: Date) -> String {
         date.formatted(date: .abbreviated, time: .shortened)
@@ -276,7 +278,8 @@ struct SettingsView: View {
 
     static func backupDetail(_ backup: JournalBackup) -> String {
         guard let logs = backup.logCount, let checkIns = backup.checkInCount else { return "This backup can't be read." }
-        return "\(logs) \(logs == 1 ? "log" : "logs") and \(checkIns) \(checkIns == 1 ? "check-in" : "check-ins")"
+        let counts = "\(logs) \(logs == 1 ? "log" : "logs") and \(checkIns) \(checkIns == 1 ? "check-in" : "check-ins")"
+        return backup.isAutomatic ? "Daily backup with \(counts)" : counts
     }
 
     private var aboutSection: some View {
