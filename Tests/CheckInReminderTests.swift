@@ -12,11 +12,13 @@ actor FakeReminderCenter: ReminderNotificationCenter {
     private(set) var addCount = 0
     private(set) var badgeCount = 0
     private var grantsPermission = true
+    private var badges = true
 
     init(status: ReminderAuthorization = .allowed) { self.status = status }
 
     func setStatus(_ status: ReminderAuthorization) { self.status = status }
     func setGrantsPermission(_ grants: Bool) { grantsPermission = grants }
+    func setBadges(_ enabled: Bool) { badges = enabled }
     func setDelivered(_ identifiers: [String]) { delivered = identifiers }
     func setPending(_ reminders: [CheckInReminder]) { reminders.forEach { pending[$0.identifier] = $0 } }
 
@@ -26,6 +28,7 @@ actor FakeReminderCenter: ReminderNotificationCenter {
         status = grantsPermission ? .allowed : .denied
         return grantsPermission
     }
+    func badgesEnabled() -> Bool { badges }
     func scheduledReminders() -> [ScheduledReminder] {
         pending.values.map { ScheduledReminder(identifier: $0.identifier, fireAt: $0.fireAt, body: $0.body, badge: $0.badge) }
     }
@@ -376,6 +379,23 @@ struct CheckInReminderSchedulerTests {
         scheduler.resync()
         await scheduler.waitForPendingWork()
         #expect(await center.badgeCount == 0)
+    }
+
+    @Test("notes when iOS keeps the app icon count off while reminders can arrive")
+    func badgesTurnedOff() async throws {
+        let (_, scheduler, center) = try makeSubject()
+        await scheduler.waitForPendingWork()
+        #expect(scheduler.badgesEnabled)
+
+        await center.setBadges(false)
+        scheduler.resync()
+        await scheduler.waitForPendingWork()
+        #expect(!scheduler.badgesEnabled)
+
+        await center.setBadges(true)
+        scheduler.resync()
+        await scheduler.waitForPendingWork()
+        #expect(scheduler.badgesEnabled)
     }
 
     @Test("tapping a reminder opens that check-in")

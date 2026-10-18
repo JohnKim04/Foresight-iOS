@@ -16,6 +16,7 @@ struct PatternsRootView: View {
     @State private var isPickingCategoryForUser = false
     /// Bumped to scroll to the evidence, even when the category it shows was already selected.
     @State private var evidenceScrollRequest = 0
+    @State private var clock = Date.now
 
     private var outcomeCategory: JournalCategory? { outcomeCategoryID.flatMap { id in store.categories.first { $0.id == id } } }
 
@@ -57,10 +58,11 @@ struct PatternsRootView: View {
                 if let category = store.categories.first(where: { $0.id == request }) { showHelpEvidence(category) }
                 evidenceRequest = nil
             }
-            .onChange(of: HelpReportKey(store: store), initial: true) {
+            .onChange(of: HelpReportKey(store: store, now: clock), initial: true) {
                 helpReport = helpSuggestions(entries: store.entries, checkIns: store.checkIns, categories: store.categories)
                 pickDefaultOutcomeCategory()
             }
+            .hourlyClock($clock)
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
             .navigationDestination(for: UUID.self) { JournalDetailView(store: store, entryID: $0) }
@@ -312,16 +314,17 @@ struct HelpReportKey: Equatable {
     let latestCheckInEdit: Date?
     let categoryCount: Int
     let archivedCount: Int
-    let hour: Int
+    /// The start of the current local hour.
+    let hour: Date?
 
-    @MainActor init(store: JournalStore, now: Date = .now) {
+    @MainActor init(store: JournalStore, now: Date = .now, calendar: Calendar = .current) {
         entryCount = store.entries.count
         latestEntryEdit = store.entries.map(\.updatedAt).max()
         checkInCount = store.checkIns.count
         latestCheckInEdit = store.checkIns.map(\.updatedAt).max()
         categoryCount = store.categories.count
         archivedCount = store.categories.filter(\.isArchived).count
-        hour = Int(now.timeIntervalSince1970 / 3600)
+        hour = calendar.dateInterval(of: .hour, for: now)?.start
     }
 }
 

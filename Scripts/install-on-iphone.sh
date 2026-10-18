@@ -160,10 +160,21 @@ fi
 # MARK: Build and install
 
 cd "$project_root"
-xcodegen generate --spec project.yml
-if ! git diff --quiet -- Foresight.xcodeproj 2>/dev/null; then
-  print "Note: regenerating changed Foresight.xcodeproj. That's harmless for the install; discard it with git checkout -- Foresight.xcodeproj."
+# Regenerating can rewrite the committed project (say, with a different XcodeGen version). When it
+# was clean beforehand, put it back once the build is done so the checkout stays clean.
+restore_project=0
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+  && git diff --quiet HEAD -- Foresight.xcodeproj 2>/dev/null \
+  && [[ -z "$(git ls-files --others --exclude-standard -- Foresight.xcodeproj)" ]]; then
+  restore_project=1
 fi
+restore_committed_project() {
+  (( restore_project )) || return 0
+  git checkout -q HEAD -- Foresight.xcodeproj 2>/dev/null || true
+  git clean -q -f -- Foresight.xcodeproj 2>/dev/null || true
+}
+trap 'rm -f "$devices_json"; restore_committed_project' EXIT
+xcodegen generate --spec project.yml
 
 # Automatic signing registers the iPhone, the app IDs and the App Group with your team.
 xcodebuild build \

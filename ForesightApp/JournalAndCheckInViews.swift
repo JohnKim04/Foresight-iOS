@@ -20,7 +20,8 @@ struct JournalRootView: View {
     @State private var editor: EditorRequest?
     @State private var navigationPath: [UUID] = []
     @State private var suggestion: HelpSuggestion?
-    @AppStorage(JournalSuggestionState.hiddenDayKey) private var suggestionHiddenDay = ""
+    @AppStorage(JournalSuggestionState.hiddenKey) private var hiddenSuggestions = ""
+    @State private var clock = Date.now
     @Environment(CheckInReminderRouter.self) private var router
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
@@ -81,20 +82,22 @@ struct JournalRootView: View {
                 editor = EditorRequest(entryID: nil)
                 newLogRequest = false
             }
-            .onChange(of: HelpReportKey(store: store), initial: true) {
+            .onChange(of: HelpReportKey(store: store, now: clock), initial: true) {
                 suggestion = journalSuggestion(helpSuggestions(entries: store.entries, checkIns: store.checkIns, categories: store.categories, limit: .max))
             }
+            // Keeps the card on today's suggestion, and brings back one hidden yesterday.
+            .hourlyClock($clock)
         }
     }
 
     /// Only shown when there is a confident suggestion; it steps aside while searching.
     @ViewBuilder private var suggestionCard: some View {
-        if let suggestion, query.isEmpty, !JournalSuggestionState.isHidden(hiddenDay: suggestionHiddenDay) {
+        if let suggestion, query.isEmpty, !JournalSuggestionState.isHidden(suggestion.category.id, stored: hiddenSuggestions, now: clock) {
             JournalSuggestionCard(suggestion: suggestion) {
                 // The root view switches to Patterns and opens the evidence.
                 router.destination = .evidence(suggestion.category.id)
             } onHide: {
-                withAnimation(.snappy) { suggestionHiddenDay = localDayKey(.now) }
+                withAnimation(.snappy) { hiddenSuggestions = JournalSuggestionState.hiding(suggestion.category.id, stored: hiddenSuggestions) }
             }
             .transition(.opacity)
         }

@@ -12,12 +12,13 @@ struct ForesightApp: App {
     @State private var database = AppDatabase.shared
 
     init() {
+        UserDefaults.standard.removeObject(forKey: JournalSuggestionState.legacyHiddenDayKey)
         if ProcessInfo.processInfo.arguments.contains(OnboardingState.resetArgument) {
             UserDefaults.standard.removeObject(forKey: OnboardingState.completedKey)
         }
         // A disposable journal starts with nothing hidden, so UI tests don't depend on earlier runs.
         if ProcessInfo.processInfo.arguments.contains("-in-memory-store") {
-            UserDefaults.standard.removeObject(forKey: JournalSuggestionState.hiddenDayKey)
+            UserDefaults.standard.removeObject(forKey: JournalSuggestionState.hiddenKey)
         }
     }
 
@@ -220,8 +221,9 @@ struct ForesightRootView: View {
         .fullScreenCover(isPresented: Binding(get: { !hasCompletedOnboarding }, set: { if !$0 { hasCompletedOnboarding = true } })) {
             OnboardingView { startFirstLog in
                 hasCompletedOnboarding = true
-                // Goes through the router so the editor waits until onboarding has gone.
-                if startFirstLog { router.destination = .newLog }
+                // Goes through the router so the editor waits until onboarding has gone. A widget
+                // or reminder tap that arrived during onboarding is still waiting there, and goes first.
+                if startFirstLog && router.destination == nil { router.destination = .newLog }
             }
         }
     }

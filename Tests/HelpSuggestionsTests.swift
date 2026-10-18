@@ -209,12 +209,24 @@ struct HelpSuggestionsTests {
         #expect(journalSuggestion(HelpSuggestionReport(suggestions: [], patternCount: 0, progress: nil)) == nil)
     }
 
-    @Test("hiding the Journal suggestion lasts until the next day")
+    @Test("hiding the Journal suggestion lasts until the next day, for that category only")
     func journalSuggestionHiddenForToday() {
-        let today = localDayKey(now, calendar: calendar)
-        #expect(JournalSuggestionState.isHidden(hiddenDay: today, now: now, calendar: calendar))
-        #expect(!JournalSuggestionState.isHidden(hiddenDay: today, now: now.addingTimeInterval(86_400), calendar: calendar))
-        #expect(!JournalSuggestionState.isHidden(hiddenDay: "", now: now, calendar: calendar))
+        let workout = UUID()
+        let social = UUID()
+        let stored = JournalSuggestionState.hiding(workout, stored: "", now: now, calendar: calendar)
+        #expect(JournalSuggestionState.isHidden(workout, stored: stored, now: now, calendar: calendar))
+        #expect(!JournalSuggestionState.isHidden(social, stored: stored, now: now, calendar: calendar))
+        #expect(!JournalSuggestionState.isHidden(workout, stored: stored, now: now.addingTimeInterval(86_400), calendar: calendar))
+        #expect(!JournalSuggestionState.isHidden(workout, stored: "", now: now, calendar: calendar))
+
+        let both = JournalSuggestionState.hiding(social, stored: stored, now: now, calendar: calendar)
+        #expect(JournalSuggestionState.isHidden(workout, stored: both, now: now, calendar: calendar))
+        #expect(JournalSuggestionState.isHidden(social, stored: both, now: now, calendar: calendar))
+        // Yesterday's hidden categories don't carry over into today's list.
+        let tomorrow = JournalSuggestionState.hiding(social, stored: both, now: now.addingTimeInterval(86_400), calendar: calendar)
+        #expect(!JournalSuggestionState.isHidden(workout, stored: tomorrow, now: now.addingTimeInterval(86_400), calendar: calendar))
+        // A day with no categories after it hides nothing.
+        #expect(!JournalSuggestionState.isHidden(workout, stored: localDayKey(now, calendar: calendar), now: now, calendar: calendar))
     }
 
     @Test("breaks equal scores by category name")
