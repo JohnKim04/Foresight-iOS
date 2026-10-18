@@ -280,7 +280,7 @@ struct LoopingWheelRowsTests {
         for index in [0, 12, 23] {
             let row = rows.centeredRow(for: index)
             #expect(rows.index(ofRow: row) == index)
-            #expect(row >= 24 * 50 && row < rows.rowCount - 24 * 50)
+            #expect(row >= 24 * 5 && row < rows.rowCount - 24 * 5)
         }
     }
 }

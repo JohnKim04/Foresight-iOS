@@ -364,7 +364,8 @@ private struct CategorySettingsView: View {
 /// Row math for a wheel that repeats its values, so scrolling past the last one comes back
 /// round to the first, like the Clock app's wheels.
 struct LoopingWheelRows {
-    static let copies = 200
+    /// Each pick recentres on the middle copy, so a few copies on either side are plenty.
+    static let copies = 20
     let count: Int
 
     var rowCount: Int { count * Self.copies }
@@ -383,18 +384,21 @@ struct LoopingHourWheel: UIViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
-    func makeUIView(context: Context) -> UIPickerView {
-        let picker = UIPickerView()
+    func makeUIView(context: Context) -> HourWheelView {
+        let picker = HourWheelView()
         picker.dataSource = context.coordinator
         picker.delegate = context.coordinator
         picker.accessibilityLabel = title
+        picker.onStep = { [weak picker, coordinator = context.coordinator] step in
+            if let picker { coordinator.step(by: step, in: picker) }
+        }
         picker.setContentHuggingPriority(.defaultLow, for: .horizontal)
         picker.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         picker.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
         return picker
     }
 
-    func updateUIView(_ picker: UIPickerView, context: Context) {
+    func updateUIView(_ picker: HourWheelView, context: Context) {
         let coordinator = context.coordinator
         coordinator.parent = self
         if coordinator.hours != hours {
@@ -402,9 +406,10 @@ struct LoopingHourWheel: UIViewRepresentable {
             picker.reloadAllComponents()
         }
         coordinator.show(selection, in: picker)
+        picker.accessibilityValue = label(selection)
     }
 
-    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UIPickerView, context: Context) -> CGSize? {
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: HourWheelView, context: Context) -> CGSize? {
         CGSize(width: proposal.width ?? 140, height: proposal.height ?? 120)
     }
 
@@ -433,6 +438,15 @@ struct LoopingHourWheel: UIViewRepresentable {
             if parent.selection != hours[index] { parent.selection = hours[index] }
         }
 
+        /// Moves one hour either way, for VoiceOver's swipe up and down.
+        func step(by delta: Int, in picker: UIPickerView) {
+            let current = picker.selectedRow(inComponent: 0)
+            guard current >= 0, !hours.isEmpty else { return }
+            let index = rows.index(ofRow: current + delta)
+            picker.selectRow(rows.centeredRow(for: index), inComponent: 0, animated: true)
+            if parent.selection != hours[index] { parent.selection = hours[index] }
+        }
+
         /// Turns the wheel to an hour set from outside, leaving it alone if it's already there.
         func show(_ hour: Int, in picker: UIPickerView) {
             guard let index = hours.firstIndex(of: hour) else { return }
@@ -441,4 +455,23 @@ struct LoopingHourWheel: UIViewRepresentable {
             picker.selectRow(rows.centeredRow(for: index), inComponent: 0, animated: false)
         }
     }
+}
+
+/// The wheel reads as one adjustable control, so accessibility (and UI tests) don't walk
+/// every repeated row, which made each lookup on the Settings screen ten times slower.
+final class HourWheelView: UIPickerView {
+    var onStep: (@MainActor (Int) -> Void)?
+
+    override var isAccessibilityElement: Bool {
+        get { true }
+        set { }
+    }
+
+    override var accessibilityTraits: UIAccessibilityTraits {
+        get { .adjustable }
+        set { }
+    }
+
+    override func accessibilityIncrement() { onStep?(1) }
+    override func accessibilityDecrement() { onStep?(-1) }
 }
