@@ -510,7 +510,7 @@ struct CheckInReminderSchedulerTests {
     @Test("a reminder offers every answer, best first, then the snooze")
     func answerActions() throws {
         let actions = SystemReminderNotificationCenter.checkInActions
-        #expect(actions.map(\.title) == ["Much better", "A little better", "About the same", "A little worse", "Much worse", "Remind me in an hour"])
+        #expect(actions.map(\.title) == ["Much better", "Better", "Same", "Worse", "Much worse", "Remind me in an hour"])
         // Answering runs in the background; none of the buttons opens the app or needs an unlock.
         #expect(actions.allSatisfy { $0.options.isEmpty })
         for value in OutcomeValue.allCases {

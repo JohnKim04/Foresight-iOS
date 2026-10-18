@@ -171,24 +171,18 @@ private struct OnboardingPreviewCard: View {
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(Color.foresightInk)
             HStack(spacing: 6) {
-                ForEach([-2, -1, 0, 1, 2], id: \.self) { value in
-                    let selected = value == 1
-                    Text(value > 0 ? "+\(value)" : "\(value)")
-                        .font(ForesightType.control)
+                ForEach(OutcomeValue.allCases) { value in
+                    let selected = value == .aLittleBetter
+                    Text(value.title)
+                        .font(.caption.weight(.semibold))
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.8)
                         .foregroundStyle(selected ? Color.white : Color.foresightInk)
-                        .frame(maxWidth: .infinity, minHeight: 38)
+                        .frame(maxWidth: .infinity, minHeight: 42)
                         .background(selected ? Color.foresightAction : Color.foresightRaised, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 }
             }
-            HStack {
-                Text("Worse")
-                Spacer()
-                Text("Same")
-                Spacer()
-                Text("Better")
-            }
-            .font(.caption2.weight(.semibold))
-            .foregroundStyle(Color.foresightMuted)
             Label("Check in again in 2 hours", systemImage: "bell")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(Color.foresightSage)

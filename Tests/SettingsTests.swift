@@ -253,7 +253,7 @@ struct JournalExportTests {
         #expect(export.checkInCount == 2)
         let answered = try #require(export.entries[0].checkIns.first { $0.phase == "immediate" })
         #expect(answered.response == 1)
-        #expect(answered.responseLabel == "A little better")
+        #expect(answered.responseLabel == "Better")
         #expect(answered.note == "Lighter")
         #expect(export.entries[0].checkIns.contains { $0.phase == "delayed" && $0.status == "pending" && $0.dueAt == fixedNow.addingTimeInterval(7_200) })
         #expect(Set(export.categories.map(\.name)) == Set(DefaultCategories.names))

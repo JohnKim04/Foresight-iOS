@@ -375,26 +375,19 @@ struct OutcomeAnswerSheet: View {
                             ForesightCard {
                                 VStack(alignment: .leading, spacing: 16) {
                                     Text("Compared with before").font(.headline)
-                                    HStack {
-                                        Text("Worse")
-                                        Spacer()
-                                        Text("Same")
-                                        Spacer()
-                                        Text("Better")
-                                    }
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(Color.foresightMuted)
                                     LazyVGrid(columns: ratingColumns, spacing: 6) {
                                         ForEach(OutcomeValue.allCases) { value in
                                             Button {
                                                 selectedValue = value
                                                 notSure = false
                                             } label: {
-                                                Text(value.shortTitle)
-                                                    .font(.headline)
-                                                    .lineLimit(1)
-                                                    .minimumScaleFactor(0.75)
-                                                    .frame(maxWidth: .infinity, minHeight: 48)
+                                                Text(value.title)
+                                                    .font(.subheadline.weight(.semibold))
+                                                    .multilineTextAlignment(.center)
+                                                    .lineLimit(2)
+                                                    .minimumScaleFactor(0.8)
+                                                    .padding(.horizontal, 2)
+                                                    .frame(maxWidth: .infinity, minHeight: 52)
                                             }
                                             .buttonStyle(
                                                 ForesightChoiceButtonStyle(
@@ -402,7 +395,6 @@ struct OutcomeAnswerSheet: View {
                                                     horizontalPadding: 0
                                                 )
                                             )
-                                            .accessibilityLabel(value.title)
                                             .accessibilityValue(selectedValue == value && !notSure ? "Selected" : "")
                                         }
                                     }
