@@ -18,6 +18,7 @@ struct JournalRootView: View {
     @State private var calendarMonth = Calendar.current.date(from: Calendar.current.dateComponents([.year, .month], from: .now))!
     @State private var selectedDay = localDayKey(.now)
     @State private var editor: EditorRequest?
+    @State private var showsFilters = false
     @State private var navigationPath: [UUID] = []
     @State private var suggestion: HelpSuggestion?
     @AppStorage(JournalSuggestionState.hiddenKey) private var hiddenSuggestions = ""
@@ -39,6 +40,19 @@ struct JournalRootView: View {
         guard let activeRange else { return 0 }
         let start = localDayKey(activeRange.start)
         return matching.filter { localDayKey($0.eventAt) < start }.count
+    }
+    private var selectedCategory: JournalCategory? { categoryID.flatMap { id in store.categories.first { $0.id == id } } }
+    /// A chip for each filter narrowing the logs beyond the default last 30 days.
+    private var activeFilters: [JournalActiveFilter] {
+        var chips: [JournalActiveFilter] = []
+        switch dateScope {
+        case .recent: break
+        case .all: chips.append(JournalActiveFilter(id: "dates", title: "All time") { dateScope = .recent })
+        case .custom: chips.append(JournalActiveFilter(id: "dates", title: journalDateRangeTitle(start: customStart, end: customEnd)) { dateScope = .recent })
+        }
+        if let selectedCategory { chips.append(JournalActiveFilter(id: "category", title: selectedCategory.name) { categoryID = nil }) }
+        if checkInFilter != .all { chips.append(JournalActiveFilter(id: "check-in", title: checkInFilter.chipTitle) { checkInFilter = .all }) }
+        return chips
     }
 
     var body: some View {
@@ -77,10 +91,25 @@ struct JournalRootView: View {
             }
             .navigationDestination(for: UUID.self) { JournalDetailView(store: store, entryID: $0) }
             .fullScreenCover(item: $editor) { JournalEditorView(store: store, request: $0) }
+            .sheet(isPresented: $showsFilters) {
+                JournalFilterSheet(
+                    categories: store.categories,
+                    matchCount: entries.count,
+                    dateScope: $dateScope,
+                    customStart: $customStart,
+                    customEnd: $customEnd,
+                    categoryID: $categoryID,
+                    checkInFilter: $checkInFilter
+                )
+            }
             .onChange(of: newLogRequest, initial: true) { _, requested in
                 guard requested else { return }
                 editor = EditorRequest(entryID: nil)
                 newLogRequest = false
+            }
+            // A filter on a category that no longer exists would hide every log with no chip to clear it.
+            .onChange(of: store.categories.map(\.id)) { _, ids in
+                if let id = categoryID, !ids.contains(id) { categoryID = nil }
             }
             .onChange(of: HelpReportKey(store: store, now: clock), initial: true) {
                 suggestion = journalSuggestion(helpSuggestions(entries: store.entries, checkIns: store.checkIns, categories: store.categories, limit: .max))
@@ -146,65 +175,60 @@ struct JournalRootView: View {
         .foresightDropdownAvoided()
     }
 
+    /// One row instead of a card of filters, so the logs come first: the Filter button,
+    /// a chip for each active filter, and the Timeline/Calendar toggle.
     private var journalControls: some View {
-        ForesightCard {
-            VStack(alignment: .leading, spacing: 12) {
-                ForesightSegmentedPicker(
-                    selection: $viewMode,
-                    options: JournalViewMode.allCases.map { ($0, $0.title) }
-                )
-                ForesightSegmentedPicker(
-                    selection: $dateScope,
-                    options: JournalDateScope.allCases.map { ($0, $0.title) }
-                )
-                if dateScope == .custom {
-                    DatePicker("From", selection: $customStart, displayedComponents: .date)
-                    DatePicker("To", selection: $customEnd, displayedComponents: .date)
+        let layout = dynamicTypeSize.isAccessibilitySize ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10)) : AnyLayout(HStackLayout(spacing: 10))
+        return layout {
+            Button { showsFilters = true } label: {
+                Label("Filter", systemImage: "line.3.horizontal.decrease")
+                    .font(ForesightType.control)
+                    .foregroundStyle(Color.foresightInk)
+                    .lineLimit(1)
+                    .padding(.horizontal, 14)
+                    .frame(minHeight: 40)
+                    .background(Color.foresightRaised, in: Capsule())
+                    .overlay(Capsule().stroke(Color.foresightLine, lineWidth: 1))
+                    .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("journal.filter")
+            .accessibilityValue(activeFilters.isEmpty ? "Last 30 days" : activeFilters.map(\.title).formatted(.list(type: .and)))
+
+            ScrollView(.horizontal) {
+                HStack(spacing: 6) {
+                    if activeFilters.isEmpty {
+                        Text("Last 30 days").font(ForesightType.metadata).foregroundStyle(Color.foresightMuted)
+                    }
+                    ForEach(activeFilters) { filter in
+                        Button { withAnimation(.snappy(duration: 0.2)) { filter.clear() } } label: {
+                            HStack(spacing: 5) {
+                                Text(filter.title).lineLimit(1)
+                                Image(systemName: "xmark").font(.caption2.weight(.bold))
+                            }
+                            .font(ForesightType.metadata)
+                            .foregroundStyle(Color.foresightSage)
+                            .padding(.horizontal, 10)
+                            .frame(minHeight: 30)
+                            .background(Color.foresightSoftSage, in: Capsule())
+                            .contentShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Remove \(filter.title) filter")
+                    }
                 }
-                journalFilterDropdowns
+                .frame(minHeight: 40)
             }
-        }
-    }
+            .scrollIndicators(.hidden)
 
-    @ViewBuilder private var journalFilterDropdowns: some View {
-        let categoryOptions = [ForesightDropdownOption<UUID?, String>(id: "all-categories", value: nil, title: "All categories")]
-            + store.categories.map { ForesightDropdownOption(id: "category-\($0.id.uuidString)", value: Optional($0.id), title: $0.name, badge: $0.isArchived ? "Archived" : nil) }
-        let checkInOptions = JournalCheckInFilter.allCases.map { ForesightDropdownOption(id: $0.rawValue, value: $0, title: $0.title) }
-        let categoryDropdown = ForesightDropdown(
-            id: "journal.category",
-            selection: $categoryID,
-            options: categoryOptions,
-            style: .compact(systemImage: "tag"),
-            accessibilityLabel: "Choose category",
-            accessibilityValue: categoryID.flatMap { id in store.categories.first { $0.id == id } }?.name ?? "All categories"
-        )
-        let checkInDropdown = ForesightDropdown(
-            id: "journal.check-in",
-            selection: $checkInFilter,
-            options: checkInOptions,
-            style: .compact(systemImage: "line.3.horizontal.decrease.circle"),
-            accessibilityLabel: "Choose check-in filter",
-            accessibilityValue: checkInFilter.title
-        )
-
-        if dynamicTypeSize.isAccessibilitySize {
-            VStack(alignment: .leading, spacing: 8) {
-                categoryDropdown
-                checkInDropdown
-            }
-        } else {
-            HStack {
-                categoryDropdown
-                Spacer()
-                checkInDropdown
-            }
+            JournalViewModeToggle(selection: $viewMode)
         }
     }
 
     private var timeline: some View {
         VStack(alignment: .leading, spacing: 16) {
             if entries.isEmpty {
-                EmptyState(title: matching.isEmpty ? "Start your journal" : "No matching logs", detail: matching.isEmpty ? "Write a short log about something that happened today." : "Try changing the search or filters.", actionTitle: matching.isEmpty ? "Write a log" : nil, action: matching.isEmpty ? { editor = EditorRequest(entryID: nil) } : nil)
+                emptyState
             } else {
                 ForEach(groupEntriesByDay(entries)) { group in
                     VStack(alignment: .leading, spacing: 8) {
@@ -212,11 +236,32 @@ struct JournalRootView: View {
                         ForEach(group.entries, id: \.id) { entry in JournalEntryRow(entry: entry, label: entryCheckInLabel(entry: entry, checkIns: store.checkIns)) { navigationPath.append(entry.id) } }
                     }
                 }
-                if olderCount > 0 {
-                    Button("Show \(olderCount) older \(olderCount == 1 ? "log" : "logs")") { dateScope = .all }
-                        .buttonStyle(ForesightSecondaryButtonStyle()).frame(maxWidth: .infinity)
-                }
             }
+            // Also under an empty state, when every match is older than the range.
+            if olderCount > 0 {
+                Button("Show \(olderCount) older \(olderCount == 1 ? "log" : "logs")") { dateScope = .all }
+                    .buttonStyle(ForesightSecondaryButtonStyle()).frame(maxWidth: .infinity)
+            }
+        }
+    }
+
+    private var isFiltering: Bool { !query.isEmpty || !activeFilters.isEmpty }
+
+    /// A new journal gets the prompt to write; a journal whose filters hide every log gets a way out.
+    @ViewBuilder private var emptyState: some View {
+        if store.entries.isEmpty {
+            EmptyState(title: "Start your journal", detail: "Write a short log about something that happened today.", actionTitle: "Write a log", action: { editor = EditorRequest(entryID: nil) })
+        } else {
+            EmptyState(title: "No matching logs", detail: "Try changing the search or filters.", actionTitle: isFiltering ? "Clear filters" : nil, action: isFiltering ? { clearFilters() } : nil)
+        }
+    }
+
+    private func clearFilters() {
+        withAnimation(.snappy(duration: 0.2)) {
+            query = ""
+            dateScope = .recent
+            categoryID = nil
+            checkInFilter = .all
         }
     }
 
@@ -252,10 +297,15 @@ struct JournalRootView: View {
                     }
                 }
             }
-            VStack(alignment: .leading, spacing: 8) {
-                Text(displayDay(selectedDay)).font(.headline).foregroundStyle(Color.foresightInk)
-                if selectedEntries.isEmpty { Text("No logs on this day.").foregroundStyle(Color.foresightMuted) }
-                ForEach(selectedEntries, id: \.id) { entry in JournalEntryRow(entry: entry, label: entryCheckInLabel(entry: entry, checkIns: store.checkIns)) { navigationPath.append(entry.id) } }
+            // Filters that hide every log say so, rather than leaving an empty month.
+            if entries.isEmpty && (isFiltering || store.entries.isEmpty) {
+                emptyState
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(displayDay(selectedDay)).font(.headline).foregroundStyle(Color.foresightInk)
+                    if selectedEntries.isEmpty { Text("No logs on this day.").foregroundStyle(Color.foresightMuted) }
+                    ForEach(selectedEntries, id: \.id) { entry in JournalEntryRow(entry: entry, label: entryCheckInLabel(entry: entry, checkIns: store.checkIns)) { navigationPath.append(entry.id) } }
+                }
             }
         }
     }
@@ -263,6 +313,121 @@ struct JournalRootView: View {
     private func moveMonth(_ amount: Int) {
         calendarMonth = Calendar.current.date(byAdding: .month, value: amount, to: calendarMonth)!
         selectedDay = localDayKey(calendarMonth)
+    }
+}
+
+struct JournalActiveFilter: Identifiable {
+    let id: String
+    let title: String
+    let clear: @MainActor () -> Void
+}
+
+/// A small Timeline/Calendar switch for the Journal's filter row.
+struct JournalViewModeToggle: View {
+    @Binding var selection: JournalViewMode
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(JournalViewMode.allCases) { mode in
+                let selected = selection == mode
+                Button {
+                    withAnimation(.snappy(duration: 0.2)) { selection = mode }
+                } label: {
+                    Image(systemName: mode.systemImage)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(selected ? Color.foresightInk : Color.foresightMuted)
+                        .frame(width: 38, height: 34)
+                        .background(selected ? Color.foresightSurface : Color.clear, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(mode.title)
+                .accessibilityAddTraits(selected ? .isSelected : [])
+            }
+        }
+        .padding(3)
+        .background(Color.foresightLine.opacity(0.62), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+}
+
+/// The Journal's dates, category and check-in filters, opened from its Filter button.
+struct JournalFilterSheet: View {
+    let categories: [JournalCategory]
+    let matchCount: Int
+    @Binding var dateScope: JournalDateScope
+    @Binding var customStart: Date
+    @Binding var customEnd: Date
+    @Binding var categoryID: UUID?
+    @Binding var checkInFilter: JournalCheckInFilter
+    @Environment(\.dismiss) private var dismiss
+
+    private var isDefault: Bool { dateScope == .recent && categoryID == nil && checkInFilter == .all }
+    private var categoryOptions: [ForesightDropdownOption<UUID?, String>] {
+        [ForesightDropdownOption(id: "all-categories", value: nil, title: "All categories")]
+            + categories.map { ForesightDropdownOption(id: "category-\($0.id.uuidString)", value: Optional($0.id), title: $0.name, badge: $0.isArchived ? "Archived" : nil) }
+    }
+
+    var body: some View {
+        // Its own host, so dropdown panels open inside the sheet rather than behind it.
+        ForesightDropdownHost {
+            NavigationStack {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
+                        SectionKicker(text: "Dates")
+                        ForesightSegmentedPicker(
+                            selection: $dateScope,
+                            options: JournalDateScope.allCases.map { ($0, $0.title) }
+                        )
+                        if dateScope == .custom {
+                            DatePicker("From", selection: $customStart, displayedComponents: .date)
+                            DatePicker("To", selection: $customEnd, displayedComponents: .date)
+                        }
+                        SectionKicker(text: "Category")
+                        ForesightDropdown(
+                            id: "journal.category",
+                            selection: $categoryID,
+                            options: categoryOptions,
+                            style: .fullWidth(systemImage: "tag", label: "Category"),
+                            accessibilityLabel: "Choose category",
+                            accessibilityValue: categoryID.flatMap { id in categories.first { $0.id == id } }?.name ?? "All categories"
+                        )
+                        SectionKicker(text: "Check-ins")
+                        ForesightDropdown(
+                            id: "journal.check-in",
+                            selection: $checkInFilter,
+                            options: JournalCheckInFilter.allCases.map { ForesightDropdownOption(id: $0.rawValue, value: $0, title: $0.title) },
+                            style: .fullWidth(systemImage: "checkmark.circle", label: "Check-ins"),
+                            accessibilityLabel: "Choose check-in filter",
+                            accessibilityValue: checkInFilter.title
+                        )
+                        Text(matchCount == 1 ? "1 log matches." : "\(matchCount) logs match.")
+                            .font(.subheadline)
+                            .foregroundStyle(Color.foresightMuted)
+                    }
+                    .padding()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .background(Color.foresightCanvas)
+                .navigationTitle("Filter logs")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button("Reset") {
+                            withAnimation(.snappy(duration: 0.2)) {
+                                dateScope = .recent
+                                categoryID = nil
+                                checkInFilter = .all
+                            }
+                        }
+                        .disabled(isDefault)
+                    }
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Done") { dismiss() }
+                    }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
     }
 }
 

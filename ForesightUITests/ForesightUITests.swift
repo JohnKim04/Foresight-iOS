@@ -239,13 +239,37 @@ final class ForesightUITests: XCTestCase {
         XCTAssertTrue(suggestion.waitForNonExistence(timeout: 2))
     }
 
+    /// Types into the new-log editor, tapping it again if a tap during the cover's slide-in
+    /// didn't give it keyboard focus.
+    private func typeLog(_ text: String) {
+        let editor = app.textViews["What happened?"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 3))
+        for _ in 0..<3 where !((editor.value(forKey: "hasKeyboardFocus") as? Bool) ?? false) { editor.tap() }
+        editor.typeText(text)
+    }
+
+    /// Opens the Journal's Filter sheet.
+    private func openJournalFilters() {
+        let filter = app.buttons["journal.filter"]
+        XCTAssertTrue(filter.waitForExistence(timeout: 3))
+        filter.tap()
+        XCTAssertTrue(app.staticTexts["Filter logs"].waitForExistence(timeout: 3))
+    }
+
     func testJournalDropdownsSelectAndDismissEachOther() {
-        // The filters appear once the journal has a log.
-        XCTAssertFalse(app.buttons["Choose category"].exists)
+        // The Filter button appears once the journal has a log.
+        XCTAssertFalse(app.buttons["journal.filter"].exists)
         app.buttons["New log"].tap()
-        app.textViews["What happened?"].tap()
-        app.textViews["What happened?"].typeText("A log to filter")
+        typeLog("A log to filter")
         saveNewLog()
+
+        // The filters live behind one button, so the logs come first.
+        let log = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "A log to filter")).firstMatch
+        XCTAssertTrue(log.waitForExistence(timeout: 3), "The new log should show before any filter")
+        XCTAssertTrue(app.buttons["journal.filter"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.buttons["Choose category"].exists)
+        XCTAssertTrue(app.staticTexts["Last 30 days"].exists)
+        openJournalFilters()
 
         let category = app.buttons["Choose category"]
         let checkIn = app.buttons["Choose check-in filter"]
@@ -261,15 +285,29 @@ final class ForesightUITests: XCTestCase {
         checkIn.tap()
         XCTAssertFalse(app.buttons["Scheduled"].exists)
 
-        // Tapping elsewhere on the screen closes the open panel.
+        // Tapping elsewhere in the sheet closes the open panel.
         category.tap()
         XCTAssertTrue(app.buttons["All categories"].waitForExistence(timeout: 2))
-        app.staticTexts["Notice what follows."].tap()
+        // The match count sits below the triggers, clear of the panel, which opens upward
+        // in the half-height sheet and covers the headings above it.
+        app.staticTexts["1 log matches."].tap()
         XCTAssertFalse(app.buttons["All categories"].waitForExistence(timeout: 1))
 
         checkIn.tap()
         app.buttons["Scheduled"].tap()
         XCTAssertEqual(checkIn.value as? String, "Scheduled")
+        XCTAssertTrue(app.staticTexts["0 logs match."].waitForExistence(timeout: 2))
+        app.buttons["Done"].tap()
+
+        // A chip shows the active filter, and removing it brings the log back.
+        let chip = app.buttons["Remove Check-in scheduled filter"]
+        XCTAssertTrue(chip.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["No matching logs"].exists)
+        XCTAssertTrue(app.buttons["Clear filters"].exists)
+        chip.tap()
+        XCTAssertTrue(chip.waitForNonExistence(timeout: 3), "Tapping the chip should remove its filter")
+        XCTAssertTrue(app.staticTexts["Last 30 days"].waitForExistence(timeout: 3))
+        XCTAssertTrue(log.waitForExistence(timeout: 3), "The log should come back once the filter is removed")
     }
 
     func testJournalCategoryDropdownUpdatesTheFilter() {
@@ -277,25 +315,35 @@ final class ForesightUITests: XCTestCase {
         app.textFields["Create a category"].tap()
         app.textFields["Create a category"].typeText("Dropdown test")
         app.buttons["Add"].tap()
-        app.textViews["What happened?"].tap()
-        app.textViews["What happened?"].typeText("Only this category should match")
+        typeLog("Only this category should match")
         saveNewLog()
 
         app.buttons["New log"].tap()
-        app.textViews["What happened?"].tap()
-        app.textViews["What happened?"].typeText("Uncategorized log")
+        typeLog("Uncategorized log")
         saveNewLog()
 
         let matching = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Only this category should match")).firstMatch
         let other = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Uncategorized log")).firstMatch
         XCTAssertTrue(other.waitForExistence(timeout: 3))
 
+        openJournalFilters()
         let category = app.buttons["Choose category"]
         category.tap()
         app.buttons["Dropdown test"].tap()
         XCTAssertEqual(category.value as? String, "Dropdown test")
+        XCTAssertTrue(app.staticTexts["1 log matches."].waitForExistence(timeout: 2))
+        app.buttons["Done"].tap()
+
+        XCTAssertTrue(app.buttons["Remove Dropdown test filter"].waitForExistence(timeout: 3))
         XCTAssertTrue(matching.waitForExistence(timeout: 3))
         XCTAssertTrue(other.waitForNonExistence(timeout: 3), "Logs outside the selected category should be filtered out")
+
+        // Reset in the sheet clears every filter at once.
+        openJournalFilters()
+        app.buttons["Reset"].tap()
+        XCTAssertEqual(category.value as? String, "All categories")
+        app.buttons["Done"].tap()
+        XCTAssertTrue(other.waitForExistence(timeout: 3))
     }
 
     func testPatternsIsOneScreenWithWeeklyCounts() {

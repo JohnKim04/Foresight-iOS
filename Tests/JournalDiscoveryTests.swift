@@ -76,6 +76,18 @@ struct JournalDiscoveryTests {
         #expect(results.count == 2)
     }
 
+    @Test("names a custom range for the Journal's filter chip")
+    func namesCustomRange() {
+        let calendar = Calendar.current
+        let start = calendar.date(byAdding: .day, value: -10, to: now)!
+        let title = journalDateRangeTitle(start: start, end: now, now: now)
+        #expect(title == "\(start.formatted(.dateTime.month(.abbreviated).day())) – \(now.formatted(.dateTime.month(.abbreviated).day()))")
+        #expect(journalDateRangeTitle(start: now, end: start, now: now) == title)
+        #expect(journalDateRangeTitle(start: now, end: now, now: now) == now.formatted(.dateTime.month(.abbreviated).day()))
+        let lastYear = calendar.date(byAdding: .year, value: -1, to: now)!
+        #expect(journalDateRangeTitle(start: lastYear, end: now, now: now).contains(String(calendar.component(.year, from: lastYear))))
+    }
+
     @Test("groups timeline entries by local day in descending order")
     func groupsTimeline() {
         let earlier = entry("Earlier", date: now.addingTimeInterval(-86_400))
