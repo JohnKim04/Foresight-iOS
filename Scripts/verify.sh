@@ -85,6 +85,8 @@ if [[ "${VERIFY_SKIP_LAUNCH:-}" == "1" ]]; then
 fi
 
 app_path="$derived_data/Build/Products/Debug-iphonesimulator/Foresight QA.app"
+# Signing.local.xcconfig can change the bundle ID prefix, so read it from the build.
+bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app_path/Info.plist")"
 xcrun simctl install "$simulator_udid" "$app_path"
-xcrun simctl launch "$simulator_udid" com.foresight.journal.testing
+xcrun simctl launch "$simulator_udid" "$bundle_id"
 print "Foresight QA is running on $simulator_udid"
