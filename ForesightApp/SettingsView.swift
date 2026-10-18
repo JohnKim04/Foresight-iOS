@@ -106,7 +106,7 @@ struct SettingsView: View {
                 .padding(.vertical, 4)
             }
             Toggle(isOn: $remindersEnabled) {
-                SettingLabel(title: "Check-in reminders", detail: "A notification when a scheduled check-in is ready.")
+                SettingLabel(title: "Check-in reminders", detail: "A notification when a scheduled check-in is ready, and a count on the app icon while any wait.")
             }
             .tint(Color.foresightSwitch)
             Toggle(isOn: $nudgesEnabled) {

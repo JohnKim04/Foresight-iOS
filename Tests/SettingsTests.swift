@@ -53,6 +53,13 @@ struct QuietHoursReminderPlanTests {
         #expect(reminders.map(\.fireAt) == [utcDate(hour: 21), utcDate(hour: 8, dayOffset: 1)])
     }
 
+    @Test("a check-in due a moment before quiet hours start waits for them to end")
+    func dueJustBeforeQuietHours() {
+        let source = ReminderSource(checkInID: UUID(), dueAt: utcDate(hour: 22).addingTimeInterval(-0.5), entryBody: "Late show")
+        let reminders = CheckInReminderPlan.reminders(for: [source], now: utcDate(hour: 12), quietHours: .standard, calendar: calendar)
+        #expect(reminders.map(\.fireAt) == [utcDate(hour: 8, dayOffset: 1)])
+    }
+
     @Test("a check-in that fell due overnight is still reminded about in the morning")
     func pastDueInQuietHours() {
         let source = ReminderSource(checkInID: UUID(), dueAt: utcDate(hour: 23), entryBody: "Late show")
