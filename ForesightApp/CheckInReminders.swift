@@ -54,8 +54,8 @@ enum CheckInReminderPlan {
     static let showsLogText = true
     static let genericBody = "A check-in is ready."
     /// iOS keeps at most 64 pending local notifications per app, so only the soonest are
-    /// scheduled, leaving room for suggestion nudges.
-    static let pendingLimit = 64 - SuggestionNudgePlan.daysAhead
+    /// scheduled, leaving room for suggestion nudges and heads-ups.
+    static let pendingLimit = 64 - SuggestionNudgePlan.daysAhead * NudgeKind.allCases.count
     static let snoozeInterval: TimeInterval = 60 * 60
 
     static func identifier(for checkInID: UUID) -> String { identifierPrefix + checkInID.uuidString }

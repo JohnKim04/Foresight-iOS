@@ -101,17 +101,14 @@ func helpSuggestions(entries: [JournalEntry], checkIns: [OutcomeCheckIn], catego
         let recent = laterResponses(entries: entries, checkIns: checkIns, sourceIDs: Set(later.sourceEntryIDs)).prefix(helpSuggestionRecentResponses)
         guard recent.count < helpSuggestionRecentResponses || recent.filter({ $0 > 0 }).count * 2 > recent.count else { continue }
 
-        let helped = helpedEntries(entries: entries, checkIns: checkIns, category: category, sourceIDs: Set(later.sourceEntryIDs))
+        let helped = entriesWithLaterResponse(entries: entries, checkIns: checkIns, sourceIDs: Set(later.sourceEntryIDs)) { $0 > 0 }
         let helpedHours = helped.map { calendar.component(.hour, from: $0.eventAt) }
         let nearNow = helpedHours.filter { hourDistance($0, hour) <= helpSuggestionHourWindow }.count
         let usualTime = nearNow >= 3 && Double(nearNow) / Double(max(1, helpedHours.count)) >= 0.5
         let usualHour = clusteredHour(helpedHours)
-        // Weekends are 2 of 7 days, so two thirds on weekends is a clear lean.
-        let weekendCount = helped.filter { calendar.isDateInWeekend($0.eventAt) }.count
-        let mostlyWeekends = weekendCount >= 3 && Double(weekendCount) / Double(helped.count) >= 2.0 / 3.0
+        let mostlyWeekends = mostlyOnWeekends(helped, calendar: calendar)
 
-        let lastLog = entries.filter { $0.eventAt <= now && $0.categories.contains(where: { $0.id == category.id }) }.map(\.eventAt).max()
-        let daysSince = lastLog.flatMap { calendar.dateComponents([.day], from: startOfDay($0, calendar: calendar), to: startOfDay(now, calendar: calendar)).day }
+        let daysSince = daysSinceLastLog(entries: entries, category: category, now: now, calendar: calendar)
         let loggedToday = daysSince == 0
 
         let rightAfter = outcomeTrend(entries: entries, checkIns: checkIns, category: category, phase: .immediate, range: helpSuggestionRange, now: now, calendar: calendar)
@@ -148,6 +145,48 @@ func helpSuggestions(entries: [JournalEntry], checkIns: [OutcomeCheckIn], catego
         ? closestInsightProgress(entries: entries, checkIns: checkIns, categories: active, phase: .delayed, range: helpSuggestionRange, now: now)
         : nil
     return HelpSuggestionReport(suggestions: Array(ranked), patternCount: patternCount, progress: progress)
+}
+
+/// A category whose later check-ins have tended to be worse, for a heads-up before its usual time.
+/// As with suggestions, this only says what tended to follow what, never what caused it.
+struct WorsePattern: Identifiable {
+    let category: JournalCategory
+    let worseCount: Int
+    let numericCount: Int
+    /// Most of the logs followed by feeling worse were on weekends.
+    let mostlyWeekends: Bool
+    /// The hour most of the logs followed by feeling worse cluster around, when they do.
+    let usualHour: Int?
+    let loggedToday: Bool
+    let strength: Double
+
+    var id: UUID { category.id }
+}
+
+/// Categories whose later check-ins have mostly been worse, held to the same bar as suggestions:
+/// five numeric later responses and the 60% rule, a lower bound of a half on the worse rate, and
+/// still holding in the latest later check-ins. Strongest first.
+func worsePatterns(entries: [JournalEntry], checkIns: [OutcomeCheckIn], categories: [JournalCategory], now: Date = .now, calendar: Calendar = .current) -> [WorsePattern] {
+    categories.filter { !$0.isArchived }.compactMap { category -> WorsePattern? in
+        let later = outcomeTrend(entries: entries, checkIns: checkIns, category: category, phase: .delayed, range: helpSuggestionRange, now: now, calendar: calendar)
+        guard later.numericCount >= minimumPatternResponses, let average = later.average, outcomeDirection(later) == .negative else { return nil }
+        let lowerBound = wilsonLowerBound(successes: later.worseCount, trials: later.numericCount)
+        guard lowerBound >= 0.5 - 1e-9 else { return nil }
+        let recent = laterResponses(entries: entries, checkIns: checkIns, sourceIDs: Set(later.sourceEntryIDs)).prefix(helpSuggestionRecentResponses)
+        guard recent.count < helpSuggestionRecentResponses || recent.filter({ $0 < 0 }).count * 2 > recent.count else { return nil }
+
+        let followedByWorse = entriesWithLaterResponse(entries: entries, checkIns: checkIns, sourceIDs: Set(later.sourceEntryIDs)) { $0 < 0 }
+        return WorsePattern(
+            category: category,
+            worseCount: later.worseCount,
+            numericCount: later.numericCount,
+            mostlyWeekends: mostlyOnWeekends(followedByWorse, calendar: calendar),
+            usualHour: clusteredHour(followedByWorse.map { calendar.component(.hour, from: $0.eventAt) }),
+            loggedToday: daysSinceLastLog(entries: entries, category: category, now: now, calendar: calendar) == 0,
+            strength: lowerBound * -average
+        )
+    }
+    .sorted { $0.strength != $1.strength ? $0.strength > $1.strength : $0.category.name < $1.category.name }
 }
 
 /// The suggestion to show right after a check-in that felt worse: the strongest one that
@@ -211,10 +250,25 @@ private func laterResponses(entries: [JournalEntry], checkIns: [OutcomeCheckIn],
         .map(\.1)
 }
 
-/// Logs in the category whose later check-in was answered better.
-private func helpedEntries(entries: [JournalEntry], checkIns: [OutcomeCheckIn], category: JournalCategory, sourceIDs: Set<UUID>) -> [JournalEntry] {
-    let helpedIDs = Set(checkIns.filter { $0.phase == .delayed && $0.isNumericResponse && ($0.overall?.rawValue ?? 0) > 0 }.compactMap { $0.entry?.id })
-    return entries.filter { sourceIDs.contains($0.id) && helpedIDs.contains($0.id) }
+/// Logs in `sourceIDs` whose later check-in answer passes `matches`, such as better or worse.
+private func entriesWithLaterResponse(entries: [JournalEntry], checkIns: [OutcomeCheckIn], sourceIDs: Set<UUID>, matches: (Int) -> Bool) -> [JournalEntry] {
+    let matchingIDs = Set(checkIns.filter { checkIn in
+        guard checkIn.phase == .delayed, checkIn.isNumericResponse, let value = checkIn.overall else { return false }
+        return matches(value.rawValue)
+    }.compactMap { $0.entry?.id })
+    return entries.filter { sourceIDs.contains($0.id) && matchingIDs.contains($0.id) }
+}
+
+/// Weekends are 2 of 7 days, so two thirds on weekends is a clear lean.
+private func mostlyOnWeekends(_ entries: [JournalEntry], calendar: Calendar) -> Bool {
+    let weekendCount = entries.filter { calendar.isDateInWeekend($0.eventAt) }.count
+    return weekendCount >= 3 && Double(weekendCount) / Double(entries.count) >= 2.0 / 3.0
+}
+
+/// Whole days since the category was last logged, 0 when it was logged today.
+private func daysSinceLastLog(entries: [JournalEntry], category: JournalCategory, now: Date, calendar: Calendar) -> Int? {
+    let lastLog = entries.filter { $0.eventAt <= now && $0.categories.contains(where: { $0.id == category.id }) }.map(\.eventAt).max()
+    return lastLog.flatMap { calendar.dateComponents([.day], from: startOfDay($0, calendar: calendar), to: startOfDay(now, calendar: calendar)).day }
 }
 
 /// The hour that at least three, and at least half, of `hours` fall within the window of.

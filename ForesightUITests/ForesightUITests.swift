@@ -105,7 +105,7 @@ final class ForesightUITests: XCTestCase {
         XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "A log to erase")).firstMatch.waitForExistence(timeout: 3))
 
         app.buttons["Settings"].tap()
-        for title in ["Check-in reminders", "Pattern nudges", "Quiet hours"] {
+        for title in ["Check-in reminders", "Pattern nudges", "Feeling-worse heads-ups", "Quiet hours"] {
             XCTAssertTrue(app.switches.matching(NSPredicate(format: "label BEGINSWITH %@", title)).firstMatch.waitForExistence(timeout: 3), "\(title) toggle is missing")
         }
         // The quiet-hours wheels and Categories push the data rows below the fold.
