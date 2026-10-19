@@ -27,6 +27,7 @@ struct QuietHours: Equatable, Sendable {
 struct NotificationPreferences {
     static let remindersEnabledKey = "checkInRemindersEnabled"
     static let nudgesEnabledKey = "suggestionNudgesEnabled"
+    static let headsUpsEnabledKey = "worsePatternHeadsUpsEnabled"
     static let quietHoursEnabledKey = "quietHoursEnabled"
     static let quietHoursStartKey = "quietHoursStart"
     static let quietHoursEndKey = "quietHoursEnd"
@@ -50,6 +51,11 @@ struct NotificationPreferences {
     var nudgesEnabled: Bool {
         get { bool(Self.nudgesEnabledKey, default: true) }
         nonmutating set { defaults.set(newValue, forKey: Self.nudgesEnabledKey) }
+    }
+
+    var headsUpsEnabled: Bool {
+        get { bool(Self.headsUpsEnabledKey, default: true) }
+        nonmutating set { defaults.set(newValue, forKey: Self.headsUpsEnabledKey) }
     }
 
     var quietHoursEnabled: Bool {

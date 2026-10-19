@@ -75,8 +75,45 @@ struct HelpSuggestionsTests {
         #expect(messages[1].contains("Workout needs 1 more later check-in "))
         expectNonCausal([HelpSuggestionCopy.title, HelpSuggestionCopy.afterWorseIntro, HelpSuggestionCopy.hideForToday] + messages)
         expectNonCausal([SuggestionNudgeCopy.title, SuggestionNudgeCopy.body(categoryName: "Workout", betterCount: 4, numericCount: 5, style: .specific), SuggestionNudgeCopy.body(categoryName: "Workout", betterCount: 4, numericCount: 5, style: .generic)])
+        expectNonCausal([SuggestionNudgeCopy.headsUpTitle, SuggestionNudgeCopy.headsUpBody(categoryName: "Coffee", worseCount: 4, numericCount: 5, style: .specific), SuggestionNudgeCopy.headsUpBody(categoryName: "Coffee", worseCount: 4, numericCount: 5, style: .generic)])
         // The footnote is the disclaimer itself, so it names "causes" on purpose.
         #expect(HelpSuggestionCopy.footnote.hasSuffix("These are patterns, not causes."))
+    }
+
+    @Test("finds patterns often followed by feeling worse, with the hour they cluster around")
+    func worsePattern() throws {
+        let coffee = JournalCategory(name: "Coffee")
+        let workout = JournalCategory(name: "Workout")
+        let coffeeLogs = logs(coffee, count: 6, hourOffset: 8)
+        let workoutLogs = logs(workout, count: 5)
+        let checkIns = answers(coffeeLogs, [.aLittleWorse, .muchWorse, .aLittleWorse, .aLittleWorse, .aLittleWorse, .same])
+            + answers(workoutLogs, [.aLittleBetter])
+        let patterns = worsePatterns(entries: coffeeLogs + workoutLogs, checkIns: checkIns, categories: [coffee, workout], now: now, calendar: calendar)
+        let pattern = try #require(patterns.first)
+        #expect(patterns.count == 1)
+        #expect(pattern.category.id == coffee.id)
+        #expect(pattern.worseCount == 5)
+        #expect(pattern.numericCount == 6)
+        // `now` is 06:40, so eight hours later is 14:40.
+        #expect(pattern.usualHour == 14)
+        #expect(!pattern.loggedToday)
+        #expect(pattern.strength > 0)
+    }
+
+    @Test("holds worse patterns to the same small-sample and recency bar")
+    func worsePatternBar() {
+        let coffee = JournalCategory(name: "Coffee")
+        let soda = JournalCategory(name: "Soda")
+        let snack = JournalCategory(name: "Snack")
+        let coffeeLogs = logs(coffee, count: 4)
+        let sodaLogs = logs(soda, count: 5)
+        let snackLogs = logs(snack, count: 15)
+        // Coffee has only four later check-ins, and Soda's 3 of 5 is too close to chance.
+        // Snack clears the bar overall, but its three newest later check-ins were better, so the run may have faded.
+        let checkIns = answers(coffeeLogs, [.muchWorse])
+            + answers(sodaLogs, [.aLittleWorse, .aLittleWorse, .aLittleWorse, .same, .same])
+            + answers(snackLogs, [.aLittleBetter, .aLittleBetter, .aLittleBetter] + Array(repeating: OutcomeValue.muchWorse, count: 12))
+        #expect(worsePatterns(entries: coffeeLogs + sodaLogs + snackLogs, checkIns: checkIns, categories: [coffee, soda, snack], now: now, calendar: calendar).isEmpty)
     }
 
     @Test("finds the hour most better-followed logs cluster around")

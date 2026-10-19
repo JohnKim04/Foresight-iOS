@@ -178,6 +178,7 @@ struct NotificationPreferencesTests {
         let (preferences, _) = try makePreferences()
         #expect(preferences.remindersEnabled)
         #expect(preferences.nudgesEnabled)
+        #expect(preferences.headsUpsEnabled)
         #expect(preferences.quietHours == .standard)
     }
 
@@ -186,11 +187,13 @@ struct NotificationPreferencesTests {
         let (preferences, defaults) = try makePreferences()
         preferences.remindersEnabled = false
         preferences.nudgesEnabled = false
+        preferences.headsUpsEnabled = false
         preferences.quietHoursStart = 23
         preferences.quietHoursEnd = 7
         let reread = NotificationPreferences(defaults: defaults)
         #expect(!reread.remindersEnabled)
         #expect(!reread.nudgesEnabled)
+        #expect(!reread.headsUpsEnabled)
         #expect(reread.quietHours == QuietHours(start: 23, end: 7))
         reread.quietHoursEnabled = false
         #expect(preferences.quietHours == .off)

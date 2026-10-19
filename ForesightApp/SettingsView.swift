@@ -10,6 +10,7 @@ struct SettingsView: View {
 
     @State private var remindersEnabled: Bool
     @State private var nudgesEnabled: Bool
+    @State private var headsUpsEnabled: Bool
     @State private var quietHoursEnabled: Bool
     @State private var quietStart: Int
     @State private var quietEnd: Int
@@ -31,6 +32,7 @@ struct SettingsView: View {
         preferences.repairEqualQuietHours()
         _remindersEnabled = State(initialValue: preferences.remindersEnabled)
         _nudgesEnabled = State(initialValue: preferences.nudgesEnabled)
+        _headsUpsEnabled = State(initialValue: preferences.headsUpsEnabled)
         _quietHoursEnabled = State(initialValue: preferences.quietHoursEnabled)
         _quietStart = State(initialValue: preferences.quietHoursStart)
         _quietEnd = State(initialValue: preferences.quietHoursEnd)
@@ -69,6 +71,10 @@ struct SettingsView: View {
             }
             .onChange(of: nudgesEnabled) { _, isOn in
                 preferences.nudgesEnabled = isOn
+                preferencesChanged(turnedOn: isOn)
+            }
+            .onChange(of: headsUpsEnabled) { _, isOn in
+                preferences.headsUpsEnabled = isOn
                 preferencesChanged(turnedOn: isOn)
             }
             .onChange(of: quietHoursEnabled) { _, isOn in
@@ -136,6 +142,10 @@ struct SettingsView: View {
                 SettingLabel(title: "Pattern nudges", detail: "At most one a day, around the time you usually log something that has often been followed by feeling better.")
             }
             .tint(Color.foresightSwitch)
+            Toggle(isOn: $headsUpsEnabled) {
+                SettingLabel(title: "Feeling-worse heads-ups", detail: "At most one a day, an hour before the time you usually log something that has often been followed by feeling worse.")
+            }
+            .tint(Color.foresightSwitch)
         } header: {
             Text("Notifications")
         }
@@ -144,7 +154,7 @@ struct SettingsView: View {
     private var quietHoursSection: some View {
         Section {
             Toggle(isOn: $quietHoursEnabled) {
-                SettingLabel(title: "Quiet hours", detail: quietHoursEnabled ? "Reminders due \(Self.hourLabel(quietStart))–\(Self.hourLabel(quietEnd)) arrive at \(Self.hourLabel(quietEnd)). Nudges skip these hours." : "Reminders and nudges can arrive at any hour.")
+                SettingLabel(title: "Quiet hours", detail: quietHoursEnabled ? "Reminders due \(Self.hourLabel(quietStart))–\(Self.hourLabel(quietEnd)) arrive at \(Self.hourLabel(quietEnd)). Nudges and heads-ups skip these hours." : "Reminders, nudges and heads-ups can arrive at any hour.")
             }
             .tint(Color.foresightSwitch)
             if quietHoursEnabled {
