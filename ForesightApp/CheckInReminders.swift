@@ -384,7 +384,7 @@ struct ReminderResponse: Equatable, Sendable {
 enum ReminderDestination: Equatable {
     case checkIns
     case answer(CheckInTarget)
-    /// A category's later evidence on Patterns, from a tapped suggestion nudge.
+    /// A category's later evidence on Patterns, from a tapped suggestion nudge or heads-up.
     case evidence(UUID)
     /// A new log, from the widget.
     case newLog

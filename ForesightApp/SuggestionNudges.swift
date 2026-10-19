@@ -32,7 +32,11 @@ struct NudgeCandidate: Equatable, Sendable {
     var kind = NudgeKind.better
 
     /// A heads-up comes an hour early, so there is time to weigh it before the usual time.
-    var fireHour: Int { kind == .worse ? max(usualHour - 1, 0) : usualHour }
+    /// Nil for a heads-up whose usual hour is midnight, which has no earlier hour that day.
+    var fireHour: Int? {
+        guard kind == .worse else { return usualHour }
+        return usualHour > 0 ? usualHour - 1 : nil
+    }
 }
 
 struct SuggestionNudge: Equatable, Sendable {
@@ -88,6 +92,12 @@ enum SuggestionNudgeCopy {
 enum SuggestionNudgePlan {
     static let identifierPrefix = NudgeKind.better.identifierPrefix
     static let threadIdentifier = "nudges"
+    static let headsUpThreadIdentifier = "heads-ups"
+
+    /// Heads-ups group apart from feel-better nudges in Notification Center.
+    static func threadIdentifier(for kind: NudgeKind) -> String {
+        kind == .worse ? headsUpThreadIdentifier : threadIdentifier
+    }
     /// Today plus the next two days, so a nudge still arrives if the app isn't opened.
     static let daysAhead = 3
 
@@ -158,7 +168,7 @@ enum SuggestionNudgePlan {
     /// doesn't repeat. `usedToday` means one of this kind already went out today.
     static func nudges(for candidates: [NudgeCandidate], now: Date, calendar: Calendar, quietHours: QuietHours = .standard, usedToday: Bool) -> [SuggestionNudge] {
         let ranked = candidates
-            .filter { !quietHours.contains(hour: $0.fireHour) }
+            .filter { candidate in candidate.fireHour.map { !quietHours.contains(hour: $0) } ?? false }
             .sorted { $0.strength != $1.strength ? $0.strength > $1.strength : $0.categoryName < $1.categoryName }
         let today = calendar.startOfDay(for: now)
         var previous: UUID?
@@ -168,7 +178,7 @@ enum SuggestionNudgePlan {
             guard let day = calendar.date(byAdding: .day, value: offset, to: today) else { continue }
             if offset == 0 && usedToday { continue }
             let options = ranked.compactMap { candidate -> (NudgeCandidate, Date)? in
-                guard let fireAt = calendar.date(bySettingHour: candidate.fireHour, minute: 0, second: 0, of: day), fireAt > now else { return nil }
+                guard let hour = candidate.fireHour, let fireAt = calendar.date(bySettingHour: hour, minute: 0, second: 0, of: day), fireAt > now else { return nil }
                 if offset == 0 && candidate.loggedToday { return nil }
                 if candidate.weekendsOnly && !calendar.isDateInWeekend(day) { return nil }
                 return (candidate, fireAt)
@@ -270,7 +280,7 @@ extension SystemReminderNotificationCenter: NudgeNotificationCenter {
         content.title = nudge.title
         content.body = nudge.body
         content.sound = .default
-        content.threadIdentifier = SuggestionNudgePlan.threadIdentifier
+        content.threadIdentifier = SuggestionNudgePlan.threadIdentifier(for: nudge.kind)
         let trigger = UNCalendarNotificationTrigger(dateMatching: nudge.wallClock, repeats: false)
         try await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: nudge.identifier, content: content, trigger: trigger))
     }
