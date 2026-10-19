@@ -4,7 +4,7 @@ import UIKit
 
 struct PatternsRootView: View {
     let store: JournalStore
-    /// Set when a suggestion nudge is tapped; opens that category's later evidence.
+    /// Set when a suggestion nudge or heads-up is tapped; opens that category's later evidence.
     @Binding var evidenceRequest: UUID?
     @State private var outcomeCategoryID: UUID?
     @State private var outcomeRange: OutcomeTrendRange = .ninety

@@ -53,8 +53,8 @@ struct SuggestionNudgePlanTests {
         NudgeCandidate(categoryID: id, categoryName: name, usualHour: hour, matchingCount: 4, numericCount: 5, strength: strength, loggedToday: loggedToday, weekendsOnly: weekendsOnly, kind: kind)
     }
 
-    private func plan(_ candidates: [NudgeCandidate], now: Date = morning, calendar: Calendar = utc, usedToday: Bool = false) -> [SuggestionNudge] {
-        SuggestionNudgePlan.nudges(for: candidates, now: now, calendar: calendar, usedToday: usedToday)
+    private func plan(_ candidates: [NudgeCandidate], now: Date = morning, calendar: Calendar = utc, quietHours: QuietHours = .standard, usedToday: Bool = false) -> [SuggestionNudge] {
+        SuggestionNudgePlan.nudges(for: candidates, now: now, calendar: calendar, quietHours: quietHours, usedToday: usedToday)
     }
 
     @Test("plans the usual hour in the local time zone")
@@ -144,6 +144,23 @@ struct SuggestionNudgePlanTests {
         // Quiet hours apply to when it arrives: 08:00 is after quiet hours, but its heads-up at 07:00 isn't.
         #expect(plan([candidate("Coffee", hour: 8, kind: .worse)]).isEmpty)
         #expect(plan([candidate("Coffee", hour: 9, kind: .worse)]).map(\.fireAt) == [at(hour: 8, dayOffset: 1), at(hour: 8, dayOffset: 2)])
+        // Heads-ups group apart from feel-better nudges.
+        #expect(SuggestionNudgePlan.threadIdentifier(for: .worse) != SuggestionNudgePlan.threadIdentifier(for: .better))
+    }
+
+    @Test("a heads-up for a midnight pattern is skipped rather than sent at the usual time")
+    func midnightHeadsUp() {
+        let late = candidate("Late snack", hour: 0, kind: .worse)
+        #expect(plan([late], quietHours: .off).isEmpty)
+        // A feel-better nudge at midnight is still planned when quiet hours allow it.
+        #expect(plan([candidate("Late walk", hour: 0)], quietHours: .off).count == 2)
+    }
+
+    @Test("a heads-up for a weekend pattern only comes on weekends")
+    func weekendHeadsUp() {
+        // `morning` is a Friday, so the three days ahead are Friday, Saturday and Sunday.
+        let brunch = candidate("Brunch", hour: 11, weekendsOnly: true, kind: .worse)
+        #expect(plan([brunch]).map(\.fireAt) == [at(hour: 10, dayOffset: 1), at(hour: 10, dayOffset: 2)])
     }
 
     @Test("prefers the strongest pattern but alternates days when there is another")
