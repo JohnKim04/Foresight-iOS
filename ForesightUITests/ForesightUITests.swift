@@ -165,6 +165,10 @@ final class ForesightUITests: XCTestCase {
         // Add already selected the new category, so the log is saved with it.
         saveNewLog()
         XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label CONTAINS %@ AND label CONTAINS %@", "A tagged test", "Testing")).firstMatch.waitForExistence(timeout: 3))
+        // Until there's a suggestion, Journal shows how close the category is to the 5 later check-ins.
+        let progress = app.descendants(matching: .any)["journal.patternProgress"]
+        XCTAssertTrue(progress.waitForExistence(timeout: 3))
+        XCTAssertTrue(progress.label.contains("Testing: 0 of 5 later check-ins"), progress.label)
         openLog(named: "A tagged test")
         app.buttons["Check in now"].tap()
         app.buttons["Much better"].tap()
@@ -237,6 +241,7 @@ final class ForesightUITests: XCTestCase {
         // Demo history: Workout, Sleep and Social were mostly better later.
         let suggestion = app.buttons["journal.suggestion"]
         XCTAssertTrue(suggestion.waitForExistence(timeout: 3))
+        XCTAssertFalse(app.descendants(matching: .any)["journal.patternProgress"].exists)
         let category = ["Workout", "Sleep", "Social"].first { suggestion.label == "See the \($0) pattern" }
         XCTAssertNotNil(category, suggestion.label)
         suggestion.tap()

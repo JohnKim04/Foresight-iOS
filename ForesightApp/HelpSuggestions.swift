@@ -62,7 +62,7 @@ struct HelpSuggestionReport {
     let suggestions: [HelpSuggestion]
     /// Categories with enough later check-ins to describe a pattern, helpful or not.
     let patternCount: Int
-    /// The category closest to enough later check-ins, when nothing qualifies yet.
+    /// The category closest to enough later check-ins, when no suggestion qualifies yet.
     let progress: InsightProgress?
     /// A category cleared the absolute bar but not your other logs' rate.
     var heldBackByBaseline = false
@@ -89,6 +89,12 @@ enum HelpSuggestionCopy {
         if report.patternCount > 0 { return "No category has been followed by feeling better clearly and recently enough yet. Keep checking in later and this will update." }
         if let progress = report.progress { return "\(progress.category.name) needs \(progress.needed) more later \(progress.needed == 1 ? "check-in" : "check-ins") before Foresight can show what tends to be followed by feeling better." }
         return "Tag your logs and check in later. Foresight will show what has tended to be followed by feeling better."
+    }
+
+    /// The Journal's line while there is no suggestion yet. It counts toward the same minimum the
+    /// suggestions use, and doesn't promise a pattern, since five answers may still show none.
+    static func journalProgress(_ progress: InsightProgress) -> String {
+        "\(progress.category.name): \(progress.numericCount) of \(minimumPatternResponses) later check-ins before Foresight looks for a pattern"
     }
 }
 
@@ -171,7 +177,9 @@ func helpSuggestions(entries: [JournalEntry], checkIns: [OutcomeCheckIn], catego
     let ranked = suggestions
         .sorted { $0.score != $1.score ? $0.score > $1.score : $0.category.name < $1.category.name }
         .prefix(max(0, limit))
-    let progress = ranked.isEmpty && patternCount == 0
+    // Also once another category has a pattern that didn't qualify, so the Journal keeps
+    // showing how close the rest are until the first suggestion.
+    let progress = ranked.isEmpty
         ? closestInsightProgress(entries: entries, checkIns: checkIns, categories: active, phase: .delayed, range: helpSuggestionRange, now: now)
         : nil
     return HelpSuggestionReport(suggestions: Array(ranked), patternCount: patternCount, progress: progress, heldBackByBaseline: heldBackByBaseline && ranked.isEmpty)

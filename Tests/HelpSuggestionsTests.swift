@@ -54,6 +54,25 @@ struct HelpSuggestionsTests {
         #expect(result.progress?.needed == 1)
     }
 
+    @Test("keeps counting the closest category after another one's pattern doesn't qualify")
+    func progressAfterAPatternThatDoesNotQualify() throws {
+        let work = JournalCategory(name: "Work")
+        let workout = JournalCategory(name: "Workout")
+        let workLogs = logs(work, count: 5)
+        let workoutLogs = logs(workout, count: 3, hourOffset: 2)
+        let checkIns = answers(workLogs, [.aLittleBetter, .aLittleBetter, .aLittleBetter, .aLittleWorse, .aLittleWorse])
+            + answers(workoutLogs, [.muchBetter])
+        let result = report(workLogs + workoutLogs, checkIns, [work, workout])
+        #expect(result.suggestions.isEmpty)
+        #expect(result.patternCount == 1)
+        let progress = try #require(result.progress)
+        #expect(progress.category.id == workout.id)
+        #expect(progress.numericCount == 3)
+        // Patterns still leads with the pattern it found rather than the progress.
+        #expect(!HelpSuggestionCopy.emptyMessage(result).contains("Workout"))
+        #expect(HelpSuggestionCopy.journalProgress(progress) == "Workout: 3 of 5 later check-ins before Foresight looks for a pattern")
+    }
+
     @Test("suggests a category whose later check-ins were mostly better, in non-causal words")
     func suggestsPositiveLaterPattern() throws {
         let workout = JournalCategory(name: "Workout")
@@ -186,7 +205,7 @@ struct HelpSuggestionsTests {
         // Only a report held back by the baseline mentions other logs.
         #expect(messages.filter { $0.contains("other logs") }.count == 1)
         #expect(messages[1].contains("Workout needs 1 more later check-in "))
-        expectNonCausal([HelpSuggestionCopy.title, HelpSuggestionCopy.afterWorseIntro, HelpSuggestionCopy.hideForToday] + messages)
+        expectNonCausal([HelpSuggestionCopy.title, HelpSuggestionCopy.afterWorseIntro, HelpSuggestionCopy.hideForToday, HelpSuggestionCopy.journalProgress(progress)] + messages)
         expectNonCausal([SuggestionNudgeCopy.title, SuggestionNudgeCopy.body(categoryName: "Workout", betterCount: 4, numericCount: 5, style: .specific), SuggestionNudgeCopy.body(categoryName: "Workout", betterCount: 4, numericCount: 5, style: .generic)])
         expectNonCausal([SuggestionNudgeCopy.headsUpTitle, SuggestionNudgeCopy.headsUpBody(categoryName: "Coffee", worseCount: 4, numericCount: 5, style: .specific), SuggestionNudgeCopy.headsUpBody(categoryName: "Coffee", worseCount: 4, numericCount: 5, style: .generic)])
         // The footnote is the disclaimer itself, so it names "causes" on purpose.

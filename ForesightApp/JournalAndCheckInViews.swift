@@ -21,6 +21,8 @@ struct JournalRootView: View {
     @State private var showsFilters = false
     @State private var navigationPath: [UUID] = []
     @State private var suggestion: HelpSuggestion?
+    /// Shown instead of a suggestion until the first one exists.
+    @State private var patternProgress: InsightProgress?
     @AppStorage(JournalSuggestionState.hiddenKey) private var hiddenSuggestions = ""
     @State private var clock = Date.now
     @Environment(CheckInReminderRouter.self) private var router
@@ -112,7 +114,9 @@ struct JournalRootView: View {
                 if let id = categoryID, !ids.contains(id) { categoryID = nil }
             }
             .onChange(of: HelpReportKey(store: store, now: clock), initial: true) {
-                suggestion = journalSuggestion(helpSuggestions(entries: store.entries, checkIns: store.checkIns, categories: store.categories, limit: .max))
+                let report = helpSuggestions(entries: store.entries, checkIns: store.checkIns, categories: store.categories, limit: .max)
+                suggestion = journalSuggestion(report)
+                patternProgress = report.progress
             }
             // Keeps the card on today's suggestion, and brings back one hidden yesterday.
             .hourlyClock($clock)
@@ -129,6 +133,8 @@ struct JournalRootView: View {
                 withAnimation(.snappy) { hiddenSuggestions = JournalSuggestionState.hiding(suggestion.category.id, stored: hiddenSuggestions) }
             }
             .transition(.opacity)
+        } else if let patternProgress, query.isEmpty {
+            JournalPatternProgressLine(progress: patternProgress)
         }
     }
 
@@ -466,6 +472,26 @@ struct JournalSuggestionCard: View {
                     .accessibilityIdentifier("journal.suggestion.hide")
             }
         }
+    }
+}
+
+/// A quiet line on Journal during the first weeks, when no suggestion exists yet.
+struct JournalPatternProgressLine: View {
+    let progress: InsightProgress
+
+    var body: some View {
+        Label {
+            Text(HelpSuggestionCopy.journalProgress(progress))
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+        } icon: {
+            Image(systemName: "chart.bar.xaxis").foregroundStyle(Color.foresightSage)
+        }
+        .font(.caption)
+        .foregroundStyle(Color.foresightMuted)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("journal.patternProgress")
     }
 }
 
