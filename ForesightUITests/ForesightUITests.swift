@@ -16,7 +16,8 @@ final class ForesightUITests: XCTestCase {
         }
     }
 
-    /// Saves the new-log editor, then leaves the post-log check-in step without answering.
+    /// Saves the new-log editor, then leaves the post-log check-in step without answering,
+    /// keeping the later check-in it sets by default.
     private func saveNewLog() {
         app.buttons["Save"].firstMatch.tap()
         let done = app.buttons["post-log.done"]
@@ -179,8 +180,9 @@ final class ForesightUITests: XCTestCase {
         app.textViews["What happened?"].typeText("Schedule a reflection")
         saveNewLog()
         openLog(named: "Schedule a reflection")
-        app.buttons["Check in later"].tap()
-        app.buttons["Later today"].tap()
+        // The post-log step already set one; move it with the shortcuts it shares.
+        app.buttons["Reschedule"].tap()
+        app.buttons["In 2 hours"].tap()
         app.buttons["Save"].tap()
         XCTAssertTrue(app.buttons["Reschedule"].waitForExistence(timeout: 3))
         app.tabBars.buttons["Check In"].tap()
@@ -298,14 +300,15 @@ final class ForesightUITests: XCTestCase {
         app.staticTexts["1 log matches."].tap()
         XCTAssertFalse(app.buttons["All categories"].waitForExistence(timeout: 1))
 
+        // The new log has its default later check-in, so it is scheduled, not answered.
         checkIn.tap()
-        app.buttons["Scheduled"].tap()
-        XCTAssertEqual(checkIn.value as? String, "Scheduled")
+        app.buttons["Answered"].tap()
+        XCTAssertEqual(checkIn.value as? String, "Answered")
         XCTAssertTrue(app.staticTexts["0 logs match."].waitForExistence(timeout: 2))
         app.buttons["Done"].tap()
 
         // A chip shows the active filter, and removing it brings the log back.
-        let chip = app.buttons["Remove Check-in scheduled filter"]
+        let chip = app.buttons["Remove Checked in filter"]
         XCTAssertTrue(chip.waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["No matching logs"].exists)
         XCTAssertTrue(app.buttons["Clear filters"].exists)
@@ -427,8 +430,9 @@ final class ForesightUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["How do you feel right now?"].waitForExistence(timeout: 3))
         app.buttons["Better"].tap()
         XCTAssertTrue(app.staticTexts["Saved: better"].waitForExistence(timeout: 2))
-        app.buttons["In 2 hours"].tap()
+        // In 2 hours is set without a tap, so Done alone keeps a later check-in.
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Check-in set for")).firstMatch.waitForExistence(timeout: 2))
+        XCTAssertTrue(app.buttons["In 2 hours"].isSelected)
         app.buttons["post-log.done"].tap()
 
         openLog(named: "Went for an evening run")
@@ -461,15 +465,19 @@ final class ForesightUITests: XCTestCase {
         XCTAssertTrue(app.tabBars.buttons["Patterns"].isSelected)
     }
 
-    func testTappingAChosenLaterTimeAgainCancelsIt() {
+    func testTappingTheDefaultLaterTimeCancelsIt() {
         app.buttons["New log"].tap()
         app.textViews["What happened?"].tap()
         app.textViews["What happened?"].typeText("Changed my mind about later")
         app.buttons["Save"].firstMatch.tap()
         let inTwoHours = app.buttons["In 2 hours"]
         XCTAssertTrue(inTwoHours.waitForExistence(timeout: 3))
+        let setLine = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Check-in set for")).firstMatch
+        XCTAssertTrue(setLine.waitForExistence(timeout: 2))
+        XCTAssertTrue(inTwoHours.isSelected)
         inTwoHours.tap()
-        inTwoHours.tap()
+        XCTAssertTrue(setLine.waitForNonExistence(timeout: 2))
+        XCTAssertFalse(inTwoHours.isSelected)
         app.buttons["post-log.done"].tap()
         app.tabBars.buttons["Check In"].tap()
         XCTAssertFalse(app.buttons["Answer early"].waitForExistence(timeout: 1))

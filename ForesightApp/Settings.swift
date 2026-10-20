@@ -31,6 +31,7 @@ struct NotificationPreferences {
     static let quietHoursEnabledKey = "quietHoursEnabled"
     static let quietHoursStartKey = "quietHoursStart"
     static let quietHoursEndKey = "quietHoursEnd"
+    static let laterCheckInDefaultKey = "laterCheckInDefault"
 
     let defaults: UserDefaults
 
@@ -71,6 +72,11 @@ struct NotificationPreferences {
     var quietHoursEnd: Int {
         get { hour(Self.quietHoursEndKey, default: QuietHours.standard.end) }
         nonmutating set { defaults.set(newValue, forKey: Self.quietHoursEndKey) }
+    }
+
+    var laterCheckInDefault: LaterCheckInDefault {
+        get { (defaults.string(forKey: Self.laterCheckInDefaultKey)).flatMap(LaterCheckInDefault.init(rawValue:)) ?? .standard }
+        nonmutating set { defaults.set(newValue.rawValue, forKey: Self.laterCheckInDefaultKey) }
     }
 
     /// The window both schedulers use.

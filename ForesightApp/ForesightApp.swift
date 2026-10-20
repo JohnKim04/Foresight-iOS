@@ -64,7 +64,8 @@ final class AppDatabase {
         reminders = CheckInReminderScheduler(
             center: inMemory ? InertReminderNotificationCenter() : SystemReminderNotificationCenter(),
             isEnabled: { preferences.remindersEnabled },
-            quietHours: { preferences.quietHours }
+            quietHours: { preferences.quietHours },
+            laterDefault: { preferences.laterCheckInDefault }
         )
         nudges = SuggestionNudgeScheduler(
             center: inMemory ? InertReminderNotificationCenter() : SystemReminderNotificationCenter(),

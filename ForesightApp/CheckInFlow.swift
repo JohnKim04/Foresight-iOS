@@ -42,6 +42,39 @@ struct CheckInLaterOption: Identifiable, Equatable {
     }
 }
 
+/// Which later check-in the post-log step sets before you tap anything, chosen in Settings.
+/// Predictions learn only from later check-ins, so one is set unless you turn this off.
+enum LaterCheckInDefault: String, CaseIterable, Identifiable, Sendable {
+    case inTwoHours, tonight, morning, none
+
+    static let standard = LaterCheckInDefault.inTwoHours
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .inTwoHours: "In 2 hours"
+        case .tonight: "Tonight"
+        case .morning: "Next morning"
+        case .none: "Don't schedule"
+        }
+    }
+
+    /// The shortcut to set among those offered now. Tonight isn't offered once 8 PM is less
+    /// than three hours away; then the soonest time offered stands in.
+    func option(in options: [CheckInLaterOption]) -> CheckInLaterOption? {
+        guard let kind = CheckInLaterOption.Kind(rawValue: rawValue) else { return nil }
+        return options.first { $0.kind == kind } ?? options.first
+    }
+}
+
+/// Wording for a reminder that quiet hours hold past its check-in's due time.
+enum QuietHoursCopy {
+    static func reminderNote(_ fireAt: Date) -> String {
+        "Quiet hours hold the reminder until \(ForesightFormat.detailDate(fireAt))."
+    }
+}
+
 /// Later check-ins that are waiting for an answer right now: the "Ready now" group on Check In.
 func dueCheckInCount(_ journal: JournalSnapshot, now: Date) -> Int {
     delayedCheckInQueue(journal, now: now).filter(\.due).count

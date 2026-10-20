@@ -272,6 +272,7 @@ final class CheckInReminderScheduler {
     @ObservationIgnored private let calendar: () -> Calendar
     @ObservationIgnored private let isEnabled: () -> Bool
     @ObservationIgnored private let quietHours: () -> QuietHours
+    @ObservationIgnored private let laterDefault: () -> LaterCheckInDefault
     @ObservationIgnored private var sources: [ReminderSource] = []
     @ObservationIgnored private var syncTask: Task<Void, Never>?
 
@@ -281,13 +282,26 @@ final class CheckInReminderScheduler {
         now: @escaping () -> Date = { .now },
         calendar: @escaping () -> Calendar = { .autoupdatingCurrent },
         isEnabled: @escaping () -> Bool = { true },
-        quietHours: @escaping () -> QuietHours = { .off }
+        quietHours: @escaping () -> QuietHours = { .off },
+        laterDefault: @escaping () -> LaterCheckInDefault = { .standard }
     ) {
         self.center = center
         self.now = now
         self.calendar = calendar
         self.isEnabled = isEnabled
         self.quietHours = quietHours
+        self.laterDefault = laterDefault
+    }
+
+    /// The later check-in a new log gets before you tap anything.
+    var laterCheckInDefault: LaterCheckInDefault { laterDefault() }
+
+    /// When the reminder for a check-in due at `dueAt` will arrive, if quiet hours hold it past
+    /// that time. Nil when it arrives on time, or when reminders are off and none will arrive.
+    func reminderHeldByQuietHours(dueAt: Date) -> Date? {
+        guard isEnabled() else { return nil }
+        let fireAt = CheckInReminderPlan.fireDate(for: dueAt, quietHours: quietHours(), calendar: calendar())
+        return fireAt.timeIntervalSince(dueAt) >= 60 ? fireAt : nil
     }
 
     func attach(to store: JournalStore) {

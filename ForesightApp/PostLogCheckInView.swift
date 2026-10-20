@@ -2,7 +2,8 @@ import SwiftUI
 import UIKit
 
 /// Shown in place of the editor right after a new log is saved: rate how you feel now
-/// and pick when to check in again, without digging through the log's detail page.
+/// and pick when to check in again, without digging through the log's detail page. The later
+/// check-in chosen in Settings starts out set, so a log left with Done still feeds Patterns.
 struct PostLogCheckInView: View {
     let store: JournalStore
     let entryID: UUID
@@ -12,6 +13,7 @@ struct PostLogCheckInView: View {
     @State private var chosenLater: CheckInLaterOption.Kind?
     @State private var scheduleTarget: CheckInTarget?
     @State private var message: String?
+    @State private var didSetDefaultLater = false
     /// Set after a "worse" rating: something else that has tended to be followed by feeling better.
     @State private var worseSuggestion: HelpSuggestion?
     @Environment(CheckInReminderScheduler.self) private var reminders
@@ -49,7 +51,7 @@ struct PostLogCheckInView: View {
                     if let worseSuggestion { suggestionCard(worseSuggestion) }
                     laterCard
                     if let message { Text(message).font(.footnote).foregroundStyle(Color.foresightWarning) }
-                    Button("Done", action: onDone)
+                    Button("Done", action: finish)
                         .buttonStyle(ForesightPrimaryButtonStyle())
                         .frame(maxWidth: .infinity)
                         .accessibilityIdentifier("post-log.done")
@@ -59,6 +61,7 @@ struct PostLogCheckInView: View {
         }
         .background(Color.foresightCanvas)
         .sheet(item: $scheduleTarget, onDismiss: syncChosenLater) { ScheduleCheckInSheet(store: store, target: $0) }
+        .task { setDefaultLater() }
     }
 
     private var ratingCard: some View {
@@ -105,7 +108,7 @@ struct PostLogCheckInView: View {
                 Button("See the pattern") {
                     // The root view opens it on Patterns once this sheet has closed.
                     router.destination = .evidence(suggestion.category.id)
-                    onDone()
+                    finish()
                 }
                 .buttonStyle(ForesightQuietButtonStyle())
                 .accessibilityIdentifier("post-log.suggestion")
@@ -118,7 +121,7 @@ struct PostLogCheckInView: View {
         ForesightCard {
             VStack(alignment: .leading, spacing: 12) {
                 SectionKicker(text: "Check in later")
-                Text("How you feel a few hours on can differ from right after. Pick a time and it will wait for you in Check In.")
+                Text("How you feel a few hours on can differ from right after, and later check-ins are what Patterns learns from. Each one waits for you in Check In.")
                     .font(.subheadline)
                     .foregroundStyle(Color.foresightMuted)
                     .fixedSize(horizontal: false, vertical: true)
@@ -132,7 +135,8 @@ struct PostLogCheckInView: View {
                 }
                 .buttonStyle(ForesightQuietButtonStyle())
                 if let pendingLater, let dueAt = pendingLater.dueAt {
-                    Text("Check-in set for \(ForesightFormat.detailDate(dueAt)).\(chosenLater == nil ? "" : " Tap it again to cancel.")")
+                    let held = reminders.reminderHeldByQuietHours(dueAt: dueAt).map { " " + QuietHoursCopy.reminderNote($0) } ?? ""
+                    Text("Check-in set for \(ForesightFormat.detailDate(dueAt)).\(held)\(chosenLater == nil ? "" : " Tap the selected time to cancel.")")
                         .font(.caption)
                         .foregroundStyle(Color.foresightSage)
                 }
@@ -146,7 +150,7 @@ struct PostLogCheckInView: View {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(option.title).font(ForesightType.control)
-                    Text(option.detail).font(.caption).opacity(0.8)
+                    Text(rowDetail(option)).font(.caption).opacity(0.8)
                 }
                 Spacer()
                 Image(systemName: selected ? "checkmark.circle.fill" : "circle")
@@ -160,8 +164,33 @@ struct PostLogCheckInView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(option.title)
-        .accessibilityValue(option.detail)
+        .accessibilityValue(rowDetail(option))
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    /// "11:00 PM" alone would promise a buzz at 11 that quiet hours hold until morning.
+    private func rowDetail(_ option: CheckInLaterOption) -> String {
+        guard let fireAt = reminders.reminderHeldByQuietHours(dueAt: option.dueAt) else { return option.detail }
+        return "\(option.detail), reminder at \(fireAt.formatted(date: .omitted, time: .shortened))"
+    }
+
+    /// Sets the Settings default once, when the step first appears. Tapping it turns it off.
+    private func setDefaultLater() {
+        guard !didSetDefaultLater else { return }
+        didSetDefaultLater = true
+        guard pendingLater == nil, let entry,
+              let option = reminders.laterCheckInDefault.option(in: laterOptions), option.dueAt > .now else { return }
+        do {
+            _ = try store.createCheckIn(for: entry, phase: .delayed, dueAt: option.dueAt)
+            chosenLater = option.kind
+        } catch { message = error.localizedDescription }
+    }
+
+    /// A check-in set by default still needs permission for its reminder. Asking on the way out
+    /// keeps the system prompt off the rating buttons.
+    private func finish() {
+        if pendingLater != nil { Task { await reminders.requestAuthorizationIfNeeded() } }
+        onDone()
     }
 
     private func rate(_ value: OutcomeValue) {
