@@ -104,32 +104,34 @@ struct HelpSuggestionsTests {
         #expect(tagged.suggestions.isEmpty)
     }
 
-    @Test("a category beats a mostly better baseline only with stronger evidence")
-    func beatsBetterBaseline() {
+    @Test("a category has to beat how your other logs usually go")
+    func beatsUsualRate() {
         let walk = JournalCategory(name: "Walk")
-        let ordinary = (0..<30).map { index in
-            let date = calendar.date(byAdding: .day, value: -(1 + index), to: now)!
-            return JournalEntry(body: "Ordinary day \(index)", eventAt: date, createdAt: date, updatedAt: date, categories: [])
+        func ordinary(_ count: Int) -> [JournalEntry] {
+            (0..<count).map { index in
+                let date = calendar.date(byAdding: .day, value: -(1 + index), to: now)!
+                return JournalEntry(body: "Ordinary day \(index)", eventAt: date, createdAt: date, updatedAt: date, categories: [])
+            }
         }
-        // Half of the other logs were followed by feeling better.
-        let baseline = answers(ordinary, [.aLittleBetter, .same])
+        // 6 of 7 better clears other logs that were better half the time.
+        let walks = logs(walk, count: 7)
+        let half = ordinary(30)
+        let clears = report(walks + half, answers(walks, [.aLittleBetter, .aLittleBetter, .aLittleBetter, .aLittleBetter, .aLittleBetter, .aLittleBetter, .same]) + answers(half, [.aLittleBetter, .same]), [walk])
+        #expect(clears.suggestions.map(\.category.name) == ["Walk"])
+        #expect(clears.suggestions.first?.baseline == LaterBaseline(numericCount: 30, betterCount: 15, worseCount: 0))
+        // 4 of 5 clears the absolute bar but not other logs that were better three times in four.
         let fewWalks = logs(walk, count: 5)
-        let few = report(fewWalks + ordinary, answers(fewWalks, [.aLittleBetter, .aLittleBetter, .aLittleBetter, .aLittleBetter, .same]) + baseline, [walk])
-        // 4 of 5 clears the absolute bar but not "more often than usual" against 15 of 30.
-        #expect(few.suggestions.isEmpty)
-        let manyWalks = logs(walk, count: 10)
-        let many = report(manyWalks + ordinary, answers(manyWalks, [.aLittleBetter, .aLittleBetter, .aLittleBetter, .aLittleBetter, .aLittleBetter, .aLittleBetter, .aLittleBetter, .aLittleBetter, .aLittleBetter, .same]) + baseline, [walk])
-        #expect(many.suggestions.map(\.category.name) == ["Walk"])
+        let mostly = ordinary(20)
+        let falls = report(fewWalks + mostly, answers(fewWalks, [.aLittleBetter, .aLittleBetter, .aLittleBetter, .aLittleBetter, .same]) + answers(mostly, [.aLittleBetter, .aLittleBetter, .aLittleBetter, .same]), [walk])
+        #expect(falls.suggestions.isEmpty)
+        #expect(falls.patternCount == 1)
     }
 
     @Test("needs five other later responses before comparing")
     func smallBaselineIsIgnored() {
         #expect(beatsBaseline(successes: 4, trials: 5, baselineSuccesses: 4, baselineTrials: 4))
-        #expect(!beatsBaseline(successes: 4, trials: 5, baselineSuccesses: 5, baselineTrials: 5))
-        #expect(beatsBaseline(successes: 4, trials: 5, baselineSuccesses: 0, baselineTrials: 5))
-        #expect(wilsonUpperBound(successes: 0, trials: 0) == 1)
-        #expect(abs(wilsonUpperBound(successes: 4, trials: 5) - (1 - wilsonLowerBound(successes: 1, trials: 5))) < 1e-12)
-        #expect(wilsonUpperBound(successes: 5, trials: 10) > 0.5)
+        #expect(!beatsBaseline(successes: 4, trials: 5, baselineSuccesses: 3, baselineTrials: 5))
+        #expect(beatsBaseline(successes: 4, trials: 5, baselineSuccesses: 2, baselineTrials: 5))
     }
 
     @Test("holds heads-ups to your usual later answer too")

@@ -268,17 +268,12 @@ func laterBaseline(entries: [JournalEntry], checkIns: [OutcomeCheckIn], excludin
 }
 
 /// Whether a category's rate stands out from the baseline's: the low end of its likely rate has
-/// to clear the high end of the baseline's, so neither a small sample nor a small baseline
-/// decides it alone. With no comparable baseline yet, the absolute bar decides on its own.
+/// to be above the rate your other logs actually had. This is the one place to tune the
+/// comparison once there is real data. With no comparable baseline yet, the absolute bar
+/// decides on its own.
 func beatsBaseline(successes: Int, trials: Int, baselineSuccesses: Int, baselineTrials: Int) -> Bool {
     guard baselineTrials >= minimumPatternResponses else { return true }
-    return wilsonLowerBound(successes: successes, trials: trials) > wilsonUpperBound(successes: baselineSuccesses, trials: baselineTrials)
-}
-
-/// The upper end of the same interval. The interval is symmetric, so it mirrors the lower end.
-func wilsonUpperBound(successes: Int, trials: Int, z: Double = 1) -> Double {
-    guard trials > 0 else { return 1 }
-    return 1 - wilsonLowerBound(successes: trials - successes, trials: trials, z: z)
+    return wilsonLowerBound(successes: successes, trials: trials) > Double(baselineSuccesses) / Double(baselineTrials)
 }
 
 /// The lower end of the Wilson score interval for `successes` out of `trials`, at about 84%
