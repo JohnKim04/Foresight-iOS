@@ -135,6 +135,15 @@ struct OutcomeAnalyticsTests {
         #expect(activityBuckets([], category: nil, granularity: .month, now: now).count == 6)
     }
 
+    @Test("starts weekly buckets on the region's first weekday", arguments: [1, 2])
+    func weeksFollowFirstWeekday(firstWeekday: Int) {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        calendar.firstWeekday = firstWeekday
+        let weeks = activityBuckets([], category: nil, granularity: .week, now: now, calendar: calendar)
+        #expect(weeks.allSatisfy { calendar.component(.weekday, from: $0.date) == firstWeekday })
+    }
+
     @Test("counts a category's logs per week, ending with this week")
     func weeklyCategoryCounts() {
         let workout = category()

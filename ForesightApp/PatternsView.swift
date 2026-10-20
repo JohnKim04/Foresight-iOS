@@ -9,6 +9,7 @@ struct PatternsRootView: View {
     @State private var outcomeCategoryID: UUID?
     @State private var outcomeRange: OutcomeTrendRange = .ninety
     @State private var outcomePhase: OutcomePhase = .delayed
+    @State private var showsViewOptions = false
     @State private var helpReport: HelpSuggestionReport?
     /// Set once Outcomes has picked a category on its own, so clearing it later sticks.
     @State private var didPickDefaultCategory = false
@@ -17,6 +18,8 @@ struct PatternsRootView: View {
     /// Bumped to scroll to the evidence, even when the category it shows was already selected.
     @State private var evidenceScrollRequest = 0
     @State private var clock = Date.now
+
+    private var viewSummary: String { "\(outcomePhase == .immediate ? "Right-after" : "Later") check-ins · last \(outcomeRange.rawValue) days" }
 
     private var outcomeCategory: JournalCategory? { outcomeCategoryID.flatMap { id in store.categories.first { $0.id == id } } }
 
@@ -85,16 +88,20 @@ struct PatternsRootView: View {
                         accessibilityLabel: "Choose category",
                         accessibilityValue: outcomeCategory?.name ?? "No category selected"
                     )
-                    SectionKicker(text: "Time window")
-                    ForesightSegmentedPicker(
-                        selection: $outcomeRange,
-                        options: OutcomeTrendRange.allCases.map { ($0, $0.title) }
-                    )
-                    SectionKicker(text: "Reflection timing")
-                    ForesightSegmentedPicker(
-                        selection: $outcomePhase,
-                        options: OutcomePhase.allCases.map { ($0, $0.title) }
-                    )
+                    // Suggestions read later check-ins over 90 days, so that's the default view;
+                    // the other windows mostly show weaker evidence, so they stay folded away.
+                    ForesightDisclosure(id: "patterns.view-options", title: "More options", summary: viewSummary, isExpanded: $showsViewOptions) {
+                        SectionKicker(text: "Time window")
+                        ForesightSegmentedPicker(
+                            selection: $outcomeRange,
+                            options: OutcomeTrendRange.allCases.map { ($0, $0.title) }
+                        )
+                        SectionKicker(text: "Reflection timing")
+                        ForesightSegmentedPicker(
+                            selection: $outcomePhase,
+                            options: OutcomePhase.allCases.map { ($0, $0.title) }
+                        )
+                    }
                 }
             }
             .id("outcome-controls")
@@ -191,7 +198,7 @@ struct PatternsRootView: View {
                 .frame(height: 140)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("\(category.name) logs per week")
-                Text("Eight weeks, each starting on Monday.").font(.caption).foregroundStyle(.secondary)
+                Text("Eight weeks, each starting on \(Calendar.current.weekdaySymbols[Calendar.current.firstWeekday - 1]).").font(.caption).foregroundStyle(.secondary)
             }
         }
     }

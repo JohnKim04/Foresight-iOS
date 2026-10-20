@@ -105,6 +105,16 @@ struct JournalDiscoveryTests {
         #expect(days.contains { $0.inMonth })
     }
 
+    @Test("starts calendar weeks on the region's first weekday", arguments: [1, 2])
+    func calendarGridFollowsFirstWeekday(firstWeekday: Int) {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        calendar.firstWeekday = firstWeekday
+        let days = calendarDays(month: now, entries: [], calendar: calendar)
+        #expect(days.first.map { calendar.component(.weekday, from: $0.date) } == firstWeekday)
+        #expect(orderedShortWeekdaySymbols(calendar: calendar).first == calendar.shortWeekdaySymbols[firstWeekday - 1])
+    }
+
     @Test("counts logs on calendar days")
     func countsCalendarDays() {
         let logs = [entry("One", date: now), entry("Two", date: now.addingTimeInterval(100))]
