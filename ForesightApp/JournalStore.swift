@@ -586,15 +586,21 @@ struct JournalArchive: Sendable {
 
         // A log holds at most one check-in right after and one waiting later one, as
         // createCheckIn requires. Copies that went separate ways on two phones can each have
-        // their own, with different IDs, so the one changed more recently is kept.
+        // their own, with different IDs. An answer beats one still waiting or skipped, so a
+        // rating is never lost; otherwise the one changed more recently is kept.
         struct Slot: Hashable { let entryID: UUID; let phase: OutcomePhase }
+        func outranks(_ a: CheckIn, _ b: CheckIn) -> Bool {
+            let answered: (CheckIn) -> Bool = { $0.status == .answered || $0.status == .notSure }
+            if answered(a) != answered(b) { return answered(a) }
+            return a.updatedAt > b.updatedAt
+        }
         var kept: [Slot: Int] = [:]
         var dropped = Set<Int>()
         for (index, checkIn) in merged.checkIns.enumerated() {
             guard let entryID = checkIn.entryID, checkIn.phase == .immediate || checkIn.status == .pending else { continue }
             let slot = Slot(entryID: entryID, phase: checkIn.phase)
             guard let other = kept[slot] else { kept[slot] = index; continue }
-            if checkIn.updatedAt > merged.checkIns[other].updatedAt {
+            if outranks(checkIn, merged.checkIns[other]) {
                 dropped.insert(other)
                 kept[slot] = index
             } else {

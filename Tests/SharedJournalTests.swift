@@ -606,6 +606,28 @@ struct JournalBackupTests {
         #expect(!(try store.importJournal(export)).changedAnything)
     }
 
+    @Test("an import keeps an answered check-in over a newer one that was skipped")
+    func importKeepsAnswer() throws {
+        let store = try openJournal()
+        let run = try store.saveLog(body: "Morning run", eventAt: now.addingTimeInterval(-600), categoryIDs: [])
+        let immediate = try store.createCheckIn(for: run, phase: .immediate)
+        try store.answer(immediate, response: .better, notSure: false, note: "Lighter", excludedFromAnalysis: false)
+        // The file holds the answer under another phone's ID; this phone skipped its own copy later.
+        let otherID = UUID()
+        let json = try #require(String(data: JournalExport(snapshot: store.snapshot, exportedAt: now).jsonData(), encoding: .utf8))
+            .replacingOccurrences(of: immediate.id.uuidString, with: otherID.uuidString)
+        let export = try JournalExport.decode(Data(json.utf8))
+        try store.skip(immediate)
+        immediate.updatedAt = now.addingTimeInterval(600)
+
+        let result = try store.importJournal(export)
+        #expect(result.addedCheckIns == 1)
+        let kept = store.checkIns.filter { $0.entry?.id == run.id }
+        #expect(kept.map(\.id) == [otherID])
+        #expect(kept.first?.overall == .better)
+        #expect(kept.first?.note == "Lighter")
+    }
+
     @Test("an import turns away files that aren't a Foresight export, or come from a newer version")
     func importRejects() throws {
         let store = try openJournal()
