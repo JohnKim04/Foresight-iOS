@@ -27,8 +27,20 @@ struct HelpSuggestionsTests {
         }
     }
 
-    private func report(_ entries: [JournalEntry], _ checkIns: [OutcomeCheckIn], _ categories: [JournalCategory], limit: Int = 3) -> HelpSuggestionReport {
-        helpSuggestions(entries: entries, checkIns: checkIns, categories: categories, now: now, calendar: calendar, limit: limit)
+    /// Uncategorized logs whose later check-ins were the same: a usual rate for patterns to beat,
+    /// so tests with several strong categories don't have them cancel each other out.
+    private func steadyLogs(count: Int = 20) -> (entries: [JournalEntry], checkIns: [OutcomeCheckIn]) {
+        let entries = (0..<count).map { index in
+            let date = calendar.date(byAdding: .day, value: -(1 + index), to: now)!
+            return JournalEntry(body: "Ordinary day \(index)", eventAt: date, createdAt: date, updatedAt: date, categories: [])
+        }
+        return (entries, answers(entries, [.same]))
+    }
+
+    /// `steady` adds `steadyLogs()` underneath, so each category is compared with a mostly neutral baseline.
+    private func report(_ entries: [JournalEntry], _ checkIns: [OutcomeCheckIn], _ categories: [JournalCategory], limit: Int = 3, steady: Bool = false) -> HelpSuggestionReport {
+        let background = steady ? steadyLogs() : ([], [])
+        return helpSuggestions(entries: entries + background.entries, checkIns: checkIns + background.checkIns, categories: categories, now: now, calendar: calendar, limit: limit)
     }
 
     @Test("waits for five later responses and reports the closest category")
@@ -55,6 +67,84 @@ struct HelpSuggestionsTests {
         #expect(suggestion.evidence.hasPrefix("Better or much better in 4 of 5 later check-ins"))
         expectNonCausal([suggestion.headline, suggestion.evidence, suggestion.context ?? ""])
         #expect(result.progress == nil)
+    }
+
+    @Test("compares a pattern with your other logs and says so")
+    func comparesWithOtherLogs() throws {
+        let workout = JournalCategory(name: "Workout")
+        let entries = logs(workout, count: 5)
+        let result = report(entries, answers(entries, [.aLittleBetter, .muchBetter, .aLittleBetter, .same, .aLittleBetter]), [workout], steady: true)
+        let suggestion = try #require(result.suggestions.first)
+        #expect(suggestion.baseline == LaterBaseline(numericCount: 20, betterCount: 0, worseCount: 0))
+        #expect(suggestion.headline == "Workout has been followed by feeling better later more often than your other logs.")
+        #expect(suggestion.evidence == "Better or much better in 4 of 5 later check-ins (other logs: 0 of 20) · Early")
+        expectNonCausal([suggestion.headline, suggestion.evidence])
+    }
+
+    @Test("suggests nothing when every category is only as good as your usual later answer")
+    func usualAnswerIsBetter() {
+        let workout = JournalCategory(name: "Workout")
+        let social = JournalCategory(name: "Social")
+        let work = JournalCategory(name: "Work")
+        let workoutLogs = logs(workout, count: 6)
+        let socialLogs = logs(social, count: 6)
+        let workLogs = logs(work, count: 6)
+        let ordinary = (0..<10).map { index in
+            let date = calendar.date(byAdding: .day, value: -(1 + index), to: now)!
+            return JournalEntry(body: "Ordinary day \(index)", eventAt: date, createdAt: date, updatedAt: date, categories: [])
+        }
+        // "Better" is this person's usual later answer, for tagged and untagged logs alike.
+        let checkIns = answers(workoutLogs, [.aLittleBetter]) + answers(socialLogs, [.aLittleBetter]) + answers(workLogs, [.aLittleBetter, .aLittleBetter, .muchBetter])
+            + answers(ordinary, [.aLittleBetter, .aLittleBetter, .aLittleBetter, .aLittleBetter, .same])
+        let result = report(workoutLogs + socialLogs + workLogs + ordinary, checkIns, [workout, social, work])
+        #expect(result.suggestions.isEmpty)
+        #expect(result.patternCount == 3)
+        // Without the untagged logs, each category's baseline is the other two, which are just as good.
+        let tagged = report(workoutLogs + socialLogs + workLogs, Array(checkIns.prefix(18)), [workout, social, work])
+        #expect(tagged.suggestions.isEmpty)
+    }
+
+    @Test("a category beats a mostly better baseline only with stronger evidence")
+    func beatsBetterBaseline() {
+        let walk = JournalCategory(name: "Walk")
+        let ordinary = (0..<30).map { index in
+            let date = calendar.date(byAdding: .day, value: -(1 + index), to: now)!
+            return JournalEntry(body: "Ordinary day \(index)", eventAt: date, createdAt: date, updatedAt: date, categories: [])
+        }
+        // Half of the other logs were followed by feeling better.
+        let baseline = answers(ordinary, [.aLittleBetter, .same])
+        let fewWalks = logs(walk, count: 5)
+        let few = report(fewWalks + ordinary, answers(fewWalks, [.aLittleBetter, .aLittleBetter, .aLittleBetter, .aLittleBetter, .same]) + baseline, [walk])
+        // 4 of 5 clears the absolute bar but not "more often than usual" against 15 of 30.
+        #expect(few.suggestions.isEmpty)
+        let manyWalks = logs(walk, count: 10)
+        let many = report(manyWalks + ordinary, answers(manyWalks, [.aLittleBetter, .aLittleBetter, .aLittleBetter, .aLittleBetter, .aLittleBetter, .aLittleBetter, .aLittleBetter, .aLittleBetter, .aLittleBetter, .same]) + baseline, [walk])
+        #expect(many.suggestions.map(\.category.name) == ["Walk"])
+    }
+
+    @Test("needs five other later responses before comparing")
+    func smallBaselineIsIgnored() {
+        #expect(beatsBaseline(successes: 4, trials: 5, baselineSuccesses: 4, baselineTrials: 4))
+        #expect(!beatsBaseline(successes: 4, trials: 5, baselineSuccesses: 5, baselineTrials: 5))
+        #expect(beatsBaseline(successes: 4, trials: 5, baselineSuccesses: 0, baselineTrials: 5))
+        #expect(wilsonUpperBound(successes: 0, trials: 0) == 1)
+        #expect(abs(wilsonUpperBound(successes: 4, trials: 5) - (1 - wilsonLowerBound(successes: 1, trials: 5))) < 1e-12)
+        #expect(wilsonUpperBound(successes: 5, trials: 10) > 0.5)
+    }
+
+    @Test("holds heads-ups to your usual later answer too")
+    func worseBaseline() {
+        let coffee = JournalCategory(name: "Coffee")
+        let coffeeLogs = logs(coffee, count: 6)
+        let ordinary = (0..<10).map { index in
+            let date = calendar.date(byAdding: .day, value: -(1 + index), to: now)!
+            return JournalEntry(body: "Ordinary day \(index)", eventAt: date, createdAt: date, updatedAt: date, categories: [])
+        }
+        let coffeeCheckIns = answers(coffeeLogs, [.aLittleWorse, .muchWorse, .aLittleWorse, .aLittleWorse, .aLittleWorse, .same])
+        let mostlyWorse = worsePatterns(entries: coffeeLogs + ordinary, checkIns: coffeeCheckIns + answers(ordinary, [.aLittleWorse, .aLittleWorse, .aLittleWorse, .same]), categories: [coffee], now: now, calendar: calendar)
+        #expect(mostlyWorse.isEmpty)
+        let mostlySame = worsePatterns(entries: coffeeLogs + ordinary, checkIns: coffeeCheckIns + answers(ordinary, [.same]), categories: [coffee], now: now, calendar: calendar)
+        #expect(mostlySame.map(\.category.name) == ["Coffee"])
     }
 
     private func expectNonCausal(_ strings: [String]) {
@@ -127,7 +217,7 @@ struct HelpSuggestionsTests {
         }
         let walks = [17, 18, 18, 19, 9].enumerated().map { log(walk, daysAgo: $0.offset + 1, hour: $0.element) }
         let reads = [7, 12, 16, 20, 23].enumerated().map { log(read, daysAgo: $0.offset + 1, hour: $0.element) }
-        let result = report(walks + reads, answers(walks, [.aLittleBetter]) + answers(reads, [.aLittleBetter]), [walk, read])
+        let result = report(walks + reads, answers(walks, [.aLittleBetter]) + answers(reads, [.aLittleBetter]), [walk, read], steady: true)
         #expect(try #require(result.suggestions.first { $0.category.id == walk.id }).usualHour == 18)
         #expect(try #require(result.suggestions.first { $0.category.id == read.id }).usualHour == nil)
     }
@@ -143,7 +233,7 @@ struct HelpSuggestionsTests {
         let checkIns = answers(workoutLogs, [.aLittleBetter, .aLittleBetter, .aLittleBetter, .aLittleBetter, .same])
             + answers(readingLogs, [.aLittleBetter, .aLittleBetter, .aLittleBetter, .same, .same])
             + answers(socialLogs, [.muchBetter, .muchBetter, .same, .same, .same])
-        let result = report(workoutLogs + readingLogs + socialLogs, checkIns, [workout, reading, social])
+        let result = report(workoutLogs + readingLogs + socialLogs, checkIns, [workout, reading, social], steady: true)
         // Reading's 3 of 5 clears the 60% rule that Patterns uses, but is too close to chance to suggest.
         #expect(result.suggestions.map(\.category.name) == ["Workout"])
         #expect(result.suggestions.first?.betterCount == 4)
@@ -181,7 +271,7 @@ struct HelpSuggestionsTests {
         // Social's three oldest were.
         let faded: [OutcomeValue] = [.aLittleWorse, .same, .aLittleBetter, .aLittleBetter, .aLittleBetter, .aLittleBetter, .aLittleBetter, .aLittleBetter]
         let checkIns = answers(workoutLogs, faded) + answers(socialLogs, Array(faded.reversed()))
-        let result = report(workoutLogs + socialLogs, checkIns, [workout, social])
+        let result = report(workoutLogs + socialLogs, checkIns, [workout, social], steady: true)
         #expect(result.suggestions.map(\.category.name) == ["Social"])
         #expect(result.patternCount == 2)
     }
@@ -201,7 +291,7 @@ struct HelpSuggestionsTests {
         #expect(hikes.allSatisfy { calendar.isDateInWeekend($0.eventAt) })
         // Hike is the stronger pattern; Walk only leads while Hike is demoted on a weekday.
         let checkIns = answers(hikes, [.muchBetter]) + answers(walks, [.muchBetter, .aLittleBetter])
-        let result = report(hikes + walks, checkIns, [hike, walk])
+        let result = report(hikes + walks, checkIns, [hike, walk], steady: true)
         #expect(result.suggestions.map(\.category.name) == ["Walk", "Hike"])
         let weekend = try #require(result.suggestions.last)
         #expect(weekend.mostlyWeekends)
@@ -210,7 +300,8 @@ struct HelpSuggestionsTests {
         expectNonCausal([weekend.context ?? ""])
 
         let saturday = calendar.date(byAdding: .day, value: 1, to: now)!
-        let onSaturday = helpSuggestions(entries: hikes + walks, checkIns: checkIns, categories: [hike, walk], now: saturday, calendar: calendar)
+        let steady = steadyLogs()
+        let onSaturday = helpSuggestions(entries: hikes + walks + steady.entries, checkIns: checkIns + steady.checkIns, categories: [hike, walk], now: saturday, calendar: calendar)
         #expect(onSaturday.suggestions.map(\.category.name) == ["Hike", "Walk"])
     }
 
@@ -220,7 +311,7 @@ struct HelpSuggestionsTests {
         let social = JournalCategory(name: "Social")
         let workoutLogs = logs(workout, count: 10, hourOffset: 12)
         let socialLogs = logs(social, count: 5, hourOffset: 12)
-        let result = report(workoutLogs + socialLogs, answers(workoutLogs, [.muchBetter]) + answers(socialLogs, [.aLittleBetter]), [workout, social], limit: .max)
+        let result = report(workoutLogs + socialLogs, answers(workoutLogs, [.muchBetter]) + answers(socialLogs, [.aLittleBetter]), [workout, social], limit: .max, steady: true)
         #expect(suggestionAfterWorseCheckIn(result, excluding: [])?.category.id == workout.id)
         #expect(suggestionAfterWorseCheckIn(result, excluding: [workout.id])?.category.id == social.id)
         #expect(suggestionAfterWorseCheckIn(result, excluding: [workout.id, social.id]) == nil)
@@ -233,16 +324,16 @@ struct HelpSuggestionsTests {
         let workoutLogs = logs(workout, count: 10, hourOffset: 12)
         let socialLogs = logs(social, count: 5, hourOffset: 12)
         let checkIns = answers(workoutLogs, [.muchBetter]) + answers(socialLogs, [.aLittleBetter])
-        let quiet = report(workoutLogs + socialLogs, checkIns, [workout, social], limit: .max)
+        let quiet = report(workoutLogs + socialLogs, checkIns, [workout, social], limit: .max, steady: true)
         #expect(journalSuggestion(quiet)?.category.id == workout.id)
 
         let today = JournalEntry(body: "Workout today", eventAt: now, createdAt: now, updatedAt: now, categories: [workout])
-        let afterWorkout = report(workoutLogs + socialLogs + [today], checkIns, [workout, social], limit: .max)
+        let afterWorkout = report(workoutLogs + socialLogs + [today], checkIns, [workout, social], limit: .max, steady: true)
         #expect(try #require(afterWorkout.suggestions.first { $0.category.id == workout.id }).loggedToday)
         #expect(journalSuggestion(afterWorkout)?.category.id == social.id)
 
         let bothToday = JournalEntry(body: "Dinner", eventAt: now, createdAt: now, updatedAt: now, categories: [social])
-        #expect(journalSuggestion(report(workoutLogs + socialLogs + [today, bothToday], checkIns, [workout, social], limit: .max)) == nil)
+        #expect(journalSuggestion(report(workoutLogs + socialLogs + [today, bothToday], checkIns, [workout, social], limit: .max, steady: true)) == nil)
         #expect(journalSuggestion(HelpSuggestionReport(suggestions: [], patternCount: 0, progress: nil)) == nil)
     }
 
@@ -272,7 +363,7 @@ struct HelpSuggestionsTests {
         let alpha = JournalCategory(name: "Alpha")
         let betaLogs = logs(beta, count: 5, hourOffset: 12)
         let alphaLogs = logs(alpha, count: 5, hourOffset: 12)
-        let result = report(betaLogs + alphaLogs, answers(betaLogs, [.aLittleBetter]) + answers(alphaLogs, [.aLittleBetter]), [beta, alpha])
+        let result = report(betaLogs + alphaLogs, answers(betaLogs, [.aLittleBetter]) + answers(alphaLogs, [.aLittleBetter]), [beta, alpha], steady: true)
         #expect(result.suggestions.map(\.category.name) == ["Alpha", "Beta"])
         #expect(result.suggestions[0].score == result.suggestions[1].score)
     }
@@ -341,7 +432,7 @@ struct HelpSuggestionsTests {
         let socialLogs = logs(social, count: 5, hourOffset: 12)
         let sleepLogs = logs(sleep, count: 5, hourOffset: 12)
         let checkIns = answers(workoutLogs, [.muchBetter]) + answers(socialLogs, [.aLittleBetter, .aLittleBetter, .aLittleBetter, .aLittleBetter, .same]) + answers(sleepLogs, [.muchBetter, .aLittleBetter])
-        let result = report(workoutLogs + socialLogs + sleepLogs, checkIns, [social, sleep, workout], limit: 2)
+        let result = report(workoutLogs + socialLogs + sleepLogs, checkIns, [social, sleep, workout], limit: 2, steady: true)
         #expect(result.suggestions.map(\.category.name) == ["Workout", "Sleep"])
         #expect(result.patternCount == 3)
     }
@@ -355,7 +446,7 @@ struct HelpSuggestionsTests {
         let todayDate = calendar.date(byAdding: .hour, value: -1, to: now)!
         let today = JournalEntry(body: "Morning run", eventAt: todayDate, createdAt: todayDate, updatedAt: todayDate, categories: [workout])
         let checkIns = answers(workoutLogs, [.aLittleBetter]) + answers(socialLogs, [.aLittleBetter])
-        let result = report(workoutLogs + socialLogs + [today], checkIns, [workout, social])
+        let result = report(workoutLogs + socialLogs + [today], checkIns, [workout, social], steady: true)
         #expect(result.suggestions.map(\.category.name) == ["Social", "Workout"])
         #expect(result.suggestions.last?.loggedToday == true)
         #expect(result.suggestions.last?.context == "Already logged today.")
@@ -368,7 +459,7 @@ struct HelpSuggestionsTests {
         let read = JournalCategory(name: "Reading")
         let walkLogs = logs(walk, count: 5, firstDay: 3)
         let readLogs = logs(read, count: 5, firstDay: 3, hourOffset: 12)
-        let result = report(walkLogs + readLogs, answers(walkLogs, [.aLittleBetter]) + answers(readLogs, [.aLittleBetter]), [read, walk])
+        let result = report(walkLogs + readLogs, answers(walkLogs, [.aLittleBetter]) + answers(readLogs, [.aLittleBetter]), [read, walk], steady: true)
         let first = try #require(result.suggestions.first)
         #expect(first.category.id == walk.id)
         #expect(first.usualTimeOfDay)
@@ -384,7 +475,7 @@ struct HelpSuggestionsTests {
         let stretch = JournalCategory(name: "Stretch")
         let walkLogs = logs(walk, count: 5, firstDay: 3)
         let stretchLogs = logs(stretch, count: 5, firstDay: 3)
-        let result = report(walkLogs + stretchLogs, answers(walkLogs, [.aLittleBetter]) + answers(stretchLogs, [.aLittleBetter]), [walk, stretch])
+        let result = report(walkLogs + stretchLogs, answers(walkLogs, [.aLittleBetter]) + answers(stretchLogs, [.aLittleBetter]), [walk, stretch], steady: true)
         #expect(result.suggestions.count == 2)
         #expect(result.suggestions.filter(\.usualTimeOfDay).count == 2)
         let note = try #require(HelpSuggestionCopy.sharedUsualTimeNote(result.suggestions))

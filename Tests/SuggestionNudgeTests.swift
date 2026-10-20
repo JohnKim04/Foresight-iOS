@@ -259,7 +259,8 @@ struct SuggestionNudgeSchedulerTests {
         let walk: JournalCategory
     }
 
-    /// Five walks at 18:00 on the previous days, each followed later by feeling better.
+    /// Five walks at 18:00 on the previous days, each followed later by feeling better, over ten
+    /// untagged logs that felt the same later, so patterns have a usual rate to beat.
     /// With `alsoRead`, a weaker pattern: reading at 21:00, better in 4 of 5 later check-ins.
     private func makeSubject(status: ReminderAuthorization = .allowed, enabled: Bool = true, alsoRead: Bool = false, headsUpLedger: MemoryNudgeLedger = MemoryNudgeLedger(), setUp: (JournalStore, Clock) throws -> Void = { _, _ in }) throws -> Subject {
         let clock = Clock()
@@ -267,6 +268,7 @@ struct SuggestionNudgeSchedulerTests {
         let container = try ForesightPersistence.makeContainer(storeURL: nil)
         let store = JournalStore(modelContext: container.mainContext, modelContainer: container, now: { clock.now })
         let walk = try addPattern("Walk", hour: 18, responses: [.aLittleBetter], store: store, clock: clock)
+        try addSteadyLogs(store: store, clock: clock)
         if alsoRead { _ = try addPattern("Read", hour: 21, responses: [.aLittleBetter, .aLittleBetter, .aLittleBetter, .aLittleBetter, .same], store: store, clock: clock) }
         try setUp(store, clock)
         let center = FakeNudgeCenter(status: status)
@@ -289,6 +291,19 @@ struct SuggestionNudgeSchedulerTests {
             try store.answer(checkIn, response: responses[(day - 1) % responses.count], notSure: false, note: "", excludedFromAnalysis: false)
         }
         return category
+    }
+
+    /// Untagged logs at noon on each of the ten previous days, each answered "Same" later.
+    private func addSteadyLogs(store: JournalStore, clock: Clock) throws {
+        let current = clock.now
+        defer { clock.now = current }
+        for day in 1...10 {
+            let loggedAt = at(hour: 12, dayOffset: -day)
+            clock.now = loggedAt
+            let entry = try store.saveLog(body: "Ordinary day \(day)", eventAt: loggedAt, categoryIDs: [])
+            let checkIn = try store.createCheckIn(for: entry, phase: .delayed, dueAt: loggedAt.addingTimeInterval(7_200))
+            try store.answer(checkIn, response: .same, notSure: false, note: "", excludedFromAnalysis: false)
+        }
     }
 
     private func fireDates(_ center: FakeNudgeCenter) async -> [Date] {
