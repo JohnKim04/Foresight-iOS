@@ -35,7 +35,10 @@ final class ForesightUITests: XCTestCase {
         scrollSettings(until: add)
         XCTAssertEqual(add.label, "Add history")
         add.tap()
-        XCTAssertTrue(app.staticTexts["Sample history added."].waitForExistence(timeout: 3))
+        // The message appears in the row below the button, which can sit past the bottom edge.
+        let added = app.staticTexts["Sample history added."]
+        scrollSettings(until: added)
+        XCTAssertTrue(added.waitForExistence(timeout: 3))
         app.buttons["Done"].tap()
     }
 
