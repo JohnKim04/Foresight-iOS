@@ -587,7 +587,7 @@ struct JournalBackupTests {
         let store = try openJournal()
         let run = try store.saveLog(body: "Morning run", eventAt: now.addingTimeInterval(-600), categoryIDs: [])
         let immediate = try store.createCheckIn(for: run, phase: .immediate)
-        try store.answer(immediate, response: .better, notSure: false, note: "", excludedFromAnalysis: false)
+        try store.answer(immediate, response: .aLittleBetter, notSure: false, note: "", excludedFromAnalysis: false)
         let delayed = try store.createCheckIn(for: run, phase: .delayed, dueAt: now.addingTimeInterval(3_600))
         // The other phone made its own copies of both, under new IDs.
         let otherImmediateID = UUID()
@@ -611,7 +611,7 @@ struct JournalBackupTests {
         let store = try openJournal()
         let run = try store.saveLog(body: "Morning run", eventAt: now.addingTimeInterval(-600), categoryIDs: [])
         let immediate = try store.createCheckIn(for: run, phase: .immediate)
-        try store.answer(immediate, response: .better, notSure: false, note: "Lighter", excludedFromAnalysis: false)
+        try store.answer(immediate, response: .aLittleBetter, notSure: false, note: "Lighter", excludedFromAnalysis: false)
         // The file holds the answer under another phone's ID; this phone skipped its own copy later.
         let otherID = UUID()
         let json = try #require(String(data: JournalExport(snapshot: store.snapshot, exportedAt: now).jsonData(), encoding: .utf8))
@@ -624,7 +624,7 @@ struct JournalBackupTests {
         #expect(result.addedCheckIns == 1)
         let kept = store.checkIns.filter { $0.entry?.id == run.id }
         #expect(kept.map(\.id) == [otherID])
-        #expect(kept.first?.overall == .better)
+        #expect(kept.first?.overall == .aLittleBetter)
         #expect(kept.first?.note == "Lighter")
     }
 
