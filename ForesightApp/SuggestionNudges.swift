@@ -216,7 +216,8 @@ enum SuggestionNudgePlan {
         let toRemove = Set(ours.map(\.identifier)).subtracting(desired.map(\.identifier)).sorted()
         let toAdd = desired.filter { nudge in
             guard let existing = scheduledByID[nudge.identifier], let fireAt = existing.fireAt else { return true }
-            return abs(fireAt.timeIntervalSince(nudge.fireAt)) >= 1 || existing.body != nudge.body
+            // One scheduled by an older build has no action buttons; replace it so it gets them.
+            return abs(fireAt.timeIntervalSince(nudge.fireAt)) >= 1 || existing.body != nudge.body || existing.categoryIdentifier != SuggestionNudgePlan.categoryIdentifier
         }
         return (toAdd, toRemove)
     }

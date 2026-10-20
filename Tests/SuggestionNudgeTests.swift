@@ -5,24 +5,24 @@ import UserNotifications
 
 actor FakeNudgeCenter: NudgeNotificationCenter {
     private(set) var status: ReminderAuthorization
-    private(set) var pending: [String: (fireAt: Date, body: String)] = [:]
+    private(set) var pending: [String: (fireAt: Date, body: String, category: String?)] = [:]
     private(set) var delivered: [String] = []
     private(set) var addCount = 0
 
     init(status: ReminderAuthorization = .allowed) { self.status = status }
 
     func setStatus(_ status: ReminderAuthorization) { self.status = status }
-    func setPending(identifier: String, fireAt: Date) { pending[identifier] = (fireAt, "") }
+    func setPending(identifier: String, fireAt: Date) { pending[identifier] = (fireAt, "", nil) }
     func identifiers() -> [String] { pending.keys.sorted() }
     func setDelivered(_ identifiers: [String]) { delivered = identifiers }
 
     func authorization() -> ReminderAuthorization { status }
     func scheduledReminders() -> [ScheduledReminder] {
-        pending.map { ScheduledReminder(identifier: $0.key, fireAt: $0.value.fireAt, body: $0.value.body) }
+        pending.map { ScheduledReminder(identifier: $0.key, fireAt: $0.value.fireAt, body: $0.value.body, categoryIdentifier: $0.value.category) }
     }
     func addNudge(_ nudge: SuggestionNudge) {
         addCount += 1
-        pending[nudge.identifier] = (nudge.fireAt, nudge.body)
+        pending[nudge.identifier] = (nudge.fireAt, nudge.body, SuggestionNudgePlan.categoryIdentifier)
     }
     func removeScheduled(_ identifiers: [String]) { identifiers.forEach { pending[$0] = nil } }
     func deliveredIdentifiers() -> [String] { delivered }
@@ -203,12 +203,15 @@ struct SuggestionNudgePlanTests {
 
         let nudges = plan([candidate("Walk", hour: 18)], cooldownDays: 1)
         let checkIn = ScheduledReminder(identifier: CheckInReminderPlan.identifier(for: UUID()), fireAt: morning, body: "Run")
-        let kept = ScheduledReminder(identifier: nudges[0].identifier, fireAt: nudges[0].fireAt, body: nudges[0].body)
-        let edited = ScheduledReminder(identifier: nudges[1].identifier, fireAt: nudges[1].fireAt, body: "old")
+        let kept = ScheduledReminder(identifier: nudges[0].identifier, fireAt: nudges[0].fireAt, body: nudges[0].body, categoryIdentifier: SuggestionNudgePlan.categoryIdentifier)
+        let edited = ScheduledReminder(identifier: nudges[1].identifier, fireAt: nudges[1].fireAt, body: "old", categoryIdentifier: SuggestionNudgePlan.categoryIdentifier)
         let stale = ScheduledReminder(identifier: SuggestionNudgePlan.identifier(day: "2024-08-29", categoryID: id), fireAt: morning, body: "")
         let changes = SuggestionNudgePlan.changes(desired: nudges, scheduled: [checkIn, kept, edited, stale])
         #expect(changes.toAdd.map(\.identifier) == [nudges[1].identifier, nudges[2].identifier])
         #expect(changes.toRemove == [stale.identifier])
+        // One scheduled before nudges had buttons is replaced so it gets them.
+        let withoutButtons = ScheduledReminder(identifier: nudges[0].identifier, fireAt: nudges[0].fireAt, body: nudges[0].body)
+        #expect(SuggestionNudgePlan.changes(desired: [nudges[0]], scheduled: [withoutButtons]).toAdd.map(\.identifier) == [nudges[0].identifier])
     }
 
     @Test("a real trigger built from a nudge's wall-clock time fires at its planned instant")

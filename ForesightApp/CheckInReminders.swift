@@ -30,6 +30,8 @@ struct ScheduledReminder: Equatable, Sendable {
     let fireAt: Date?
     let body: String
     var badge: Int? = nil
+    /// Which action buttons it shows, as a notification category identifier.
+    var categoryIdentifier: String? = nil
 }
 
 struct ReminderChanges: Equatable, Sendable {
@@ -197,7 +199,8 @@ struct SystemReminderNotificationCenter: ReminderNotificationCenter {
                 identifier: request.identifier,
                 fireAt: (request.trigger as? UNCalendarNotificationTrigger)?.nextTriggerDate(),
                 body: request.content.body,
-                badge: request.content.badge?.intValue
+                badge: request.content.badge?.intValue,
+                categoryIdentifier: request.content.categoryIdentifier
             )
         }
     }
