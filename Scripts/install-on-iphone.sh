@@ -194,6 +194,21 @@ app_path="$derived_data/Build/Products/$configuration-iphoneos/$app_name.app"
 bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app_path/Info.plist")"
 xcrun devicectl device install app --device "$device_udid" "$app_path"
 
+# Before Release became the default this script installed Foresight QA, which is a separate app with
+# a journal of its own. Say so, so a journal kept there isn't left behind by mistake.
+if [[ "$configuration" == "Release" ]]; then
+  apps_json="$(mktemp)"
+  if xcrun devicectl device info apps --device "$device_udid" --json-output "$apps_json" >/dev/null 2>&1 \
+    && jq -e --arg id "$bundle_id.testing" '[.result.apps[]? | select(.bundleIdentifier == $id)] | length > 0' "$apps_json" >/dev/null 2>&1; then
+    print ""
+    print "Foresight QA is also on $device_name. It's a separate app with its own journal, which Foresight can't see."
+    print "To bring that journal over: in Foresight QA, Settings > Export journal and save the file; then in"
+    print "Foresight, Settings > Import journal and pick it. After that you can delete Foresight QA."
+    print ""
+  fi
+  rm -f "$apps_json"
+fi
+
 if ! launch_output="$(xcrun devicectl device process launch --device "$device_udid" "$bundle_id" 2>&1)"; then
   print ""
   if [[ "${(L)launch_output}" == *trust* ]]; then

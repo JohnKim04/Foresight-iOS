@@ -602,11 +602,42 @@ struct JournalBackupTests {
         try Data("not a journal".utf8).write(to: storeURL)
 
         let aside = try #require(try JournalRecovery.moveAside(storeAt: storeURL, date: now))
+        #expect(aside.lastPathComponent.hasSuffix("\(SharedJournal.movedAsideSuffix).store"))
         #expect(!exists(storeURL))
         #expect(try Data(contentsOf: aside) == Data("not a journal".utf8))
         #expect(Set(SharedJournal.backups(in: root).map(\.url.lastPathComponent)) == Set((good + [aside]).map(\.lastPathComponent)))
         #expect(JournalBackup.list(in: root).filter(\.isReadable).count == 3)
         #expect(try JournalRecovery.moveAside(storeAt: storeURL, date: now) == nil)
+    }
+
+    @Test("a journal moved aside outlasts restores and erases, and daily backups for a month")
+    func movedAsideIsKept() async throws {
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try Data("not a journal".utf8).write(to: storeURL)
+        let aside = try #require(try JournalRecovery.moveAside(storeAt: storeURL, date: now))
+        var clock = now
+        let container = try ForesightPersistence.makeContainer(storeURL: storeURL)
+        let store = JournalStore(modelContext: container.mainContext, modelContainer: container, now: { clock })
+        let listed = try #require(store.backups().first { $0.isMovedAside })
+        #expect(SettingsView.backupDetail(listed) == "Set aside because it wouldn't open. This version can't read it.")
+
+        for minute in 1...4 {
+            clock = now.addingTimeInterval(TimeInterval(minute * 60))
+            try store.restoreBackup(at: try writeBackup(at: clock, bodies: ["Backup \(minute)"]))
+        }
+        clock = now.addingTimeInterval(600)
+        #expect(store.resetStore() != nil)
+        #expect(exists(aside))
+        #expect(SharedJournal.backups(in: root).count == SharedJournal.backupLimit)
+
+        clock = now.addingTimeInterval(10 * 86_400)
+        _ = try store.saveLog(body: "Fresh start", eventAt: clock, categoryIDs: [])
+        #expect(await store.takeAutomaticBackupIfDue() != nil)
+        #expect(exists(aside))
+
+        clock = now.addingTimeInterval(31 * 86_400)
+        #expect(await store.takeAutomaticBackupIfDue() != nil)
+        #expect(!exists(aside))
     }
 
     @Test("restoring from the recovery screen replaces the journal that won't open, and keeps it")

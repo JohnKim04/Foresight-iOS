@@ -112,7 +112,7 @@ struct SettingsView: View {
                 Button("Erase", role: .destructive, action: erase)
                 Button("Cancel", role: .cancel) { }
             } message: {
-                Text("This deletes every log, check-in and category you added on this device. The starter categories come back. A copy is saved under Backups first, but backups go when the app is deleted, so export if you want one to keep.")
+                Text("This deletes every log, check-in and category on this device. The starter categories come back. If you've written logs of your own, a copy is saved under Backups first, but backups go when the app is deleted, so export if you want one to keep.")
             }
             .fileImporter(isPresented: $choosingImport, allowedContentTypes: [.json]) { result in
                 switch result {
@@ -317,9 +317,11 @@ struct SettingsView: View {
     }
 
     static func backupDetail(_ backup: JournalBackup) -> String {
-        guard let logs = backup.logCount, let checkIns = backup.checkInCount else { return "This backup can't be read." }
+        guard let logs = backup.logCount, let checkIns = backup.checkInCount else {
+            return backup.isMovedAside ? "Set aside because it wouldn't open. This version can't read it." : "This backup can't be read."
+        }
         let counts = "\(logs) \(logs == 1 ? "log" : "logs") and \(checkIns) \(checkIns == 1 ? "check-in" : "check-ins")"
-        return backup.isAutomatic ? "Daily backup with \(counts)" : counts
+        return backup.isAutomatic ? "Daily backup with \(counts)" : backup.isMovedAside ? "Set aside because it wouldn't open, with \(counts)" : counts
     }
 
     private var aboutSection: some View {

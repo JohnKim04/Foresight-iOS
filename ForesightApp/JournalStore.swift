@@ -281,6 +281,7 @@ struct JournalBackup: Identifiable, Equatable {
     let logCount: Int?
     let checkInCount: Int?
     var isAutomatic = false
+    var isMovedAside = false
 
     var id: URL { url }
     var isReadable: Bool { logCount != nil }
@@ -291,7 +292,7 @@ extension JournalBackup {
     static func list(in directory: URL) -> [JournalBackup] {
         SharedJournal.backups(in: directory).map { backup in
             let counts = try? JournalArchive.counts(at: backup.url)
-            return JournalBackup(url: backup.url, date: backup.date, logCount: counts?.logs, checkInCount: counts?.checkIns, isAutomatic: backup.isAutomatic)
+            return JournalBackup(url: backup.url, date: backup.date, logCount: counts?.logs, checkInCount: counts?.checkIns, isAutomatic: backup.isAutomatic, isMovedAside: backup.isMovedAside)
         }
     }
 }
@@ -330,11 +331,11 @@ enum JournalImportError: LocalizedError, Equatable {
 /// deletes it: it is moved aside as a backup, where Settings lists it once a journal opens.
 enum JournalRecovery {
     /// Moves the store at `url` aside as a backup, if there's one there, and returns where it went.
-    /// Other backups are left alone, so one that can't be read never pushes out one that can.
+    /// Other backups are left alone, and it is kept longer than other backups (see `SharedJournal.movedAsideSuffix`).
     @discardableResult
     static func moveAside(storeAt url: URL, date: Date = .now) throws -> URL? {
         guard SharedJournal.storeFileSuffixes.contains(where: { FileManager.default.fileExists(atPath: url.path + $0) }) else { return nil }
-        return try SharedJournal.backUpStore(at: url, date: date, prune: false)
+        return try SharedJournal.backUpStore(at: url, date: date, movedAside: true)
     }
 
     /// Replaces the store at `url` with the backup at `backup`, after moving the store aside.
@@ -372,12 +373,8 @@ extension JournalStore {
     private func saveSafetyCopy(of archive: JournalArchive) throws -> URL? {
         guard let storeURL, archive.entries.contains(where: { !$0.isFixture }) else { return nil }
         let safetyCopy = SharedJournal.newBackupURL(beside: storeURL, date: now())
-        do {
-            try archive.write(toNewStoreAt: safetyCopy)
-        } catch {
-            SharedJournal.removeStore(at: safetyCopy)
-            throw error
-        }
+        // Under a temporary name until complete, so a write cut short never lists as a backup.
+        try SharedJournal.writeStore(at: safetyCopy) { try archive.write(toNewStoreAt: $0) }
         return safetyCopy
     }
 
@@ -455,12 +452,7 @@ extension JournalStore {
         let restored = try JournalArchive.read(from: url)
         let current = try JournalArchive(context: modelContext)
         let safetyCopy = SharedJournal.newBackupURL(beside: storeURL, date: now())
-        do {
-            try current.write(toNewStoreAt: safetyCopy)
-        } catch {
-            SharedJournal.removeStore(at: safetyCopy)
-            throw error
-        }
+        try SharedJournal.writeStore(at: safetyCopy) { try current.write(toNewStoreAt: $0) }
         do {
             try restored.apply(to: modelContext)
             try modelContext.save()
