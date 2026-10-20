@@ -5,13 +5,15 @@ set -euo pipefail
 # free Apple account; those installs stop opening after 7 days, so run this again each week (the
 # journal survives a reinstall).
 #
-#   ./Scripts/install-on-iphone.sh [--team TEAMID] [--device NAME|UDID] [--release] [--no-app-group]
+#   ./Scripts/install-on-iphone.sh [--team TEAMID] [--device NAME|UDID] [--debug] [--no-app-group]
 #
 # The first run writes Config/Signing.local.xcconfig (gitignored) with your team ID and a bundle ID
 # prefix of your own, and later runs reuse it. Without --team, it uses the team in that file, or the
-# one team Xcode is signed in to. --release installs "Foresight" instead of "Foresight QA" (the QA
-# build adds sample history in Settings). --no-app-group turns off the App Group the widget reads the
-# journal through, for a team that can't register one; pick it before you start journaling.
+# one team Xcode is signed in to. It installs "Foresight", the build to keep your journal in.
+# --debug installs "Foresight QA" beside it instead: a separate app with its own journal and sample
+# history in Settings, for trying things out. Move a journal between the two with Export and Import
+# in Settings. --no-app-group turns off the App Group the widget reads the journal through, for a
+# team that can't register one; pick it before you start journaling.
 
 project_root="$(cd "$(dirname "$0")/.." && pwd)"
 local_config="$project_root/Config/Signing.local.xcconfig"
@@ -20,17 +22,19 @@ scheme="Foresight QA"
 
 team_id=""
 device_query=""
-configuration="Debug"
-app_name="Foresight QA"
+configuration="Release"
+app_name="Foresight"
 app_group=1
 
 while (( $# > 0 )); do
   case "$1" in
     --team) team_id="${2:?--team needs a team ID}"; shift 2 ;;
     --device) device_query="${2:?--device needs a name or UDID}"; shift 2 ;;
+    --debug) configuration="Debug"; app_name="Foresight QA"; shift ;;
+    # The default since the phone install; still accepted so older instructions work.
     --release) configuration="Release"; app_name="Foresight"; shift ;;
     --no-app-group) app_group=0; shift ;;
-    -h|--help) sed -n '4,15p' "$0"; exit 0 ;;
+    -h|--help) sed -n '4,17p' "$0"; exit 0 ;;
     *) print "Unknown option: $1"; exit 2 ;;
   esac
 done

@@ -485,6 +485,154 @@ struct JournalBackupTests {
         #expect(listed.map(\.url.lastPathComponent) == [later, sameSecond, first].map(\.lastPathComponent))
         #expect(listed.map(\.date) == [now.addingTimeInterval(86_400), now, now])
     }
+
+    @Test("erasing saves a copy first, which restores, and daily backups carry on afterwards")
+    func eraseKeepsCopy() async throws {
+        var clock = now
+        let container = try ForesightPersistence.makeContainer(storeURL: storeURL)
+        let store = JournalStore(modelContext: container.mainContext, modelContainer: container, now: { clock })
+        for body in ["One", "Two", "Three", "Four"] { _ = try store.saveLog(body: body, eventAt: now, categoryIDs: []) }
+        let daily = try #require(await store.takeAutomaticBackupIfDue())
+
+        clock = now.addingTimeInterval(3_600)
+        let copy = try #require(store.resetStore())
+        #expect(store.entries.isEmpty)
+        #expect(try JournalArchive.counts(at: copy).logs == 4)
+
+        // The copy is newer than the daily backup, so the near-empty journal isn't taken for a mass deletion.
+        clock = now.addingTimeInterval(86_400)
+        _ = try store.saveLog(body: "Fresh start", eventAt: clock, categoryIDs: [])
+        let nextDaily = try #require(await store.takeAutomaticBackupIfDue())
+        #expect(Set(SharedJournal.backups(in: root).map(\.url.lastPathComponent)) == Set([daily, copy, nextDaily].map(\.lastPathComponent)))
+
+        try store.restoreBackup(at: copy)
+        #expect(store.entries.count == 4)
+    }
+
+    @Test("erasing a journal of only sample history saves no copy")
+    func eraseSampleOnly() throws {
+        let store = try openJournal()
+        try store.addDemoHistory()
+        #expect(store.resetStore() == nil)
+        #expect(store.entries.isEmpty)
+        #expect(SharedJournal.backups(in: root).isEmpty)
+    }
+
+    @Test("importing an export adds its logs, matches categories by name, and changes nothing the second time")
+    func importsExport() throws {
+        // The journal being moved, from another install with its own starter categories.
+        let otherContainer = try ForesightPersistence.makeContainer(storeURL: nil)
+        let fixed = now
+        let other = JournalStore(modelContext: otherContainer.mainContext, modelContainer: otherContainer, now: { fixed })
+        let workout = try #require(other.categories.first { $0.name == "Workout" })
+        let run = try other.saveLog(body: "Morning run", eventAt: now.addingTimeInterval(-3_600), categoryIDs: [workout.id])
+        let answered = try other.createCheckIn(for: run, phase: .immediate)
+        try other.answer(answered, response: .muchBetter, notSure: false, note: "Lighter", excludedFromAnalysis: false)
+        _ = try other.createCheckIn(for: run, phase: .delayed, dueAt: now.addingTimeInterval(3_600))
+        let reading = try other.addCategory(named: "Reading")
+        _ = try other.saveLog(body: "Read a chapter", eventAt: now.addingTimeInterval(-600), categoryIDs: [reading.id])
+        let export = try JournalExport.decode(JournalExport(snapshot: other.snapshot, exportedAt: now).jsonData())
+
+        let store = try openJournal()
+        _ = try store.saveLog(body: "Already here", eventAt: now, categoryIDs: [])
+        let result = try store.importJournal(export)
+        #expect(result.addedLogs == 2)
+        #expect(result.addedCheckIns == 2)
+        #expect(result.updatedLogs == 0)
+        let copy = try #require(result.safetyCopy)
+        #expect(try JournalArchive.read(from: copy).entries.map(\.body) == ["Already here"])
+        #expect(SettingsView.importMessage(for: result) == "Added 2 logs and 2 check-ins. Your journal as it was is under Backups.")
+
+        #expect(Set(store.entries.map(\.body)) == ["Already here", "Morning run", "Read a chapter"])
+        #expect(store.categories.filter { $0.name == "Workout" }.count == 1)
+        #expect(store.categories.contains { $0.name == "Reading" })
+        let importedRun = try #require(store.entries.first { $0.body == "Morning run" })
+        #expect(importedRun.categories.map(\.name) == ["Workout"])
+        #expect(importedRun.checkIns.count == 2)
+        let importedAnswer = try #require(importedRun.checkIns.first { $0.phase == .immediate })
+        #expect(importedAnswer.overall == .muchBetter)
+        #expect(importedAnswer.note == "Lighter")
+        #expect(importedRun.checkIns.contains { $0.phase == .delayed && $0.status == .pending && $0.dueAt == now.addingTimeInterval(3_600) })
+
+        let again = try store.importJournal(export)
+        #expect(!again.changedAnything)
+        #expect(again.safetyCopy == nil)
+        #expect(store.entries.count == 3)
+        #expect(SharedJournal.backups(in: root).count == 1)
+        #expect(SettingsView.importMessage(for: again) == "Everything in that file is already in your journal.")
+    }
+
+    @Test("an import replaces a log only with a copy changed more recently, and never removes one")
+    func importKeepsNewerEdits() throws {
+        let store = try openJournal()
+        let run = try store.saveLog(body: "Morning run", eventAt: now, categoryIDs: [])
+        let original = JournalExport(snapshot: store.snapshot, exportedAt: now)
+        run.body = "Edited on the other phone"
+        run.updatedAt = now.addingTimeInterval(60)
+        let newer = JournalExport(snapshot: store.snapshot, exportedAt: now)
+        _ = try store.saveLog(id: run.id, body: "Edited here", eventAt: now, categoryIDs: [])
+        _ = try store.saveLog(body: "Only here", eventAt: now, categoryIDs: [])
+
+        #expect(!(try store.importJournal(original)).changedAnything)
+        #expect(Set(store.entries.map(\.body)) == ["Edited here", "Only here"])
+
+        let result = try store.importJournal(newer)
+        #expect(result.updatedLogs == 1)
+        #expect(result.addedLogs == 0)
+        #expect(Set(store.entries.map(\.body)) == ["Edited on the other phone", "Only here"])
+    }
+
+    @Test("an import turns away files that aren't a Foresight export, or come from a newer version")
+    func importRejects() throws {
+        let store = try openJournal()
+        _ = try store.saveLog(body: "Keep me", eventAt: now, categoryIDs: [])
+        let json = try #require(String(data: JournalExport(snapshot: store.snapshot, exportedAt: now).jsonData(), encoding: .utf8))
+        let otherFormat = try JournalExport.decode(Data(json.replacingOccurrences(of: "\"foresight-journal\"", with: "\"something-else\"").utf8))
+        #expect(throws: JournalImportError.notAnExport) { try store.importJournal(otherFormat) }
+        let newerVersion = try JournalExport.decode(Data(json.replacingOccurrences(of: "\"version\" : 1", with: "\"version\" : 2").utf8))
+        #expect(throws: JournalImportError.newerVersion) { try store.importJournal(newerVersion) }
+        #expect(store.entries.map(\.body) == ["Keep me"])
+        #expect(SharedJournal.backups(in: root).isEmpty)
+    }
+
+    @Test("the recovery screen moves a journal that won't open aside, without pushing out good backups")
+    func recoveryMovesAside() throws {
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let good = try [3, 2, 1].map { try writeBackup(at: now.addingTimeInterval(TimeInterval(-$0 * 3_600)), bodies: ["Backup \($0)"]) }
+        try Data("not a journal".utf8).write(to: storeURL)
+
+        let aside = try #require(try JournalRecovery.moveAside(storeAt: storeURL, date: now))
+        #expect(!exists(storeURL))
+        #expect(try Data(contentsOf: aside) == Data("not a journal".utf8))
+        #expect(Set(SharedJournal.backups(in: root).map(\.url.lastPathComponent)) == Set((good + [aside]).map(\.lastPathComponent)))
+        #expect(JournalBackup.list(in: root).filter(\.isReadable).count == 3)
+        #expect(try JournalRecovery.moveAside(storeAt: storeURL, date: now) == nil)
+    }
+
+    @Test("restoring from the recovery screen replaces the journal that won't open, and keeps it")
+    func recoveryRestores() throws {
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let backup = try writeBackup(at: now.addingTimeInterval(-3_600), bodies: ["Saved an hour ago"])
+        try Data("not a journal".utf8).write(to: storeURL)
+
+        let aside = try #require(try JournalRecovery.restore(backupAt: backup, intoStoreAt: storeURL, date: now))
+        #expect(try Data(contentsOf: aside) == Data("not a journal".utf8))
+        #expect(exists(backup))
+        let store = try openJournal()
+        #expect(store.entries.map(\.body) == ["Saved an hour ago"])
+    }
+
+    @Test("a backup that can't be read leaves the journal that won't open where it was")
+    func recoveryUnreadableBackup() throws {
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let broken = SharedJournal.newBackupURL(beside: storeURL, date: now.addingTimeInterval(-60))
+        try Data("also broken".utf8).write(to: broken)
+        try Data("not a journal".utf8).write(to: storeURL)
+
+        #expect(throws: (any Error).self) { try JournalRecovery.restore(backupAt: broken, intoStoreAt: storeURL, date: now) }
+        #expect(try Data(contentsOf: storeURL) == Data("not a journal".utf8))
+        #expect(SharedJournal.backups(in: root).map(\.url.lastPathComponent) == [broken.lastPathComponent])
+    }
 }
 
 struct ForesightLinkTests {

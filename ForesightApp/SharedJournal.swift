@@ -157,26 +157,32 @@ enum SharedJournal {
 
     /// Moves a store's files to `Foresight-backup-<time>.store` in the same directory, main file
     /// last so a backup never has a main file without its log. If a move fails, the ones already
-    /// made are undone. Only the newest `backupLimit` backups are kept. Returns the backup's URL.
+    /// made are undone. Unless `prune` is false, only the newest `backupLimit` backups are kept.
+    /// Returns the backup's URL.
     @discardableResult
-    static func backUpStore(at url: URL, date: Date = .now, fileManager: FileManager = .default) throws -> URL {
+    static func backUpStore(at url: URL, date: Date = .now, prune: Bool = true, fileManager: FileManager = .default) throws -> URL {
         let backup = newBackupURL(beside: url, date: date, fileManager: fileManager)
+        try moveStore(at: url, to: backup, fileManager: fileManager)
+        try? fileManager.removeItem(at: URL(fileURLWithPath: url.path + ".partial"))
+        if prune { pruneBackups(in: url.deletingLastPathComponent(), sparing: [backup], fileManager: fileManager) }
+        return backup
+    }
+
+    /// Moves a store's files from `source` to `destination`, main file last. If a move fails, the
+    /// ones already made are undone, so the store stays whole where it was.
+    static func moveStore(at source: URL, to destination: URL, fileManager: FileManager = .default) throws {
         var moved: [String] = []
         do {
-            for suffix in ["-wal", "-shm", ""] where fileManager.fileExists(atPath: url.path + suffix) {
-                try fileManager.moveItem(at: URL(fileURLWithPath: url.path + suffix), to: URL(fileURLWithPath: backup.path + suffix))
+            for suffix in ["-wal", "-shm", ""] where fileManager.fileExists(atPath: source.path + suffix) {
+                try fileManager.moveItem(at: URL(fileURLWithPath: source.path + suffix), to: URL(fileURLWithPath: destination.path + suffix))
                 moved.append(suffix)
             }
         } catch {
-            // Put back what moved, so the store stays whole where it was.
             for suffix in moved {
-                try? fileManager.moveItem(at: URL(fileURLWithPath: backup.path + suffix), to: URL(fileURLWithPath: url.path + suffix))
+                try? fileManager.moveItem(at: URL(fileURLWithPath: destination.path + suffix), to: URL(fileURLWithPath: source.path + suffix))
             }
             throw error
         }
-        try? fileManager.removeItem(at: URL(fileURLWithPath: url.path + ".partial"))
-        pruneBackups(in: url.deletingLastPathComponent(), sparing: [backup], fileManager: fileManager)
-        return backup
     }
 
     /// The backups in `directory`, newest first by the time in their names.

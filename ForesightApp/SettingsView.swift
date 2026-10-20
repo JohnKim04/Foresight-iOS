@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 /// Notification choices, quiet hours, and the user's data. Opened from the Journal header.
 struct SettingsView: View {
@@ -19,6 +20,7 @@ struct SettingsView: View {
     @State private var confirmRemoveSample = false
     @State private var backups: [JournalBackup] = []
     @State private var backupToRestore: JournalBackup?
+    @State private var choosingImport = false
     @State private var message: String?
     /// Kept apart from `message` so it shows under the button that caused it.
     @State private var sampleMessage: String?
@@ -110,7 +112,13 @@ struct SettingsView: View {
                 Button("Erase", role: .destructive, action: erase)
                 Button("Cancel", role: .cancel) { }
             } message: {
-                Text("This deletes every log, check-in and category you added on this device and can't be undone. The starter categories come back. Export first if you want a copy.")
+                Text("This deletes every log, check-in and category you added on this device. The starter categories come back. A copy is saved under Backups first, but backups go when the app is deleted, so export if you want one to keep.")
+            }
+            .fileImporter(isPresented: $choosingImport, allowedContentTypes: [.json]) { result in
+                switch result {
+                case .success(let url): importJournal(from: url)
+                case .failure(let error): message = "The file couldn't be opened. \(error.localizedDescription)"
+                }
             }
         }
     }
@@ -259,6 +267,10 @@ struct SettingsView: View {
             }
             .disabled(current.entries.isEmpty)
             .accessibilityIdentifier("settings.export")
+            Button { choosingImport = true } label: {
+                SettingLabel(title: "Import journal", detail: "Add the logs and check-ins from an exported journal, say from another install of Foresight. Nothing already here is removed.", systemImage: "square.and.arrow.down")
+            }
+            .accessibilityIdentifier("settings.import")
             Button(role: .destructive) { confirmErase = true } label: {
                 SettingLabel(title: "Erase journal", detail: "Delete every log, check-in and category you added, and start over with the starter categories.", systemImage: "trash", tint: .red)
             }
@@ -288,7 +300,7 @@ struct SettingsView: View {
         }
     }
 
-    static let backupsFooter = "Copies of your journal, newest first. Foresight saves one each day you open it, and one of your journal as it is now before every restore. It keeps up to \(SharedJournal.backupLimit): a daily backup only replaces an older daily one or a backup over a week old, and pauses for up to a month if most of your journal is deleted. A restore may remove the oldest other backup to make room."
+    static let backupsFooter = "Copies of your journal, newest first. Foresight saves one each day you open it, and one of your journal as it is now before every restore, import or erase. It keeps up to \(SharedJournal.backupLimit): a daily backup only replaces an older daily one or a backup over a week old, and pauses for up to a month if most of your journal is deleted. A restore may remove the oldest other backup to make room."
 
     static func backupDate(_ date: Date) -> String {
         date.formatted(date: .abbreviated, time: .shortened)
@@ -339,13 +351,40 @@ struct SettingsView: View {
 
     private func erase() {
         sampleMessage = nil
-        store.resetStore()
+        let safetyCopy = store.resetStore()
         if let error = store.initializationError {
             message = error
         } else {
-            message = "Your journal was erased."
+            message = safetyCopy == nil ? "Your journal was erased." : "Your journal was erased. A copy of it is under Backups."
             UINotificationFeedbackGenerator().notificationOccurred(.success)
         }
+        backups = store.backups()
+    }
+
+    private func importJournal(from url: URL) {
+        sampleMessage = nil
+        let accessing = url.startAccessingSecurityScopedResource()
+        defer { if accessing { url.stopAccessingSecurityScopedResource() } }
+        do {
+            let data = try Data(contentsOf: url)
+            guard let export = try? JournalExport.decode(data) else { throw JournalImportError.notAnExport }
+            let result = try store.importJournal(export)
+            message = Self.importMessage(for: result)
+            if result.changedAnything { UINotificationFeedbackGenerator().notificationOccurred(.success) }
+        } catch {
+            message = "Nothing was imported. \(error.localizedDescription)"
+        }
+        backups = store.backups()
+    }
+
+    static func importMessage(for result: JournalImport) -> String {
+        guard result.changedAnything else { return "Everything in that file is already in your journal." }
+        func count(_ number: Int, _ noun: String) -> String { "\(number) \(noun)\(number == 1 ? "" : "s")" }
+        var parts: [String] = []
+        if result.addedLogs > 0 || result.addedCheckIns > 0 { parts.append("Added \(count(result.addedLogs, "log")) and \(count(result.addedCheckIns, "check-in")).") }
+        if result.updatedLogs > 0 || result.updatedCheckIns > 0 { parts.append("Updated \(count(result.updatedLogs, "log")) and \(count(result.updatedCheckIns, "check-in")) that changed since.") }
+        if result.safetyCopy != nil { parts.append("Your journal as it was is under Backups.") }
+        return parts.joined(separator: " ")
     }
 
     static func hourLabel(_ hour: Int) -> String {

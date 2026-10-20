@@ -64,6 +64,20 @@ jobs:
           VERIFY_RESULT_BUNDLE_PATH: ${{ github.workspace }}/build/TestResults.xcresult
         run: ./Scripts/verify.sh
 
+      # Phones get the Release build (Scripts/install-on-iphone.sh), which the tests don't compile.
+      - name: Build Release
+        run: |
+          xcodebuild build \
+            -project Foresight.xcodeproj \
+            -scheme "Foresight QA" \
+            -configuration Release \
+            -destination "platform=iOS Simulator,id=$VERIFY_SIMULATOR_UDID" \
+            -derivedDataPath build/release \
+            ONLY_ACTIVE_ARCH=YES \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            -quiet
+
       # verify.sh regenerates the project, so CI passes even when the committed project.pbxproj is
       # stale. Print the difference: a session without XcodeGen can apply it with `git apply`.
       - name: Check the committed Xcode project

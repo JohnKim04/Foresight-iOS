@@ -34,14 +34,16 @@ Device signing is prepared in `Config/Signing.xcconfig` but switched off until a
 
 1. Your iPhone must run iOS 26 or later. Turn on Developer Mode (Settings > Privacy & Security > Developer Mode; the phone restarts), then connect it to the Mac with a cable, unlock it and tap Trust.
 2. In Xcode > Settings > Accounts, sign in with your Apple ID.
-3. Run `./Scripts/install-on-iphone.sh`. It finds your team, writes `Config/Signing.local.xcconfig` (gitignored, so the team ID stays out of the repo), builds Foresight QA with automatic signing, installs it and opens it. Pass `--team <id>` if Xcode has more than one team, `--device <name>` if more than one iPhone is connected, or `--release` for the `Foresight` build without sample history.
+3. Run `./Scripts/install-on-iphone.sh`. It finds your team, writes `Config/Signing.local.xcconfig` (gitignored, so the team ID stays out of the repo), builds Foresight (the Release build) with automatic signing, installs it and opens it. Pass `--team <id>` if Xcode has more than one team, `--device <name>` if more than one iPhone is connected, or `--debug` for Foresight QA.
 4. The first time, iOS won't open the app until you trust your developer profile: Settings > General > VPN & Device Management > your Apple account > Trust.
 
 To use Xcode instead, copy `Config/Signing.local.xcconfig.example` to `Config/Signing.local.xcconfig`, fill it in, run `xcodegen generate --spec project.yml`, select the Foresight QA scheme and your iPhone, and Run.
 
+Keep your real journal in Foresight. Foresight QA is a separate app beside it, with its own journal and the sample history button, for trying things out. To move a journal from one to the other (or to a new phone), use Export journal in Settings, save the file, then Import journal in the other app; importing adds logs and never removes any.
+
 The script gives the app a bundle ID prefix of its own, `com.foresight.<team ID, lowercased>`, because bundle IDs and App Group IDs are unique across all Apple teams. Keep it: a different prefix installs a separate app with an empty journal.
 
-With a free account, an install stops opening after 7 days. Run the script again (or Run from Xcode) to renew it; the journal survives a reinstall, and deleting the app deletes it. A free account can also have at most 3 of its own apps on a phone and register 10 app IDs a week (Foresight QA and its widget use 2). TestFlight needs the paid Apple Developer Program.
+With a free account, an install stops opening after 7 days. Run the script again (or Run from Xcode) to renew it; the journal survives a reinstall, and deleting the app deletes it. A free account can also have at most 3 of its own apps on a phone and register 10 app IDs a week (Foresight and its widget use 2, and Foresight QA 2 more). TestFlight needs the paid Apple Developer Program.
 
 The app and its widget extension share the journal through an App Group (`group.<BUNDLE_ID_PREFIX>.journal.testing` for Foresight QA, `.journal` for Release), which automatic signing registers for your team; free accounts support App Groups. If Xcode can't register it, run the script with `--no-app-group` (or uncomment the two `FORESIGHT_*_ENTITLEMENTS` lines in `Signing.local.xcconfig`): the app keeps working and the widget asks you to open Foresight instead of showing check-ins. Decide before you start journaling on the phone: once the journal has moved into the group, a build without the group can't see it, and opens on the recovery screen rather than an empty journal (turn the group back on to get it back).
 

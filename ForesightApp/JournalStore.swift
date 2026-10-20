@@ -58,7 +58,18 @@ final class JournalStore {
         }
     }
 
-    func resetStore() {
+    /// Erases the journal, after saving it as a backup when it holds a log of your own, so an
+    /// erase can be undone from Settings. That copy also tells the daily backup the smaller
+    /// journal is on purpose (see `SharedJournal.hasShrunk`). Returns the copy's URL, if one was made.
+    @discardableResult
+    func resetStore() -> URL? {
+        let safetyCopy: URL?
+        do {
+            safetyCopy = try saveSafetyCopy(of: JournalArchive(context: modelContext))
+        } catch {
+            initializationError = "Your journal wasn't erased, because a copy of it couldn't be saved first. \(error.localizedDescription)"
+            return nil
+        }
         do {
             try modelContext.fetch(FetchDescriptor<OutcomeCheckIn>()).forEach(modelContext.delete)
             try modelContext.fetch(FetchDescriptor<JournalEntry>()).forEach(modelContext.delete)
@@ -67,8 +78,13 @@ final class JournalStore {
             reload()
             onReset?()
         } catch {
+            modelContext.rollback()
+            if let safetyCopy { SharedJournal.removeStore(at: safetyCopy) }
             initializationError = "The journal could not be reset. \(error.localizedDescription)"
+            return nil
         }
+        if let safetyCopy, let storeURL { SharedJournal.pruneBackups(in: storeURL.deletingLastPathComponent(), sparing: [safetyCopy]) }
+        return safetyCopy
     }
 
     func saveLog(id: UUID? = nil, body: String, eventAt: Date, categoryIDs: Set<UUID>) throws -> JournalEntry {
@@ -270,10 +286,71 @@ struct JournalBackup: Identifiable, Equatable {
     var isReadable: Bool { logCount != nil }
 }
 
+extension JournalBackup {
+    /// The backups in `directory`, newest first, with what each holds.
+    static func list(in directory: URL) -> [JournalBackup] {
+        SharedJournal.backups(in: directory).map { backup in
+            let counts = try? JournalArchive.counts(at: backup.url)
+            return JournalBackup(url: backup.url, date: backup.date, logCount: counts?.logs, checkInCount: counts?.checkIns, isAutomatic: backup.isAutomatic)
+        }
+    }
+}
+
 enum JournalBackupError: LocalizedError, Equatable {
     case noBackups
 
     var errorDescription: String? { "This journal doesn't keep backups." }
+}
+
+/// What importing an exported journal changed.
+struct JournalImport: Equatable {
+    var addedLogs = 0
+    var updatedLogs = 0
+    var addedCheckIns = 0
+    var updatedCheckIns = 0
+    /// The journal as it was before the import, saved as a backup.
+    var safetyCopy: URL?
+
+    var changedAnything: Bool { addedLogs + updatedLogs + addedCheckIns + updatedCheckIns > 0 }
+}
+
+enum JournalImportError: LocalizedError, Equatable {
+    case notAnExport
+    case newerVersion
+
+    var errorDescription: String? {
+        switch self {
+        case .notAnExport: "This file isn't a journal exported from Foresight."
+        case .newerVersion: "This journal was exported by a newer version of Foresight. Update the app, then import it again."
+        }
+    }
+}
+
+/// What the "Journal unavailable" screen can do with a journal that won't open. Nothing here
+/// deletes it: it is moved aside as a backup, where Settings lists it once a journal opens.
+enum JournalRecovery {
+    /// Moves the store at `url` aside as a backup, if there's one there, and returns where it went.
+    /// Other backups are left alone, so one that can't be read never pushes out one that can.
+    @discardableResult
+    static func moveAside(storeAt url: URL, date: Date = .now) throws -> URL? {
+        guard SharedJournal.storeFileSuffixes.contains(where: { FileManager.default.fileExists(atPath: url.path + $0) }) else { return nil }
+        return try SharedJournal.backUpStore(at: url, date: date, prune: false)
+    }
+
+    /// Replaces the store at `url` with the backup at `backup`, after moving the store aside.
+    /// If the backup can't be read or written, the store is put back as it was.
+    @discardableResult
+    static func restore(backupAt backup: URL, intoStoreAt url: URL, date: Date = .now) throws -> URL? {
+        let archive = try JournalArchive.read(from: backup)
+        let aside = try moveAside(storeAt: url, date: date)
+        do {
+            try SharedJournal.writeStore(at: url) { try archive.write(toNewStoreAt: $0) }
+        } catch {
+            if let aside { try? SharedJournal.moveStore(at: aside, to: url) }
+            throw error
+        }
+        return aside
+    }
 }
 
 extension JournalStore {
@@ -286,10 +363,47 @@ extension JournalStore {
     /// The backups beside the journal, newest first, with what each holds.
     func backups() -> [JournalBackup] {
         guard let storeURL else { return [] }
-        return SharedJournal.backups(in: storeURL.deletingLastPathComponent()).map { backup in
-            let counts = try? JournalArchive.counts(at: backup.url)
-            return JournalBackup(url: backup.url, date: backup.date, logCount: counts?.logs, checkInCount: counts?.checkIns, isAutomatic: backup.isAutomatic)
+        return JournalBackup.list(in: storeURL.deletingLastPathComponent())
+    }
+
+    /// Saves `archive` (the journal as it is now) as a new backup before a change that replaces
+    /// or removes records. Nil when there's nothing worth a backup: a journal kept in memory, or
+    /// one with no logs but sample history.
+    private func saveSafetyCopy(of archive: JournalArchive) throws -> URL? {
+        guard let storeURL, archive.entries.contains(where: { !$0.isFixture }) else { return nil }
+        let safetyCopy = SharedJournal.newBackupURL(beside: storeURL, date: now())
+        do {
+            try archive.write(toNewStoreAt: safetyCopy)
+        } catch {
+            SharedJournal.removeStore(at: safetyCopy)
+            throw error
         }
+        return safetyCopy
+    }
+
+    /// Adds the logs and check-ins in an exported journal to this one, after saving this one as a
+    /// backup. Records it already has stay as they are unless the file's copy was changed more
+    /// recently, so importing the same file twice changes nothing. Categories are matched by name,
+    /// since every install starts its own copies of the starter ones.
+    @discardableResult
+    func importJournal(_ export: JournalExport) throws -> JournalImport {
+        let current = try JournalArchive(context: modelContext)
+        let (merged, changes) = try current.merging(export)
+        var result = changes
+        guard result.changedAnything else { return result }
+        result.safetyCopy = try saveSafetyCopy(of: current)
+        do {
+            try merged.apply(to: modelContext)
+            try modelContext.save()
+        } catch {
+            modelContext.rollback()
+            if let safetyCopy = result.safetyCopy { SharedJournal.removeStore(at: safetyCopy) }
+            reload()
+            throw error
+        }
+        reload()
+        if let safetyCopy = result.safetyCopy, let storeURL { SharedJournal.pruneBackups(in: storeURL.deletingLastPathComponent(), sparing: [safetyCopy]) }
+        return result
     }
 
     /// Takes the day's automatic backup, if one is due (see `SharedJournal.isAutomaticBackupDue`)
@@ -408,6 +522,72 @@ struct JournalArchive: Sendable {
         checkIns = try context.fetch(FetchDescriptor<OutcomeCheckIn>()).map {
             CheckIn(id: $0.id, entryID: $0.entry?.id, phase: $0.phase, status: $0.status, dueAt: $0.dueAt, answeredAt: $0.answeredAt, overall: $0.overall, note: $0.note, excludedFromAnalysis: $0.excludedFromAnalysis, createdAt: $0.createdAt, updatedAt: $0.updatedAt, isFixture: $0.isFixture)
         }
+    }
+
+    /// These records with an exported journal's added, and the records both have replaced by the
+    /// file's copy where it was changed more recently. A category is matched by name when its ID
+    /// is new here; a log keeps the categories its file copy names. Sample history is never in an
+    /// export, so everything added is the user's own.
+    func merging(_ export: JournalExport) throws -> (JournalArchive, JournalImport) {
+        guard export.format == JournalExport.format else { throw JournalImportError.notAnExport }
+        guard export.version <= 1 else { throw JournalImportError.newerVersion }
+        var merged = self
+        var result = JournalImport()
+
+        func key(_ name: String) -> String {
+            name.trimmingCharacters(in: .whitespacesAndNewlines).folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+        }
+        var categoryIDByName: [String: UUID] = [:]
+        for category in categories where categoryIDByName[key(category.name)] == nil { categoryIDByName[key(category.name)] = category.id }
+        let knownCategoryIDs = Set(categories.map(\.id))
+        func addCategory(id: UUID, name: String, archivedAt: Date?) -> UUID {
+            if let existing = categoryIDByName[key(name)] { return existing }
+            merged.categories.append(Category(id: id, name: name.trimmingCharacters(in: .whitespacesAndNewlines), archivedAt: archivedAt))
+            categoryIDByName[key(name)] = id
+            return id
+        }
+        for category in export.categories where !knownCategoryIDs.contains(category.id) && !key(category.name).isEmpty {
+            _ = addCategory(id: category.id, name: category.name, archivedAt: category.archivedAt)
+        }
+
+        var entryIndex = Dictionary(merged.entries.enumerated().map { ($0.element.id, $0.offset) }, uniquingKeysWith: { first, _ in first })
+        var checkInIndex = Dictionary(merged.checkIns.enumerated().map { ($0.element.id, $0.offset) }, uniquingKeysWith: { first, _ in first })
+        for entry in export.entries {
+            let body = entry.body.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !body.isEmpty else { continue }
+            var categoryIDs: [UUID] = []
+            for name in entry.categories where !key(name).isEmpty {
+                let id = addCategory(id: UUID(), name: name, archivedAt: nil)
+                if !categoryIDs.contains(id) { categoryIDs.append(id) }
+            }
+            let item = Entry(id: entry.id, body: body, eventAt: entry.eventAt, createdAt: entry.createdAt, updatedAt: entry.updatedAt, isFixture: false, categoryIDs: categoryIDs)
+            if let index = entryIndex[entry.id] {
+                if entry.updatedAt > merged.entries[index].updatedAt {
+                    merged.entries[index] = item
+                    result.updatedLogs += 1
+                }
+            } else {
+                entryIndex[entry.id] = merged.entries.count
+                merged.entries.append(item)
+                result.addedLogs += 1
+            }
+
+            for checkIn in entry.checkIns {
+                guard let phase = OutcomePhase(rawValue: checkIn.phase), let status = OutcomeStatus(rawValue: checkIn.status) else { continue }
+                let item = CheckIn(id: checkIn.id, entryID: entry.id, phase: phase, status: status, dueAt: checkIn.dueAt, answeredAt: checkIn.answeredAt, overall: checkIn.response.flatMap(OutcomeValue.init(rawValue:)), note: checkIn.note, excludedFromAnalysis: checkIn.excludedFromAnalysis, createdAt: checkIn.createdAt, updatedAt: checkIn.updatedAt, isFixture: false)
+                if let index = checkInIndex[checkIn.id] {
+                    if checkIn.updatedAt > merged.checkIns[index].updatedAt {
+                        merged.checkIns[index] = item
+                        result.updatedCheckIns += 1
+                    }
+                } else {
+                    checkInIndex[checkIn.id] = merged.checkIns.count
+                    merged.checkIns.append(item)
+                    result.addedCheckIns += 1
+                }
+            }
+        }
+        return (merged, result)
     }
 
     /// Reads the store at `url` without changing it.
