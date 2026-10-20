@@ -14,6 +14,7 @@ struct SettingsView: View {
     @State private var quietHoursEnabled: Bool
     @State private var quietStart: Int
     @State private var quietEnd: Int
+    @State private var laterDefault: LaterCheckInDefault
     @State private var confirmErase = false
     @State private var confirmRemoveSample = false
     @State private var backups: [JournalBackup] = []
@@ -36,6 +37,7 @@ struct SettingsView: View {
         _quietHoursEnabled = State(initialValue: preferences.quietHoursEnabled)
         _quietStart = State(initialValue: preferences.quietHoursStart)
         _quietEnd = State(initialValue: preferences.quietHoursEnd)
+        _laterDefault = State(initialValue: preferences.laterCheckInDefault)
     }
 
     private var export: JournalExport { JournalExport(snapshot: store.snapshot, exportedAt: .now) }
@@ -44,6 +46,7 @@ struct SettingsView: View {
         NavigationStack {
             Form {
                 notificationsSection
+                laterCheckInSection
                 quietHoursSection
                 categoriesSection
                 dataSection
@@ -77,6 +80,7 @@ struct SettingsView: View {
                 preferences.headsUpsEnabled = isOn
                 preferencesChanged(turnedOn: isOn)
             }
+            .onChange(of: laterDefault) { _, choice in preferences.laterCheckInDefault = choice }
             .onChange(of: quietHoursEnabled) { _, isOn in
                 preferences.quietHoursEnabled = isOn
                 preferencesChanged()
@@ -148,6 +152,20 @@ struct SettingsView: View {
             .tint(Color.foresightSwitch)
         } header: {
             Text("Notifications")
+        }
+    }
+
+    private var laterCheckInSection: some View {
+        Section {
+            Picker(selection: $laterDefault) {
+                ForEach(LaterCheckInDefault.allCases) { Text($0.title).tag($0) }
+            } label: {
+                SettingLabel(title: "After a new log", detail: "The later check-in set for you when you save a log. Patterns and nudges learn only from later check-ins. You can change or cancel it each time.")
+            }
+            .pickerStyle(.menu)
+            .accessibilityIdentifier("settings.later-default")
+        } header: {
+            Text("Later check-ins")
         }
     }
 

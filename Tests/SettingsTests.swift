@@ -154,6 +154,27 @@ struct ReminderPreferenceTests {
         #expect(await center.permissionRequests == 1)
     }
 
+    @Test("says when quiet hours hold a reminder past its due time, and not when reminders are off")
+    func heldByQuietHours() throws {
+        let settings = Settings()
+        settings.quietHours = .standard
+        let (_, scheduler, _) = try makeSubject(settings: settings)
+        #expect(scheduler.reminderHeldByQuietHours(dueAt: utcDate(hour: 23)) == utcDate(hour: 8, dayOffset: 1))
+        #expect(scheduler.reminderHeldByQuietHours(dueAt: utcDate(hour: 15)) == nil)
+        settings.enabled = false
+        #expect(scheduler.reminderHeldByQuietHours(dueAt: utcDate(hour: 23)) == nil)
+    }
+
+    @Test("no held-reminder time when iOS has notifications off")
+    func heldWhenDenied() async throws {
+        let settings = Settings()
+        settings.quietHours = .standard
+        let (_, scheduler, _) = try makeSubject(status: .denied, settings: settings)
+        await scheduler.waitForPendingWork()
+        #expect(scheduler.authorization == .denied)
+        #expect(scheduler.reminderHeldByQuietHours(dueAt: utcDate(hour: 23)) == nil)
+    }
+
     @Test("a snooze without the journal respects quiet hours")
     func snoozeRespectsQuietHours() async throws {
         let settings = Settings()
@@ -180,6 +201,16 @@ struct NotificationPreferencesTests {
         #expect(preferences.nudgesEnabled)
         #expect(preferences.headsUpsEnabled)
         #expect(preferences.quietHours == .standard)
+        #expect(preferences.laterCheckInDefault == .inTwoHours)
+    }
+
+    @Test("stores the later check-in default, and reads an unknown value as the standard one")
+    func laterDefault() throws {
+        let (preferences, defaults) = try makePreferences()
+        preferences.laterCheckInDefault = .none
+        #expect(NotificationPreferences(defaults: defaults).laterCheckInDefault == .none)
+        defaults.set("someday", forKey: NotificationPreferences.laterCheckInDefaultKey)
+        #expect(preferences.laterCheckInDefault == .standard)
     }
 
     @Test("stores each choice, and quiet hours turned off never hold anything back")

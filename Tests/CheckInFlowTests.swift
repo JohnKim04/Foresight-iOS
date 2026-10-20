@@ -58,6 +58,17 @@ struct CheckInFlowTests {
         }
     }
 
+    @Test("the later default picks its shortcut, or the morning when tonight is too close")
+    func laterDefaultOption() {
+        let afternoon = CheckInLaterOption.options(now: date(9, 14), calendar: calendar)
+        #expect(LaterCheckInDefault.inTwoHours.option(in: afternoon)?.dueAt == date(9, 16))
+        #expect(LaterCheckInDefault.tonight.option(in: afternoon)?.dueAt == date(9, 20))
+        #expect(LaterCheckInDefault.morning.option(in: afternoon)?.dueAt == date(10, 9))
+        #expect(LaterCheckInDefault.none.option(in: afternoon) == nil)
+        let evening = CheckInLaterOption.options(now: date(9, 18), calendar: calendar)
+        #expect(LaterCheckInDefault.tonight.option(in: evening)?.dueAt == date(10, 9))
+    }
+
     @Test("counts only pending later check-ins that are due")
     func dueCount() {
         let now = date(9, 12)

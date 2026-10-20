@@ -284,6 +284,7 @@ struct CheckInDetailCard: View {
     let onAnswer: (OutcomeCheckIn?) -> Void
     let onSchedule: (OutcomeCheckIn?) -> Void
     let onRemove: (OutcomeCheckIn) -> Void
+    @Environment(CheckInReminderScheduler.self) private var reminders
 
     var body: some View {
         ForesightCard {
@@ -293,6 +294,9 @@ struct CheckInDetailCard: View {
                     Text(checkIn.status == .skipped ? "Skipped" : checkIn.responseSummary).font(ForesightType.sectionTitle).foregroundStyle(Color.foresightInk)
                     if checkIn.phase == .delayed, checkIn.status == .pending, let dueAt = checkIn.dueAt {
                         Text("Due \(ForesightFormat.detailDate(dueAt))").foregroundStyle(.secondary)
+                        if let fireAt = reminders.reminderHeldByQuietHours(dueAt: dueAt) {
+                            Text(QuietHoursCopy.reminderNote(fireAt)).font(.caption).foregroundStyle(.secondary)
+                        }
                     } else if let answeredAt = checkIn.answeredAt {
                         Text("Answered \(ForesightFormat.detailDate(answeredAt))").foregroundStyle(.secondary)
                     }
@@ -468,9 +472,10 @@ struct ScheduleCheckInSheet: View {
     let store: JournalStore
     let target: CheckInTarget
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.openURL) private var openURL
     @Environment(CheckInReminderScheduler.self) private var reminders
     @State private var dueAt: Date
+    /// The same shortcuts the post-log step offers, so "Tomorrow morning" means the same everywhere.
+    @State private var shortcuts: [CheckInLaterOption]
     @State private var message: String?
     @State private var discardConfirmation = false
 
@@ -478,7 +483,9 @@ struct ScheduleCheckInSheet: View {
         self.store = store
         self.target = target
         let existing = target.checkInID.flatMap { id in store.checkIns.first { $0.id == id } }
-        _dueAt = State(initialValue: existing?.dueAt ?? Calendar.current.date(byAdding: .hour, value: 2, to: .now)!)
+        let shortcuts = CheckInLaterOption.options(now: .now)
+        _shortcuts = State(initialValue: shortcuts)
+        _dueAt = State(initialValue: existing?.dueAt ?? shortcuts[0].dueAt)
     }
 
     private var existing: OutcomeCheckIn? { target.checkInID.flatMap { id in store.checkIns.first { $0.id == id } } }
@@ -498,27 +505,19 @@ struct ScheduleCheckInSheet: View {
                             VStack(alignment: .leading, spacing: 14) {
                                 SectionKicker(text: "Quick schedule")
                                 VStack(spacing: 9) {
-                                    scheduleShortcut("Later today", detail: "In about two hours") {
-                                        Calendar.current.date(byAdding: .hour, value: 2, to: .now)!
-                                    }
-                                    scheduleShortcut("Tomorrow morning", detail: "At 9:00 AM") {
-                                        Calendar.current.date(bySettingHour: 9, minute: 0, second: 0, of: Calendar.current.date(byAdding: .day, value: 1, to: .now)!)!
-                                    }
-                                    scheduleShortcut("Tomorrow evening", detail: "At 7:00 PM") {
-                                        Calendar.current.date(bySettingHour: 19, minute: 0, second: 0, of: Calendar.current.date(byAdding: .day, value: 1, to: .now)!)!
-                                    }
+                                    ForEach(shortcuts) { scheduleShortcut($0) }
                                 }
                                 Divider().overlay(Color.foresightLine)
                                 SectionKicker(text: "Custom time")
                                 DatePicker("Check in", selection: $dueAt, in: Date.now..., displayedComponents: [.date, .hourAndMinute])
                                     .font(ForesightType.control)
                                     .tint(Color.foresightSage)
-                                Text("Scheduled for \(ForesightFormat.detailDate(dueAt))")
+                                Text("Scheduled for \(ForesightFormat.detailDate(dueAt)).\(reminders.reminderHeldByQuietHours(dueAt: dueAt).map { " " + QuietHoursCopy.reminderNote($0) } ?? "")")
                                     .font(.caption)
                                     .foregroundStyle(Color.foresightMuted)
                             }
                         }
-                        if reminders.authorization == .denied { notificationsOffNote }
+                        if reminders.authorization == .denied { NotificationsOffNote() }
                         if let message { Text(message).font(.footnote).foregroundStyle(Color.foresightWarning) }
                     }
                     .padding()
@@ -535,7 +534,50 @@ struct ScheduleCheckInSheet: View {
         }
     }
 
-    private var notificationsOffNote: some View {
+    private func scheduleShortcut(_ option: CheckInLaterOption) -> some View {
+        Button {
+            // A sheet left open a while can offer a time that has since passed.
+            guard option.dueAt > .now else { shortcuts = CheckInLaterOption.options(now: .now); return }
+            withAnimation(.snappy(duration: 0.2)) { dueAt = option.dueAt }
+        } label: {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(option.title).font(ForesightType.control).foregroundStyle(Color.foresightInk)
+                    Text(option.detail).font(.caption).foregroundStyle(Color.foresightMuted)
+                }
+                Spacer()
+                Image(systemName: "arrow.forward")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(Color.foresightSage)
+            }
+            .padding(.horizontal, 14)
+            .frame(minHeight: 54)
+            .background(Color.foresightRaised, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(option.title)
+        .accessibilityHint(option.detail)
+    }
+
+    private func requestDismiss() { if isDirty { discardConfirmation = true } else { dismiss() } }
+    private func save() {
+        guard let entry = store.entries.first(where: { $0.id == target.entryID }) else { message = ForesightError.missingEntry.localizedDescription; return }
+        do {
+            if let existing { try store.reschedule(existing, to: dueAt) }
+            else { _ = try store.createCheckIn(for: entry, phase: .delayed, dueAt: dueAt) }
+            UINotificationFeedbackGenerator().notificationOccurred(.success)
+            // Scheduling a check-in is when a reminder starts to matter, so ask here, once.
+            Task { await reminders.requestAuthorizationIfNeeded() }
+            dismiss()
+        } catch { message = error.localizedDescription }
+    }
+}
+
+/// Shown where a check-in gets scheduled while iOS has notifications off for the app.
+struct NotificationsOffNote: View {
+    @Environment(\.openURL) private var openURL
+
+    var body: some View {
         ForesightCard {
             VStack(alignment: .leading, spacing: 10) {
                 Label("Reminders are off", systemImage: "bell.slash")
@@ -550,41 +592,5 @@ struct ScheduleCheckInSheet: View {
                 .buttonStyle(ForesightSecondaryButtonStyle())
             }
         }
-    }
-
-    private func scheduleShortcut(_ title: String, detail: String, date: @escaping () -> Date) -> some View {
-        Button {
-            withAnimation(.snappy(duration: 0.2)) { dueAt = date() }
-        } label: {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(ForesightType.control).foregroundStyle(Color.foresightInk)
-                    Text(detail).font(.caption).foregroundStyle(Color.foresightMuted)
-                }
-                Spacer()
-                Image(systemName: "arrow.forward")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(Color.foresightSage)
-            }
-            .padding(.horizontal, 14)
-            .frame(minHeight: 54)
-            .background(Color.foresightRaised, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(title)
-        .accessibilityHint(detail)
-    }
-
-    private func requestDismiss() { if isDirty { discardConfirmation = true } else { dismiss() } }
-    private func save() {
-        guard let entry = store.entries.first(where: { $0.id == target.entryID }) else { message = ForesightError.missingEntry.localizedDescription; return }
-        do {
-            if let existing { try store.reschedule(existing, to: dueAt) }
-            else { _ = try store.createCheckIn(for: entry, phase: .delayed, dueAt: dueAt) }
-            UINotificationFeedbackGenerator().notificationOccurred(.success)
-            // Scheduling a check-in is when a reminder starts to matter, so ask here, once.
-            Task { await reminders.requestAuthorizationIfNeeded() }
-            dismiss()
-        } catch { message = error.localizedDescription }
     }
 }
