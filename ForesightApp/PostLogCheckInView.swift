@@ -50,6 +50,7 @@ struct PostLogCheckInView: View {
                     ratingCard
                     if let worseSuggestion { suggestionCard(worseSuggestion) }
                     laterCard
+                    if pendingLater != nil, reminders.authorization == .denied { NotificationsOffNote() }
                     if let message { Text(message).font(.footnote).foregroundStyle(Color.foresightWarning) }
                     Button("Done", action: finish)
                         .buttonStyle(ForesightPrimaryButtonStyle())

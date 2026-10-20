@@ -165,6 +165,16 @@ struct ReminderPreferenceTests {
         #expect(scheduler.reminderHeldByQuietHours(dueAt: utcDate(hour: 23)) == nil)
     }
 
+    @Test("no held-reminder time when iOS has notifications off")
+    func heldWhenDenied() async throws {
+        let settings = Settings()
+        settings.quietHours = .standard
+        let (_, scheduler, _) = try makeSubject(status: .denied, settings: settings)
+        await scheduler.waitForPendingWork()
+        #expect(scheduler.authorization == .denied)
+        #expect(scheduler.reminderHeldByQuietHours(dueAt: utcDate(hour: 23)) == nil)
+    }
+
     @Test("a snooze without the journal respects quiet hours")
     func snoozeRespectsQuietHours() async throws {
         let settings = Settings()

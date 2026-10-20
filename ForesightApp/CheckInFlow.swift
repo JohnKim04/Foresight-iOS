@@ -61,10 +61,10 @@ enum LaterCheckInDefault: String, CaseIterable, Identifiable, Sendable {
     }
 
     /// The shortcut to set among those offered now. Tonight isn't offered once 8 PM is less
-    /// than three hours away; then the soonest time offered stands in.
+    /// than three hours away; then the morning stands in.
     func option(in options: [CheckInLaterOption]) -> CheckInLaterOption? {
         guard let kind = CheckInLaterOption.Kind(rawValue: rawValue) else { return nil }
-        return options.first { $0.kind == kind } ?? options.first
+        return options.first { $0.kind == kind } ?? options.first { $0.kind == .morning } ?? options.first
     }
 }
 

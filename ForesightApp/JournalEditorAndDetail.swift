@@ -472,7 +472,6 @@ struct ScheduleCheckInSheet: View {
     let store: JournalStore
     let target: CheckInTarget
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.openURL) private var openURL
     @Environment(CheckInReminderScheduler.self) private var reminders
     @State private var dueAt: Date
     /// The same shortcuts the post-log step offers, so "Tomorrow morning" means the same everywhere.
@@ -518,7 +517,7 @@ struct ScheduleCheckInSheet: View {
                                     .foregroundStyle(Color.foresightMuted)
                             }
                         }
-                        if reminders.authorization == .denied { notificationsOffNote }
+                        if reminders.authorization == .denied { NotificationsOffNote() }
                         if let message { Text(message).font(.footnote).foregroundStyle(Color.foresightWarning) }
                     }
                     .padding()
@@ -532,23 +531,6 @@ struct ScheduleCheckInSheet: View {
             }
             .interactiveDismissDisabled(isDirty)
             .confirmationDialog("Discard schedule changes?", isPresented: $discardConfirmation) { Button("Discard", role: .destructive) { dismiss() } } message: { Text("Your schedule has not been saved.") }
-        }
-    }
-
-    private var notificationsOffNote: some View {
-        ForesightCard {
-            VStack(alignment: .leading, spacing: 10) {
-                Label("Reminders are off", systemImage: "bell.slash")
-                    .font(ForesightType.control)
-                    .foregroundStyle(Color.foresightInk)
-                Text("Notifications are turned off for Foresight, so it can't remind you when this check-in is due. It will still wait in Check In.")
-                    .font(.caption)
-                    .foregroundStyle(Color.foresightMuted)
-                Button("Turn on in Settings") {
-                    if let url = URL(string: UIApplication.openNotificationSettingsURLString) { openURL(url) }
-                }
-                .buttonStyle(ForesightSecondaryButtonStyle())
-            }
         }
     }
 
@@ -588,5 +570,27 @@ struct ScheduleCheckInSheet: View {
             Task { await reminders.requestAuthorizationIfNeeded() }
             dismiss()
         } catch { message = error.localizedDescription }
+    }
+}
+
+/// Shown where a check-in gets scheduled while iOS has notifications off for the app.
+struct NotificationsOffNote: View {
+    @Environment(\.openURL) private var openURL
+
+    var body: some View {
+        ForesightCard {
+            VStack(alignment: .leading, spacing: 10) {
+                Label("Reminders are off", systemImage: "bell.slash")
+                    .font(ForesightType.control)
+                    .foregroundStyle(Color.foresightInk)
+                Text("Notifications are turned off for Foresight, so it can't remind you when this check-in is due. It will still wait in Check In.")
+                    .font(.caption)
+                    .foregroundStyle(Color.foresightMuted)
+                Button("Turn on in Settings") {
+                    if let url = URL(string: UIApplication.openNotificationSettingsURLString) { openURL(url) }
+                }
+                .buttonStyle(ForesightSecondaryButtonStyle())
+            }
+        }
     }
 }

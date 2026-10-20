@@ -297,9 +297,10 @@ final class CheckInReminderScheduler {
     var laterCheckInDefault: LaterCheckInDefault { laterDefault() }
 
     /// When the reminder for a check-in due at `dueAt` will arrive, if quiet hours hold it past
-    /// that time. Nil when it arrives on time, or when reminders are off and none will arrive.
+    /// that time. Nil when it arrives on time, or when reminders are off in Settings or iOS and
+    /// none will arrive. Before permission is asked, it assumes the reminder will come.
     func reminderHeldByQuietHours(dueAt: Date) -> Date? {
-        guard isEnabled() else { return nil }
+        guard isEnabled(), authorization != .denied else { return nil }
         let fireAt = CheckInReminderPlan.fireDate(for: dueAt, quietHours: quietHours(), calendar: calendar())
         return fireAt.timeIntervalSince(dueAt) >= 60 ? fireAt : nil
     }
