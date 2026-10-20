@@ -1,8 +1,10 @@
 import SwiftUI
 import UIKit
 
-struct EditorRequest: Identifiable {
+struct EditorRequest: Identifiable, Equatable {
     let entryID: UUID?
+    /// A category to start a new log with, as a nudge's "Log it" asks.
+    var categoryID: UUID?
     var id: String { entryID?.uuidString ?? "new" }
 }
 
@@ -26,13 +28,19 @@ struct JournalEditorView: View {
         let entry = request.entryID.flatMap { id in store.entries.first { $0.id == id } }
         _bodyText = State(initialValue: entry?.body ?? "")
         _eventAt = State(initialValue: entry?.eventAt ?? .now)
-        _categoryIDs = State(initialValue: Set(entry?.categories.map(\.id) ?? []))
+        _categoryIDs = State(initialValue: entry.map { Set($0.categories.map(\.id)) } ?? Self.startingCategoryIDs(request, store: store))
+    }
+
+    /// A new log's preset category, while it is still one that can be picked.
+    private static func startingCategoryIDs(_ request: EditorRequest, store: JournalStore) -> Set<UUID> {
+        guard let id = request.categoryID, store.activeCategories.contains(where: { $0.id == id }) else { return [] }
+        return [id]
     }
 
     private var entry: JournalEntry? { request.entryID.flatMap { id in store.entries.first { $0.id == id } } }
     private var isEditing: Bool { entry != nil }
     private var isDirty: Bool {
-        guard let entry else { return !bodyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !categoryIDs.isEmpty }
+        guard let entry else { return !bodyText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || categoryIDs != Self.startingCategoryIDs(request, store: store) }
         return bodyText != entry.body || eventAt != entry.eventAt || categoryIDs != Set(entry.categories.map(\.id))
     }
 

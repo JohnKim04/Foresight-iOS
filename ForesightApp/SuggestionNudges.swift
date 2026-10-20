@@ -87,12 +87,20 @@ enum SuggestionNudgeCopy {
 }
 
 /// Pure planning rules for suggestion nudges and heads-ups: at most one of each a day, around
-/// the hour the pattern holds, on the kind of day it holds, outside quiet hours, and never for
-/// something already logged today.
+/// the hour the pattern holds, on the kind of day it holds, outside quiet hours, never for
+/// something already logged today, and the same category at most every third day.
 enum SuggestionNudgePlan {
     static let identifierPrefix = NudgeKind.better.identifierPrefix
     static let threadIdentifier = "nudges"
     static let headsUpThreadIdentifier = "heads-ups"
+    /// Nudges and heads-ups share these actions: "Log it" and "Less often".
+    static let categoryIdentifier = "PATTERN_NUDGE"
+    static let logActionIdentifier = "NUDGE_LOG_IT"
+    static let lessOftenActionIdentifier = "NUDGE_LESS_OFTEN"
+    /// A category nudged on one day waits this many days, counting that one, before the next.
+    static let cooldownDays = 3
+    /// How long "Less often" keeps a category's nudges, or its heads-ups, from coming.
+    static let muteInterval: TimeInterval = 14 * 24 * 60 * 60
 
     /// Heads-ups group apart from feel-better nudges in Notification Center.
     static func threadIdentifier(for kind: NudgeKind) -> String {
@@ -164,14 +172,16 @@ enum SuggestionNudgePlan {
     }
 
     /// One nudge per day for the next few days, from candidates of one kind. Each day takes the
-    /// strongest candidate it can, preferring a different category from the day before so it
-    /// doesn't repeat. `usedToday` means one of this kind already went out today.
-    static func nudges(for candidates: [NudgeCandidate], now: Date, calendar: Calendar, quietHours: QuietHours = .standard, usedToday: Bool) -> [SuggestionNudge] {
+    /// strongest candidate that hasn't had one in the last `cooldownDays` days, so one strong
+    /// pattern doesn't send the same sentence every day. `usedToday` means one of this kind
+    /// already went out today; `lastNudged` holds the day each category's last one went out;
+    /// `muted` categories were turned down with "Less often".
+    static func nudges(for candidates: [NudgeCandidate], now: Date, calendar: Calendar, quietHours: QuietHours = .standard, usedToday: Bool, lastNudged: [UUID: Date] = [:], muted: Set<UUID> = [], cooldownDays: Int = SuggestionNudgePlan.cooldownDays) -> [SuggestionNudge] {
         let ranked = candidates
-            .filter { candidate in candidate.fireHour.map { !quietHours.contains(hour: $0) } ?? false }
+            .filter { candidate in !muted.contains(candidate.categoryID) && (candidate.fireHour.map { !quietHours.contains(hour: $0) } ?? false) }
             .sorted { $0.strength != $1.strength ? $0.strength > $1.strength : $0.categoryName < $1.categoryName }
         let today = calendar.startOfDay(for: now)
-        var previous: UUID?
+        var last = lastNudged.mapValues { calendar.startOfDay(for: $0) }
         var nudges: [SuggestionNudge] = []
 
         for offset in 0..<daysAhead {
@@ -181,13 +191,11 @@ enum SuggestionNudgePlan {
                 guard let hour = candidate.fireHour, let fireAt = calendar.date(bySettingHour: hour, minute: 0, second: 0, of: day), fireAt > now else { return nil }
                 if offset == 0 && candidate.loggedToday { return nil }
                 if candidate.weekendsOnly && !calendar.isDateInWeekend(day) { return nil }
+                if let lastDay = last[candidate.categoryID], let gap = calendar.dateComponents([.day], from: lastDay, to: day).day, gap < cooldownDays { return nil }
                 return (candidate, fireAt)
             }
-            guard let pick = options.first(where: { $0.0.categoryID != previous }) ?? options.first else {
-                previous = nil
-                continue
-            }
-            previous = pick.0.categoryID
+            guard let pick = options.first else { continue }
+            last[pick.0.categoryID] = day
             nudges.append(SuggestionNudge(
                 identifier: identifier(day: dayKey(day, calendar: calendar), categoryID: pick.0.categoryID, kind: pick.0.kind),
                 categoryID: pick.0.categoryID,
@@ -214,54 +222,94 @@ enum SuggestionNudgePlan {
     }
 }
 
-/// Remembers when scheduled nudges fire, so a nudge that already went out today
-/// still counts after it leaves the pending list. It keeps the wall-clock time the trigger
-/// uses, not an instant: after a time zone change the trigger fires at that local time, so
-/// the ledger has to read it in the current zone too.
+/// A planned nudge's wall-clock time and the category it was for.
+struct NudgeFire: Equatable, Sendable {
+    var wallClock: DateComponents
+    /// Nil for times stored before the ledger kept categories; those count toward the one a
+    /// day but not toward any category's cooldown.
+    var categoryID: UUID?
+}
+
+/// Remembers when scheduled nudges fire and for which category, so a nudge that already went
+/// out still counts toward the one a day and the category's cooldown after it leaves the
+/// pending list. It keeps the wall-clock time the trigger uses, not an instant: after a time
+/// zone change the trigger fires at that local time, so the ledger has to read it in the
+/// current zone too. It also holds the categories muted with "Less often".
 protocol NudgeLedger: AnyObject {
-    var fireTimes: [DateComponents] { get set }
+    var fires: [NudgeFire] { get set }
+    /// When each muted category may be nudged again.
+    var mutedUntil: [UUID: Date] { get set }
 }
 
 final class UserDefaultsNudgeLedger: NudgeLedger {
     private let defaults: UserDefaults
     private let key: String
-    /// The earlier format stored instants. It is read once, converted, and then removed.
+    private let muteKey: String
+    /// Earlier formats: wall-clock times without categories, and before those, instants. Each
+    /// is read until the first write, converted, and then removed.
+    private let wallClockKey: String
     private let legacyKey: String?
 
-    init(defaults: UserDefaults = .standard) {
-        self.defaults = defaults
-        key = "suggestionNudgeWallClockTimes"
-        legacyKey = "suggestionNudgeFireDates"
+    convenience init(defaults: UserDefaults = .standard) {
+        self.init(defaults: defaults, key: "suggestionNudgeFires", muteKey: "suggestionNudgeMutedUntil", wallClockKey: "suggestionNudgeWallClockTimes", legacyKey: "suggestionNudgeFireDates")
     }
 
-    private init(defaults: UserDefaults, key: String) {
+    private init(defaults: UserDefaults, key: String, muteKey: String, wallClockKey: String, legacyKey: String?) {
         self.defaults = defaults
         self.key = key
-        legacyKey = nil
+        self.muteKey = muteKey
+        self.wallClockKey = wallClockKey
+        self.legacyKey = legacyKey
     }
 
     /// Heads-ups keep their own ledger, since they have their own one-a-day budget.
     static func headsUps(defaults: UserDefaults = .standard) -> UserDefaultsNudgeLedger {
-        UserDefaultsNudgeLedger(defaults: defaults, key: "headsUpWallClockTimes")
+        UserDefaultsNudgeLedger(defaults: defaults, key: "headsUpFires", muteKey: "headsUpMutedUntil", wallClockKey: "headsUpWallClockTimes", legacyKey: nil)
     }
 
-    var fireTimes: [DateComponents] {
+    var fires: [NudgeFire] {
         get {
+            if let stored = defaults.array(forKey: key) as? [[String: Any]] {
+                return stored.compactMap { record in
+                    guard let time = record["time"] as? [Int], let wallClock = Self.wallClock(time) else { return nil }
+                    return NudgeFire(wallClock: wallClock, categoryID: (record["category"] as? String).flatMap(UUID.init(uuidString:)))
+                }
+            }
+            if let times = defaults.array(forKey: wallClockKey) as? [[Int]] {
+                return times.compactMap(Self.wallClock).map { NudgeFire(wallClock: $0) }
+            }
             // Upgrade day: read the old instants as wall-clock times here, so a nudge that
             // already went out today still counts.
-            if defaults.object(forKey: key) == nil, let legacyKey, let legacy = defaults.array(forKey: legacyKey) as? [Double] {
+            if let legacyKey, let legacy = defaults.array(forKey: legacyKey) as? [Double] {
                 let calendar = Calendar.autoupdatingCurrent
-                return legacy.map { calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: Date(timeIntervalSinceReferenceDate: $0)) }
+                return legacy.map { NudgeFire(wallClock: calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: Date(timeIntervalSinceReferenceDate: $0))) }
             }
-            return (defaults.array(forKey: key) as? [[Int]] ?? []).compactMap { parts in
-                guard parts.count == 6 else { return nil }
-                return DateComponents(year: parts[0], month: parts[1], day: parts[2], hour: parts[3], minute: parts[4], second: parts[5])
-            }
+            return []
         }
         set {
+            defaults.removeObject(forKey: wallClockKey)
             if let legacyKey { defaults.removeObject(forKey: legacyKey) }
-            defaults.set(newValue.map { [$0.year ?? 0, $0.month ?? 0, $0.day ?? 0, $0.hour ?? 0, $0.minute ?? 0, $0.second ?? 0] }, forKey: key)
+            defaults.set(newValue.map { fire -> [String: Any] in
+                let time = [fire.wallClock.year ?? 0, fire.wallClock.month ?? 0, fire.wallClock.day ?? 0, fire.wallClock.hour ?? 0, fire.wallClock.minute ?? 0, fire.wallClock.second ?? 0]
+                guard let categoryID = fire.categoryID else { return ["time": time] }
+                return ["time": time, "category": categoryID.uuidString]
+            }, forKey: key)
         }
+    }
+
+    var mutedUntil: [UUID: Date] {
+        get {
+            let stored = defaults.dictionary(forKey: muteKey) as? [String: Double] ?? [:]
+            return Dictionary(stored.compactMap { key, value in UUID(uuidString: key).map { ($0, Date(timeIntervalSinceReferenceDate: value)) } }, uniquingKeysWith: { max($0, $1) })
+        }
+        set {
+            defaults.set(Dictionary(uniqueKeysWithValues: newValue.map { ($0.key.uuidString, $0.value.timeIntervalSinceReferenceDate) }), forKey: muteKey)
+        }
+    }
+
+    private static func wallClock(_ parts: [Int]) -> DateComponents? {
+        guard parts.count == 6 else { return nil }
+        return DateComponents(year: parts[0], month: parts[1], day: parts[2], hour: parts[3], minute: parts[4], second: parts[5])
     }
 }
 
@@ -281,8 +329,19 @@ extension SystemReminderNotificationCenter: NudgeNotificationCenter {
         content.body = nudge.body
         content.sound = .default
         content.threadIdentifier = SuggestionNudgePlan.threadIdentifier(for: nudge.kind)
+        content.categoryIdentifier = SuggestionNudgePlan.categoryIdentifier
         let trigger = UNCalendarNotificationTrigger(dateMatching: nudge.wallClock, repeats: false)
         try await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: nudge.identifier, content: content, trigger: trigger))
+    }
+}
+
+extension SystemReminderNotificationCenter {
+    /// "Log it" opens the app on a new log; "Less often" mutes the category without opening it.
+    static var nudgeCategory: UNNotificationCategory {
+        UNNotificationCategory(identifier: SuggestionNudgePlan.categoryIdentifier, actions: [
+            UNNotificationAction(identifier: SuggestionNudgePlan.logActionIdentifier, title: "Log it", options: [.foreground]),
+            UNNotificationAction(identifier: SuggestionNudgePlan.lessOftenActionIdentifier, title: "Less often", options: []),
+        ], intentIdentifiers: [], options: [])
     }
 }
 
@@ -370,32 +429,59 @@ final class SuggestionNudgeScheduler {
         syncTask = Task {
             // Clear after any sync already running, which would otherwise write old entries back.
             await previous?.value
-            for ledger in ledgers.values { ledger.fireTimes = [] }
+            for ledger in ledgers.values {
+                ledger.fires = []
+                ledger.mutedUntil = [:]
+            }
             let delivered = await center.deliveredIdentifiers()
             await center.removeDelivered(delivered.filter(SuggestionNudgePlan.isNudge))
         }
         resync()
     }
 
+    /// "Less often": no nudges of `kind` for the category for two weeks, starting with any
+    /// already scheduled. Finishes rescheduling before it returns, since the app may only be
+    /// awake for this.
+    func lessOften(categoryID: UUID, kind: NudgeKind) async {
+        guard let ledger = ledgers[kind] else { return }
+        ledger.mutedUntil[categoryID] = now().addingTimeInterval(SuggestionNudgePlan.muteInterval)
+        resync()
+        await waitForPendingWork()
+    }
+
     private func reconcile(_ candidates: [NudgeCandidate], now: Date, calendar: Calendar, enabled: Set<NudgeKind>) async {
         let allowed = await center.authorization() == .allowed
         let today = SuggestionNudgePlan.dayKey(now, calendar: calendar)
         let delivered = await center.deliveredIdentifiers()
-        var fired: [NudgeKind: [DateComponents]] = [:]
+        // Fires from the cooldown's earlier days are kept, so a category waits its turn.
+        let keepSince = calendar.date(byAdding: .day, value: 1 - SuggestionNudgePlan.cooldownDays, to: calendar.startOfDay(for: now)) ?? now
+        var fired: [NudgeKind: [NudgeFire]] = [:]
         var desired: [SuggestionNudge] = []
         for kind in NudgeKind.allCases {
-            // A nudge whose fire time has passed went out; keep those from today and yesterday.
-            // Each is read in the current zone, as its floating trigger was.
-            let firedOfKind = (ledgers[kind]?.fireTimes ?? []).compactMap { time in calendar.date(from: time).map { (time, $0) } }
-                .filter { $0.1 <= now && $0.1 > now.addingTimeInterval(-2 * 24 * 60 * 60) }
+            guard let ledger = ledgers[kind] else { continue }
+            // A nudge whose fire time has passed went out. Each is read in the current zone, as
+            // its floating trigger was.
+            let firedOfKind = ledger.fires.compactMap { fire in calendar.date(from: fire.wallClock).map { (fire, $0) } }
+                .filter { $0.1 <= now && $0.1 >= keepSince }
             fired[kind] = firedOfKind.map { $0.0 }
             // One for today already in Notification Center also counts: it covers a floating
             // trigger that fired early after travelling east, and a suspension before the ledger write.
-            let usedToday = firedOfKind.contains { calendar.isDate($0.1, inSameDayAs: now) }
-                || delivered.contains { $0.hasPrefix(kind.identifierPrefix + today + ".") }
+            let deliveredToday = delivered.filter { $0.hasPrefix(kind.identifierPrefix + today + ".") }
+            let usedToday = firedOfKind.contains { calendar.isDate($0.1, inSameDayAs: now) } || !deliveredToday.isEmpty
+            var lastNudged: [UUID: Date] = [:]
+            for (fire, date) in firedOfKind {
+                guard let categoryID = fire.categoryID else { continue }
+                lastNudged[categoryID] = max(lastNudged[categoryID] ?? date, date)
+            }
+            for categoryID in deliveredToday.compactMap(SuggestionNudgePlan.categoryID(fromIdentifier:)) {
+                lastNudged[categoryID] = max(lastNudged[categoryID] ?? now, now)
+            }
+            let mutes = ledger.mutedUntil
+            let activeMutes = mutes.filter { $0.value > now }
+            if activeMutes.count != mutes.count { ledger.mutedUntil = activeMutes }
             await center.removeDelivered(SuggestionNudgePlan.staleDelivered(delivered, today: today, enabled: enabled.contains(kind) && allowed, kind: kind))
             if allowed {
-                desired += SuggestionNudgePlan.nudges(for: candidates.filter { $0.kind == kind }, now: now, calendar: calendar, quietHours: quietHours(), usedToday: usedToday)
+                desired += SuggestionNudgePlan.nudges(for: candidates.filter { $0.kind == kind }, now: now, calendar: calendar, quietHours: quietHours(), usedToday: usedToday, lastNudged: lastNudged, muted: Set(activeMutes.keys))
             }
         }
         let changes = SuggestionNudgePlan.changes(desired: desired, scheduled: await center.scheduledReminders())
@@ -405,24 +491,40 @@ final class SuggestionNudgeScheduler {
             do { try await center.addNudge(nudge) } catch { failed.insert(nudge.identifier) }
         }
         for (kind, ledger) in ledgers {
-            ledger.fireTimes = (fired[kind] ?? []) + desired.filter { $0.kind == kind && !failed.contains($0.identifier) }.map(\.wallClock)
+            ledger.fires = (fired[kind] ?? []) + desired.filter { $0.kind == kind && !failed.contains($0.identifier) }.map { NudgeFire(wallClock: $0.wallClock, categoryID: $0.categoryID) }
         }
     }
 }
 
 struct NudgeResponse: Equatable, Sendable {
+    enum Action: Equatable, Sendable { case open, logIt, lessOften }
+
     let categoryID: UUID
+    let kind: NudgeKind
+    let action: Action
 
     init?(requestIdentifier: String, actionIdentifier: String) {
-        guard actionIdentifier == UNNotificationDefaultActionIdentifier,
-              let categoryID = SuggestionNudgePlan.categoryID(fromIdentifier: requestIdentifier) else { return nil }
+        guard let categoryID = SuggestionNudgePlan.categoryID(fromIdentifier: requestIdentifier),
+              let kind = NudgeKind.allCases.first(where: { requestIdentifier.hasPrefix($0.identifierPrefix) }) else { return nil }
+        switch actionIdentifier {
+        case UNNotificationDefaultActionIdentifier: action = .open
+        case SuggestionNudgePlan.logActionIdentifier: action = .logIt
+        case SuggestionNudgePlan.lessOftenActionIdentifier: action = .lessOften
+        default: return nil
+        }
         self.categoryID = categoryID
+        self.kind = kind
     }
 }
 
 extension CheckInReminderRouter {
-    /// A tapped nudge or heads-up opens that category's later evidence on Patterns.
-    func handle(_ response: NudgeResponse) {
-        destination = .evidence(response.categoryID)
+    /// A tapped nudge or heads-up opens that category's later evidence on Patterns; "Log it"
+    /// opens a new log with the category picked; "Less often" mutes the category for two weeks.
+    func handle(_ response: NudgeResponse) async {
+        switch response.action {
+        case .open: destination = .evidence(response.categoryID)
+        case .logIt: destination = .newLogInCategory(response.categoryID)
+        case .lessOften: await nudges?.lessOften(categoryID: response.categoryID, kind: response.kind)
+        }
     }
 }

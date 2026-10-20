@@ -404,6 +404,8 @@ enum ReminderDestination: Equatable {
     case evidence(UUID)
     /// A new log, from the widget.
     case newLog
+    /// A new log with the category picked, from a nudge's "Log it".
+    case newLogInCategory(UUID)
 }
 
 /// Turns a tapped, answered or snoozed reminder into app state. The root view consumes `destination`.
@@ -412,6 +414,8 @@ enum ReminderDestination: Equatable {
 final class CheckInReminderRouter {
     var destination: ReminderDestination?
     @ObservationIgnored var store: JournalStore?
+    /// Handles a nudge's "Less often".
+    @ObservationIgnored weak var nudges: SuggestionNudgeScheduler?
     @ObservationIgnored private let reminders: CheckInReminderScheduler
     @ObservationIgnored private let now: () -> Date
 
@@ -510,7 +514,7 @@ final class CheckInReminderNotificationDelegate: NSObject, UNUserNotificationCen
         if let reminder = ReminderResponse(requestIdentifier: requestIdentifier, actionIdentifier: actionIdentifier, body: body) {
             await router().handle(reminder)
         } else if let nudge = NudgeResponse(requestIdentifier: requestIdentifier, actionIdentifier: actionIdentifier) {
-            router().handle(nudge)
+            await router().handle(nudge)
         }
     }
 }
@@ -538,7 +542,7 @@ final class ForesightAppDelegate: NSObject, UIApplicationDelegate {
         // The delegate has to be set before launch finishes so a tap that launched the app is delivered.
         let center = UNUserNotificationCenter.current()
         center.delegate = CheckInReminderNotificationDelegate.shared
-        center.setNotificationCategories(SystemReminderNotificationCenter.categories)
+        center.setNotificationCategories(SystemReminderNotificationCenter.categories.union([SystemReminderNotificationCenter.nudgeCategory]))
         return true
     }
 }
