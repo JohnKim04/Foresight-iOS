@@ -31,8 +31,10 @@ struct ForesightApp: App {
                         .environment(database.reminders)
                         .environment(database.router)
                 } else {
-                    StoreRecoveryView(message: database.errorMessage ?? "Your journal could not be opened.") {
+                    StoreRecoveryView(message: database.errorMessage ?? "Your journal could not be opened.", backups: database.recoveryBackups()) {
                         database.open()
+                    } onRestore: { backup in
+                        database.restore(backup)
                     } onReset: {
                         database.reset()
                     }
@@ -114,9 +116,37 @@ final class AppDatabase {
             if SharedJournal.groupDirectory == nil { UserDefaults.standard.removeObject(forKey: SharedJournal.inGroupKey) }
             // A copy into the group that was under way is over; the next one backs up what it finds.
             UserDefaults.standard.removeObject(forKey: SharedJournal.copyingKey)
-            if let lastStoreURL { SharedJournal.removeStore(at: lastStoreURL) }
+            // Moved aside rather than deleted, so a journal that only this build can't read
+            // survives as a backup.
+            if let lastStoreURL {
+                do {
+                    try JournalRecovery.moveAside(storeAt: lastStoreURL)
+                } catch {
+                    errorMessage = "Your journal couldn't be moved aside, so nothing was reset. \(error.localizedDescription)"
+                    return
+                }
+            }
             open(inMemory: false)
         }
+    }
+
+    /// Backups beside the journal that won't open, for the recovery screen to offer.
+    func recoveryBackups() -> [JournalBackup] {
+        guard store == nil, let lastStoreURL else { return [] }
+        return JournalBackup.list(in: lastStoreURL.deletingLastPathComponent())
+    }
+
+    /// Replaces the journal that won't open with `backup`, keeping the journal as a backup too.
+    func restore(_ backup: JournalBackup) {
+        guard let lastStoreURL else { return }
+        UserDefaults.standard.removeObject(forKey: SharedJournal.copyingKey)
+        do {
+            try JournalRecovery.restore(backupAt: backup.url, intoStoreAt: lastStoreURL)
+        } catch {
+            errorMessage = "That backup couldn't be restored, so nothing was changed. \(error.localizedDescription)"
+            return
+        }
+        open(inMemory: false)
     }
 
     /// The store the last open tried, so a reset removes the one that wouldn't open.
@@ -186,10 +216,10 @@ struct ForesightRootView: View {
             reminders.resync()
             // Suggestions depend on the time of day, so re-plan nudges too.
             nudges.resync()
-            Task { await store.takeAutomaticBackupIfDue() }
+            Task { await backUpIfDue() }
         }
         // The first activation can come before this view sees a phase change.
-        .task { await store.takeAutomaticBackupIfDue() }
+        .task { await backUpIfDue() }
         // Significant time changes cover time zone changes, daylight saving and midnight.
         // Reminders move with them too, since quiet hours are local times.
         .onReceive(NotificationCenter.default.publisher(for: UIApplication.significantTimeChangeNotification).receive(on: DispatchQueue.main)) { _ in
@@ -235,6 +265,15 @@ struct ForesightRootView: View {
 }
 
 extension ForesightRootView {
+    /// The daily backup writes into the App Group, so it asks for time to finish: switching away
+    /// mid-write would otherwise suspend the app holding the file's lock, and iOS kills it for that
+    /// (0xdead10cc).
+    private func backUpIfDue() async {
+        let backgroundTime = BackgroundTime(name: "Daily backup")
+        await store.takeAutomaticBackupIfDue()
+        backgroundTime.end()
+    }
+
     static func isPresentingModal() -> Bool {
         UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
@@ -245,11 +284,39 @@ extension ForesightRootView {
 
 struct StoreRecoveryView: View {
     let message: String
+    /// Backups beside the journal, newest first.
+    let backups: [JournalBackup]
     let onRetry: () -> Void
+    let onRestore: (JournalBackup) -> Void
     let onReset: () -> Void
     @State private var confirmReset = false
+    @State private var backupToRestore: JournalBackup?
+
+    private var readableBackups: [JournalBackup] { backups.filter(\.isReadable) }
 
     var body: some View {
+        // Centered when it fits, scrolling when a list of backups makes it too tall.
+        ViewThatFits(in: .vertical) {
+            content
+            ScrollView { content }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.foresightCanvas)
+        .alert("Start an empty journal?", isPresented: $confirmReset) {
+            Button("Start empty", role: .destructive, action: onReset)
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("The journal that won't open is kept as a backup beside the new one, and Settings lists it under Backups.")
+        }
+        .alert("Restore this backup?", isPresented: Binding(get: { backupToRestore != nil }, set: { if !$0 { backupToRestore = nil } }), presenting: backupToRestore) { backup in
+            Button("Restore") { onRestore(backup) }
+            Button("Cancel", role: .cancel) { }
+        } message: { backup in
+            Text("Your journal will be the one from \(SettingsView.backupDate(backup.date)). The journal that won't open is kept as a backup.")
+        }
+    }
+
+    private var content: some View {
         VStack(spacing: 18) {
             ForesightMark(size: 54)
             Text("Journal unavailable")
@@ -260,17 +327,37 @@ struct StoreRecoveryView: View {
                 .foregroundStyle(.secondary)
             Button("Try again", action: onRetry)
                 .buttonStyle(ForesightPrimaryButtonStyle())
-            Button("Reset local journal", role: .destructive) { confirmReset = true }
+            if !readableBackups.isEmpty {
+                ForesightCard {
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text("Restore a backup")
+                            .font(.headline)
+                            .foregroundStyle(Color.foresightInk)
+                        ForEach(readableBackups) { backup in
+                            Button { backupToRestore = backup } label: {
+                                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                                    Image(systemName: "clock.arrow.circlepath").foregroundStyle(Color.foresightSage)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(SettingsView.backupDate(backup.date)).foregroundStyle(Color.foresightInk)
+                                        Text(SettingsView.backupDetail(backup))
+                                            .font(.footnote)
+                                            .foregroundStyle(Color.foresightMuted)
+                                    }
+                                    Spacer(minLength: 0)
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("recovery.backup")
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            Button("Start an empty journal", role: .destructive) { confirmReset = true }
                 .buttonStyle(ForesightSecondaryButtonStyle())
         }
         .padding(32)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.foresightCanvas)
-        .alert("Reset local journal?", isPresented: $confirmReset) {
-            Button("Reset", role: .destructive, action: onReset)
-            Button("Cancel", role: .cancel) { }
-        } message: {
-            Text("This removes the unreadable local store and starts Foresight empty.")
-        }
+        .frame(maxWidth: .infinity)
     }
 }

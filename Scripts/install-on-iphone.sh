@@ -5,13 +5,15 @@ set -euo pipefail
 # free Apple account; those installs stop opening after 7 days, so run this again each week (the
 # journal survives a reinstall).
 #
-#   ./Scripts/install-on-iphone.sh [--team TEAMID] [--device NAME|UDID] [--release] [--no-app-group]
+#   ./Scripts/install-on-iphone.sh [--team TEAMID] [--device NAME|UDID] [--debug] [--no-app-group]
 #
 # The first run writes Config/Signing.local.xcconfig (gitignored) with your team ID and a bundle ID
 # prefix of your own, and later runs reuse it. Without --team, it uses the team in that file, or the
-# one team Xcode is signed in to. --release installs "Foresight" instead of "Foresight QA" (the QA
-# build adds sample history in Settings). --no-app-group turns off the App Group the widget reads the
-# journal through, for a team that can't register one; pick it before you start journaling.
+# one team Xcode is signed in to. It installs "Foresight", the build to keep your journal in.
+# --debug installs "Foresight QA" beside it instead: a separate app with its own journal and sample
+# history in Settings, for trying things out. Move a journal between the two with Export and Import
+# in Settings. --no-app-group turns off the App Group the widget reads the journal through, for a
+# team that can't register one; pick it before you start journaling.
 
 project_root="$(cd "$(dirname "$0")/.." && pwd)"
 local_config="$project_root/Config/Signing.local.xcconfig"
@@ -20,17 +22,19 @@ scheme="Foresight QA"
 
 team_id=""
 device_query=""
-configuration="Debug"
-app_name="Foresight QA"
+configuration="Release"
+app_name="Foresight"
 app_group=1
 
 while (( $# > 0 )); do
   case "$1" in
     --team) team_id="${2:?--team needs a team ID}"; shift 2 ;;
     --device) device_query="${2:?--device needs a name or UDID}"; shift 2 ;;
+    --debug) configuration="Debug"; app_name="Foresight QA"; shift ;;
+    # The default since the phone install; still accepted so older instructions work.
     --release) configuration="Release"; app_name="Foresight"; shift ;;
     --no-app-group) app_group=0; shift ;;
-    -h|--help) sed -n '4,15p' "$0"; exit 0 ;;
+    -h|--help) sed -n '4,17p' "$0"; exit 0 ;;
     *) print "Unknown option: $1"; exit 2 ;;
   esac
 done
@@ -189,6 +193,21 @@ xcodebuild build \
 app_path="$derived_data/Build/Products/$configuration-iphoneos/$app_name.app"
 bundle_id="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app_path/Info.plist")"
 xcrun devicectl device install app --device "$device_udid" "$app_path"
+
+# Before Release became the default this script installed Foresight QA, which is a separate app with
+# a journal of its own. Say so, so a journal kept there isn't left behind by mistake.
+if [[ "$configuration" == "Release" ]]; then
+  apps_json="$(mktemp)"
+  if xcrun devicectl device info apps --device "$device_udid" --json-output "$apps_json" >/dev/null 2>&1 \
+    && jq -e --arg id "$bundle_id.testing" '[.result.apps[]? | select(.bundleIdentifier == $id)] | length > 0' "$apps_json" >/dev/null 2>&1; then
+    print ""
+    print "Foresight QA is also on $device_name. It's a separate app with its own journal, which Foresight can't see."
+    print "To bring that journal over: in Foresight QA, Settings > Export journal and save the file; then in"
+    print "Foresight, Settings > Import journal and pick it. After that you can delete Foresight QA."
+    print ""
+  fi
+  rm -f "$apps_json"
+fi
 
 if ! launch_output="$(xcrun devicectl device process launch --device "$device_udid" "$bundle_id" 2>&1)"; then
   print ""

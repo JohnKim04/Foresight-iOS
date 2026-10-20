@@ -23,6 +23,10 @@ enum SharedJournal {
     static let backupLimit = 3
     /// Ends the name of a backup the app took on its own, before ".store".
     static let automaticBackupSuffix = "-auto"
+    /// Ends the name of a journal the recovery screen moved aside because it wouldn't open. It may
+    /// be the only copy of someone's history and a later version may read it, so it never counts
+    /// toward `backupLimit` and nothing the app does on its own deletes it.
+    static let movedAsideSuffix = "-unopened"
     /// The app takes an automatic backup when the newest one is at least this old.
     static let automaticBackupInterval: TimeInterval = 24 * 60 * 60
     /// An automatic backup never removes a backup made another way (a restore's safety copy, or a
@@ -139,13 +143,15 @@ enum SharedJournal {
         let date: Date
         /// Taken by the app on its own, once a day, rather than by a restore or at launch.
         var isAutomatic = false
+        /// A journal the recovery screen moved aside because it wouldn't open.
+        var isMovedAside = false
     }
 
     /// A free `Foresight-backup-<time>.store` name beside the store at `url`, ending in
-    /// `-auto.store` for an automatic backup.
-    static func newBackupURL(beside url: URL, date: Date = .now, automatic: Bool = false, fileManager: FileManager = .default) -> URL {
+    /// `-auto.store` for an automatic backup or `-unopened.store` for a journal moved aside.
+    static func newBackupURL(beside url: URL, date: Date = .now, automatic: Bool = false, movedAside: Bool = false, fileManager: FileManager = .default) -> URL {
         let stamp = date.formatted(backupStampStyle)
-        let ending = (automatic ? automaticBackupSuffix : "") + ".store"
+        let ending = (automatic ? automaticBackupSuffix : movedAside ? movedAsideSuffix : "") + ".store"
         var backup = url.deletingLastPathComponent().appending(path: "\(backupPrefix)\(stamp)\(ending)")
         var attempt = 1
         while storeFileSuffixes.contains(where: { fileManager.fileExists(atPath: backup.path + $0) }) {
@@ -157,26 +163,33 @@ enum SharedJournal {
 
     /// Moves a store's files to `Foresight-backup-<time>.store` in the same directory, main file
     /// last so a backup never has a main file without its log. If a move fails, the ones already
-    /// made are undone. Only the newest `backupLimit` backups are kept. Returns the backup's URL.
+    /// made are undone. Only the newest `backupLimit` backups are kept. A journal `movedAside`
+    /// because it wouldn't open gets a name of its own (see `movedAsideSuffix`) and prunes nothing,
+    /// so a store that can't be read never pushes out a backup that can. Returns the backup's URL.
     @discardableResult
-    static func backUpStore(at url: URL, date: Date = .now, fileManager: FileManager = .default) throws -> URL {
-        let backup = newBackupURL(beside: url, date: date, fileManager: fileManager)
+    static func backUpStore(at url: URL, date: Date = .now, movedAside: Bool = false, fileManager: FileManager = .default) throws -> URL {
+        let backup = newBackupURL(beside: url, date: date, movedAside: movedAside, fileManager: fileManager)
+        try moveStore(at: url, to: backup, fileManager: fileManager)
+        try? fileManager.removeItem(at: URL(fileURLWithPath: url.path + ".partial"))
+        if !movedAside { pruneBackups(in: url.deletingLastPathComponent(), sparing: [backup], fileManager: fileManager) }
+        return backup
+    }
+
+    /// Moves a store's files from `source` to `destination`, main file last. If a move fails, the
+    /// ones already made are undone, so the store stays whole where it was.
+    static func moveStore(at source: URL, to destination: URL, fileManager: FileManager = .default) throws {
         var moved: [String] = []
         do {
-            for suffix in ["-wal", "-shm", ""] where fileManager.fileExists(atPath: url.path + suffix) {
-                try fileManager.moveItem(at: URL(fileURLWithPath: url.path + suffix), to: URL(fileURLWithPath: backup.path + suffix))
+            for suffix in ["-wal", "-shm", ""] where fileManager.fileExists(atPath: source.path + suffix) {
+                try fileManager.moveItem(at: URL(fileURLWithPath: source.path + suffix), to: URL(fileURLWithPath: destination.path + suffix))
                 moved.append(suffix)
             }
         } catch {
-            // Put back what moved, so the store stays whole where it was.
             for suffix in moved {
-                try? fileManager.moveItem(at: URL(fileURLWithPath: backup.path + suffix), to: URL(fileURLWithPath: url.path + suffix))
+                try? fileManager.moveItem(at: URL(fileURLWithPath: destination.path + suffix), to: URL(fileURLWithPath: source.path + suffix))
             }
             throw error
         }
-        try? fileManager.removeItem(at: URL(fileURLWithPath: url.path + ".partial"))
-        pruneBackups(in: url.deletingLastPathComponent(), sparing: [backup], fileManager: fileManager)
-        return backup
     }
 
     /// The backups in `directory`, newest first by the time in their names.
@@ -186,7 +199,8 @@ enum SharedJournal {
             let date = (try? backupStampStyle.parse(backupStamp(of: name).stamp))
                 ?? ((try? fileManager.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date)
                 ?? .distantPast
-            return Backup(url: url, date: date, isAutomatic: backupStamp(of: name).automatic)
+            let parsed = backupStamp(of: name)
+            return Backup(url: url, date: date, isAutomatic: parsed.automatic, isMovedAside: parsed.movedAside)
         }
     }
 
@@ -199,11 +213,12 @@ enum SharedJournal {
 
     /// The backups (from `backups`, newest first) to delete so one more fits within `keeping`,
     /// or nil when it can't fit. Only automatic backups, and others at least `protectedBackupAge`
-    /// old, may go, oldest first.
+    /// old, may go, oldest first. Journals moved aside neither count nor go.
     static func backupsRemovedForAutomaticBackup(from backups: [Backup], now: Date, keeping: Int = backupLimit) -> [Backup]? {
-        let excess = backups.count + 1 - keeping
+        let counted = backups.filter { !$0.isMovedAside }
+        let excess = counted.count + 1 - keeping
         guard excess > 0 else { return [] }
-        let removable = backups.reversed().filter { $0.isAutomatic || now.timeIntervalSince($0.date) >= protectedBackupAge }
+        let removable = counted.reversed().filter { $0.isAutomatic || now.timeIntervalSince($0.date) >= protectedBackupAge }
         guard removable.count >= excess else { return nil }
         return Array(removable.prefix(excess))
     }
@@ -259,10 +274,11 @@ enum SharedJournal {
 
     /// Deletes all but the newest `keeping` backups in `directory`, newest by the time in their names.
     /// `sparing` (say, the backup just made) are always kept and count toward `keeping`, even if a
-    /// clock that moved backward gave them older names than the rest.
+    /// clock that moved backward gave them older names than the rest. Journals moved aside by the
+    /// recovery screen are always kept and don't count.
     static func pruneBackups(in directory: URL, keeping: Int = backupLimit, sparing spared: [URL] = [], fileManager: FileManager = .default) {
         let sparedNames = Set(spared.map { $0.lastPathComponent })
-        let names = sortedBackupNames(in: directory, fileManager: fileManager)
+        let names = sortedBackupNames(in: directory, fileManager: fileManager).filter { !backupStamp(of: $0).movedAside }
         let sparedCount = names.filter { sparedNames.contains($0) }.count
         for name in names.filter({ !sparedNames.contains($0) }).dropFirst(max(0, keeping - sparedCount)) {
             removeStore(at: directory.appending(path: name), fileManager: fileManager)
@@ -282,13 +298,16 @@ enum SharedJournal {
     }
 
     /// "Foresight-backup-<stamp>.store", or "-<stamp>-<attempt>.store" for one made in the same
-    /// second, either of them with "-auto" before ".store" for an automatic backup.
-    private static func backupStamp(of name: String) -> (stamp: String, attempt: Int, automatic: Bool) {
+    /// second, either of them with "-auto" before ".store" for an automatic backup or "-unopened"
+    /// for a journal moved aside.
+    private static func backupStamp(of name: String) -> (stamp: String, attempt: Int, automatic: Bool, movedAside: Bool) {
         var base = name.dropFirst(backupPrefix.count).dropLast(".store".count)
         let automatic = base.hasSuffix(automaticBackupSuffix)
         if automatic { base = base.dropLast(automaticBackupSuffix.count) }
+        let movedAside = base.hasSuffix(movedAsideSuffix)
+        if movedAside { base = base.dropLast(movedAsideSuffix.count) }
         let parts = base.split(separator: "-")
-        return (String(parts.first ?? ""), parts.count > 1 ? Int(parts[1]) ?? 1 : 1, automatic)
+        return (String(parts.first ?? ""), parts.count > 1 ? Int(parts[1]) ?? 1 : 1, automatic, movedAside)
     }
 
     static func removeStore(at url: URL, fileManager: FileManager = .default) {
