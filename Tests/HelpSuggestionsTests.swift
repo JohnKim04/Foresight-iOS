@@ -77,12 +77,12 @@ struct HelpSuggestionsTests {
         let suggestion = try #require(result.suggestions.first)
         #expect(suggestion.baseline == LaterBaseline(numericCount: 20, betterCount: 0, worseCount: 0))
         #expect(suggestion.headline == "Workout has been followed by feeling better later more often than your other logs.")
-        #expect(suggestion.evidence == "Better or much better in 4 of 5 later check-ins (other logs: 0 of 20) · Early")
+        #expect(suggestion.evidence == "Better or much better in 4 of 5 later check-ins (other logs: better in 0 of 20) · Early")
         expectNonCausal([suggestion.headline, suggestion.evidence])
     }
 
-    @Test("suggests nothing when every category is only as good as your usual later answer")
-    func usualAnswerIsBetter() {
+    @Test("still suggests strong categories when most logs are followed by feeling better")
+    func usualAnswerIsBetter() throws {
         let workout = JournalCategory(name: "Workout")
         let social = JournalCategory(name: "Social")
         let work = JournalCategory(name: "Work")
@@ -93,15 +93,23 @@ struct HelpSuggestionsTests {
             let date = calendar.date(byAdding: .day, value: -(1 + index), to: now)!
             return JournalEntry(body: "Ordinary day \(index)", eventAt: date, createdAt: date, updatedAt: date, categories: [])
         }
-        // "Better" is this person's usual later answer, for tagged and untagged logs alike.
-        let checkIns = answers(workoutLogs, [.aLittleBetter]) + answers(socialLogs, [.aLittleBetter]) + answers(workLogs, [.aLittleBetter, .aLittleBetter, .muchBetter])
+        // "Better" is this person's usual later answer. The bar stops at 0.7, so Workout and
+        // Social at 6 of 6 still qualify, while Work's 5 of 6 clears the absolute bar but not that.
+        let checkIns = answers(workoutLogs, [.aLittleBetter]) + answers(socialLogs, [.muchBetter])
+            + answers(workLogs, [.aLittleBetter, .aLittleBetter, .aLittleBetter, .aLittleBetter, .aLittleBetter, .same])
             + answers(ordinary, [.aLittleBetter, .aLittleBetter, .aLittleBetter, .aLittleBetter, .same])
         let result = report(workoutLogs + socialLogs + workLogs + ordinary, checkIns, [workout, social, work])
-        #expect(result.suggestions.isEmpty)
+        #expect(Set(result.suggestions.map(\.category.name)) == ["Workout", "Social"])
         #expect(result.patternCount == 3)
-        // Without the untagged logs, each category's baseline is the other two, which are just as good.
-        let tagged = report(workoutLogs + socialLogs + workLogs, Array(checkIns.prefix(18)), [workout, social, work])
-        #expect(tagged.suggestions.isEmpty)
+        // 6 of 6 is above the other logs' 19 of 22, so the headline can say so.
+        let first = try #require(result.suggestions.first)
+        #expect(first.beatsOtherLogs)
+        #expect(first.headline.hasSuffix("more often than your other logs."))
+
+        // Against other logs that were all better, 6 of 6 still qualifies, but isn't "more often".
+        let tagged = report(workoutLogs + socialLogs, Array(checkIns.prefix(12)), [workout, social])
+        #expect(tagged.suggestions.count == 2)
+        #expect(tagged.suggestions.allSatisfy { !$0.beatsOtherLogs && $0.headline.hasSuffix("has tended to be followed by feeling better later.") })
     }
 
     @Test("a category has to beat how your other logs usually go")
@@ -125,6 +133,9 @@ struct HelpSuggestionsTests {
         let falls = report(fewWalks + mostly, answers(fewWalks, [.aLittleBetter, .aLittleBetter, .aLittleBetter, .aLittleBetter, .same]) + answers(mostly, [.aLittleBetter, .aLittleBetter, .aLittleBetter, .same]), [walk])
         #expect(falls.suggestions.isEmpty)
         #expect(falls.patternCount == 1)
+        #expect(falls.heldBackByBaseline)
+        #expect(HelpSuggestionCopy.emptyMessage(falls).contains("more often than your other logs"))
+        #expect(!clears.heldBackByBaseline)
     }
 
     @Test("needs five other later responses before comparing")
@@ -132,6 +143,9 @@ struct HelpSuggestionsTests {
         #expect(beatsBaseline(successes: 4, trials: 5, baselineSuccesses: 4, baselineTrials: 4))
         #expect(!beatsBaseline(successes: 4, trials: 5, baselineSuccesses: 3, baselineTrials: 5))
         #expect(beatsBaseline(successes: 4, trials: 5, baselineSuccesses: 2, baselineTrials: 5))
+        // The bar stops at the cap, so 5 of 5 (lower bound about 0.83) clears a perfect baseline.
+        #expect(beatsBaseline(successes: 5, trials: 5, baselineSuccesses: 5, baselineTrials: 5))
+        #expect(!beatsBaseline(successes: 4, trials: 5, baselineSuccesses: 5, baselineTrials: 5))
     }
 
     @Test("holds heads-ups to your usual later answer too")
@@ -147,6 +161,10 @@ struct HelpSuggestionsTests {
         #expect(mostlyWorse.isEmpty)
         let mostlySame = worsePatterns(entries: coffeeLogs + ordinary, checkIns: coffeeCheckIns + answers(ordinary, [.same]), categories: [coffee], now: now, calendar: calendar)
         #expect(mostlySame.map(\.category.name) == ["Coffee"])
+        // As with suggestions, the bar stops at the cap, so a strong pattern still shows.
+        let alwaysWorse = answers(coffeeLogs, [.aLittleWorse])
+        let strong = worsePatterns(entries: coffeeLogs + ordinary, checkIns: alwaysWorse + answers(ordinary, [.aLittleWorse, .aLittleWorse, .aLittleWorse, .same]), categories: [coffee], now: now, calendar: calendar)
+        #expect(strong.map(\.category.name) == ["Coffee"])
     }
 
     private func expectNonCausal(_ strings: [String]) {
@@ -161,9 +179,12 @@ struct HelpSuggestionsTests {
         let messages = [
             HelpSuggestionCopy.emptyMessage(HelpSuggestionReport(suggestions: [], patternCount: 1, progress: nil)),
             HelpSuggestionCopy.emptyMessage(HelpSuggestionReport(suggestions: [], patternCount: 0, progress: progress)),
-            HelpSuggestionCopy.emptyMessage(HelpSuggestionReport(suggestions: [], patternCount: 0, progress: nil))
+            HelpSuggestionCopy.emptyMessage(HelpSuggestionReport(suggestions: [], patternCount: 0, progress: nil)),
+            HelpSuggestionCopy.emptyMessage(HelpSuggestionReport(suggestions: [], patternCount: 1, progress: nil, heldBackByBaseline: true))
         ]
-        #expect(Set(messages).count == 3)
+        #expect(Set(messages).count == 4)
+        // Only a report held back by the baseline mentions other logs.
+        #expect(messages.filter { $0.contains("other logs") }.count == 1)
         #expect(messages[1].contains("Workout needs 1 more later check-in "))
         expectNonCausal([HelpSuggestionCopy.title, HelpSuggestionCopy.afterWorseIntro, HelpSuggestionCopy.hideForToday] + messages)
         expectNonCausal([SuggestionNudgeCopy.title, SuggestionNudgeCopy.body(categoryName: "Workout", betterCount: 4, numericCount: 5, style: .specific), SuggestionNudgeCopy.body(categoryName: "Workout", betterCount: 4, numericCount: 5, style: .generic)])

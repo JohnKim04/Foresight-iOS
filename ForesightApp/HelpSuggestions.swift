@@ -27,13 +27,20 @@ struct HelpSuggestion: Identifiable {
 
     var id: UUID { category.id }
 
+    /// Its better rate was above your other logs'. A strong category can qualify against a
+    /// baseline just as strong (see `baselineRateCap`), and then the headline doesn't claim this.
+    var beatsOtherLogs: Bool {
+        guard let baseline, numericCount > 0, baseline.numericCount > 0 else { return false }
+        return Double(betterCount) / Double(numericCount) > Double(baseline.betterCount) / Double(baseline.numericCount)
+    }
+
     var headline: String {
-        baseline == nil
-            ? "\(category.name) has tended to be followed by feeling better later."
-            : "\(category.name) has been followed by feeling better later more often than your other logs."
+        beatsOtherLogs
+            ? "\(category.name) has been followed by feeling better later more often than your other logs."
+            : "\(category.name) has tended to be followed by feeling better later."
     }
     var evidence: String {
-        let others = baseline.map { " (other logs: \($0.betterCount) of \($0.numericCount))" } ?? ""
+        let others = baseline.map { " (other logs: better in \($0.betterCount) of \($0.numericCount))" } ?? ""
         return "Better or much better in \(betterCount) of \(numericCount) later check-ins\(others) · \(evidenceDepth.rawValue)"
     }
 
@@ -57,6 +64,8 @@ struct HelpSuggestionReport {
     let patternCount: Int
     /// The category closest to enough later check-ins, when nothing qualifies yet.
     let progress: InsightProgress?
+    /// A category cleared the absolute bar but not your other logs' rate.
+    var heldBackByBaseline = false
 }
 
 /// Card copy, kept here so the non-causal wording is covered by tests.
@@ -76,7 +85,8 @@ enum HelpSuggestionCopy {
     }
 
     static func emptyMessage(_ report: HelpSuggestionReport) -> String {
-        if report.patternCount > 0 { return "No category has been followed by feeling better clearly, recently and more often than your other logs yet. Keep checking in later and this will update." }
+        if report.heldBackByBaseline { return "No category has been followed by feeling better more often than your other logs yet. Keep checking in later and this will update." }
+        if report.patternCount > 0 { return "No category has been followed by feeling better clearly and recently enough yet. Keep checking in later and this will update." }
         if let progress = report.progress { return "\(progress.category.name) needs \(progress.needed) more later \(progress.needed == 1 ? "check-in" : "check-ins") before Foresight can show what tends to be followed by feeling better." }
         return "Tag your logs and check in later. Foresight will show what has tended to be followed by feeling better."
     }
@@ -95,6 +105,7 @@ func helpSuggestions(entries: [JournalEntry], checkIns: [OutcomeCheckIn], catego
     let active = categories.filter { !$0.isArchived }
     let hour = calendar.component(.hour, from: now)
     var patternCount = 0
+    var heldBackByBaseline = false
     var suggestions: [HelpSuggestion] = []
 
     for category in active {
@@ -111,7 +122,10 @@ func helpSuggestions(entries: [JournalEntry], checkIns: [OutcomeCheckIn], catego
         // If "Better" is your usual later answer anyway, every frequent category would pass the
         // bar above, so the pattern also has to beat your other logs.
         let baseline = laterBaseline(entries: entries, checkIns: checkIns, excluding: category, now: now, calendar: calendar)
-        guard beatsBaseline(successes: later.betterCount, trials: later.numericCount, baselineSuccesses: baseline.betterCount, baselineTrials: baseline.numericCount) else { continue }
+        guard beatsBaseline(successes: later.betterCount, trials: later.numericCount, baselineSuccesses: baseline.betterCount, baselineTrials: baseline.numericCount) else {
+            heldBackByBaseline = true
+            continue
+        }
         // A pattern whose latest later check-ins were mostly not better may have faded.
         let recent = laterResponses(entries: entries, checkIns: checkIns, sourceIDs: Set(later.sourceEntryIDs)).prefix(helpSuggestionRecentResponses)
         guard recent.count < helpSuggestionRecentResponses || recent.filter({ $0 > 0 }).count * 2 > recent.count else { continue }
@@ -160,7 +174,7 @@ func helpSuggestions(entries: [JournalEntry], checkIns: [OutcomeCheckIn], catego
     let progress = ranked.isEmpty && patternCount == 0
         ? closestInsightProgress(entries: entries, checkIns: checkIns, categories: active, phase: .delayed, range: helpSuggestionRange, now: now)
         : nil
-    return HelpSuggestionReport(suggestions: Array(ranked), patternCount: patternCount, progress: progress)
+    return HelpSuggestionReport(suggestions: Array(ranked), patternCount: patternCount, progress: progress, heldBackByBaseline: heldBackByBaseline && ranked.isEmpty)
 }
 
 /// A category whose later check-ins have tended to be worse, for a heads-up before its usual time.
@@ -267,13 +281,18 @@ func laterBaseline(entries: [JournalEntry], checkIns: [OutcomeCheckIn], excludin
     return LaterBaseline(numericCount: values.count, betterCount: values.filter { $0 > 0 }.count, worseCount: values.filter { $0 < 0 }.count)
 }
 
+/// The most a baseline rate can ask of a category. Without a cap, a journal where most logs are
+/// followed by feeling better would never show a suggestion, since 5 of 5 can't beat 5 of 5.
+let baselineRateCap = 0.7
+
 /// Whether a category's rate stands out from the baseline's: the low end of its likely rate has
-/// to be above the rate your other logs actually had. This is the one place to tune the
-/// comparison once there is real data. With no comparable baseline yet, the absolute bar
-/// decides on its own.
+/// to be above the rate your other logs actually had, capped at `baselineRateCap`. This is the
+/// one place to tune the comparison once there is real data. With no comparable baseline yet,
+/// the absolute bar decides on its own.
 func beatsBaseline(successes: Int, trials: Int, baselineSuccesses: Int, baselineTrials: Int) -> Bool {
     guard baselineTrials >= minimumPatternResponses else { return true }
-    return wilsonLowerBound(successes: successes, trials: trials) > Double(baselineSuccesses) / Double(baselineTrials)
+    let bar = min(Double(baselineSuccesses) / Double(baselineTrials), baselineRateCap)
+    return wilsonLowerBound(successes: successes, trials: trials) > bar
 }
 
 /// The lower end of the Wilson score interval for `successes` out of `trials`, at about 84%
