@@ -86,9 +86,12 @@ struct JournalEditorView: View {
                                     Text("When did it happen?").font(.headline).foregroundStyle(Color.foresightInk)
                                     // No future times: a log dated tomorrow could be rated "right after" before it happened.
                                     // An older log already dated ahead keeps its time selectable.
-                                    DatePicker("Event time", selection: $eventAt, in: ...max(.now, entry?.eventAt ?? .now), displayedComponents: [.date, .hourAndMinute])
-                                        .datePickerStyle(.compact)
-                                        .accessibilityLabel("Event time")
+                                    // The timeline moves the bound forward while the editor stays open.
+                                    TimelineView(.everyMinute) { _ in
+                                        DatePicker("Event time", selection: $eventAt, in: ...max(.now, entry?.eventAt ?? .now), displayedComponents: [.date, .hourAndMinute])
+                                            .datePickerStyle(.compact)
+                                            .accessibilityLabel("Event time")
+                                    }
                                 }
                                 VStack(alignment: .leading, spacing: 10) {
                                     Text("Categories").font(.headline).foregroundStyle(Color.foresightInk)
@@ -370,7 +373,7 @@ struct OutcomeAnswerSheet: View {
         )
     }
     private var moreSummary: String {
-        let parts = [note.isEmpty ? nil : "Note added", excluded ? "Left out of patterns" : nil].compactMap { $0 }
+        let parts = [note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : "Note added", excluded ? "Left out of patterns" : nil].compactMap { $0 }
         return parts.isEmpty ? "Add a note, or leave this out of patterns" : parts.joined(separator: " · ")
     }
     private var ratingDescription: String {

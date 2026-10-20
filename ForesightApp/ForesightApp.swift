@@ -31,7 +31,7 @@ struct ForesightApp: App {
                         .environment(database.reminders)
                         .environment(database.router)
                 } else {
-                    StoreRecoveryView(message: database.errorMessage ?? "Your journal could not be opened.", backups: database.recoveryBackups()) {
+                    StoreRecoveryView(message: database.errorMessage ?? "Your journal could not be opened.", loadBackups: { database.recoveryBackups() }) {
                         database.open()
                     } onRestore: { backup in
                         database.restore(backup)
@@ -286,13 +286,15 @@ extension ForesightRootView {
 
 struct StoreRecoveryView: View {
     let message: String
-    /// Backups beside the journal, newest first.
-    let backups: [JournalBackup]
+    /// Backups beside the journal, newest first. Listing opens each one, so it runs when the
+    /// screen appears and after each failed attempt rather than on every redraw.
+    let loadBackups: @MainActor () -> [JournalBackup]
     let onRetry: () -> Void
     let onRestore: (JournalBackup) -> Void
     let onReset: () -> Void
     @State private var confirmReset = false
     @State private var backupToRestore: JournalBackup?
+    @State private var backups: [JournalBackup] = []
 
     private var readableBackups: [JournalBackup] { backups.filter(\.isReadable) }
 
@@ -304,6 +306,7 @@ struct StoreRecoveryView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.foresightCanvas)
+        .task(id: message) { backups = loadBackups() }
         .alert("Start an empty journal?", isPresented: $confirmReset) {
             Button("Start empty", role: .destructive, action: onReset)
             Button("Cancel", role: .cancel) { }

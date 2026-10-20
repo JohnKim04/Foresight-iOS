@@ -582,6 +582,52 @@ struct JournalBackupTests {
         #expect(Set(store.entries.map(\.body)) == ["Edited on the other phone", "Only here"])
     }
 
+    @Test("an import keeps one check-in right after and one waiting later check-in per log, the newer of each")
+    func importDedupesCheckIns() throws {
+        let store = try openJournal()
+        let run = try store.saveLog(body: "Morning run", eventAt: now.addingTimeInterval(-600), categoryIDs: [])
+        let immediate = try store.createCheckIn(for: run, phase: .immediate)
+        try store.answer(immediate, response: .aLittleBetter, notSure: false, note: "", excludedFromAnalysis: false)
+        let delayed = try store.createCheckIn(for: run, phase: .delayed, dueAt: now.addingTimeInterval(3_600))
+        // The other phone made its own copies of both, under new IDs.
+        let otherImmediateID = UUID()
+        let otherDelayedID = UUID()
+        let json = try #require(String(data: JournalExport(snapshot: store.snapshot, exportedAt: now).jsonData(), encoding: .utf8))
+            .replacingOccurrences(of: immediate.id.uuidString, with: otherImmediateID.uuidString)
+            .replacingOccurrences(of: delayed.id.uuidString, with: otherDelayedID.uuidString)
+        let export = try JournalExport.decode(Data(json.utf8))
+        // This phone's answer is newer; the other phone's later check-in is newer.
+        immediate.updatedAt = now.addingTimeInterval(120)
+        delayed.updatedAt = now.addingTimeInterval(-120)
+
+        let result = try store.importJournal(export)
+        #expect(result.addedCheckIns == 1)
+        #expect(Set(store.checkIns.filter { $0.entry?.id == run.id }.map(\.id)) == [immediate.id, otherDelayedID])
+        #expect(!(try store.importJournal(export)).changedAnything)
+    }
+
+    @Test("an import keeps an answered check-in over a newer one that was skipped")
+    func importKeepsAnswer() throws {
+        let store = try openJournal()
+        let run = try store.saveLog(body: "Morning run", eventAt: now.addingTimeInterval(-600), categoryIDs: [])
+        let immediate = try store.createCheckIn(for: run, phase: .immediate)
+        try store.answer(immediate, response: .aLittleBetter, notSure: false, note: "Lighter", excludedFromAnalysis: false)
+        // The file holds the answer under another phone's ID; this phone skipped its own copy later.
+        let otherID = UUID()
+        let json = try #require(String(data: JournalExport(snapshot: store.snapshot, exportedAt: now).jsonData(), encoding: .utf8))
+            .replacingOccurrences(of: immediate.id.uuidString, with: otherID.uuidString)
+        let export = try JournalExport.decode(Data(json.utf8))
+        try store.skip(immediate)
+        immediate.updatedAt = now.addingTimeInterval(600)
+
+        let result = try store.importJournal(export)
+        #expect(result.addedCheckIns == 1)
+        let kept = store.checkIns.filter { $0.entry?.id == run.id }
+        #expect(kept.map(\.id) == [otherID])
+        #expect(kept.first?.overall == .aLittleBetter)
+        #expect(kept.first?.note == "Lighter")
+    }
+
     @Test("an import turns away files that aren't a Foresight export, or come from a newer version")
     func importRejects() throws {
         let store = try openJournal()

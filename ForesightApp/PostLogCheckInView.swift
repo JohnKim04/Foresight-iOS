@@ -172,7 +172,7 @@ struct PostLogCheckInView: View {
     /// "11:00 PM" alone would promise a buzz at 11 that quiet hours hold until morning.
     private func rowDetail(_ option: CheckInLaterOption) -> String {
         guard let fireAt = reminders.reminderHeldByQuietHours(dueAt: option.dueAt) else { return option.detail }
-        return "\(option.detail), reminder at \(fireAt.formatted(date: .omitted, time: .shortened))"
+        return "\(option.detail), \(QuietHoursCopy.shortcutReminder(fireAt, now: .now))"
     }
 
     /// Sets the Settings default once, when the step first appears. Tapping it turns it off.

@@ -614,6 +614,25 @@ struct SuggestionNudgeSchedulerTests {
         #expect(subject.ledger.mutedUntil.isEmpty)
     }
 
+    @Test("Less often clears that category's delivered nudges, and leaves other kinds and categories")
+    func lessOftenClearsDelivered() async throws {
+        var coffee: JournalCategory?
+        let subject = try makeSubject(alsoRead: true, setUp: { store, clock in
+            coffee = try addPattern("Coffee", hour: 15, responses: [.aLittleWorse], store: store, clock: clock)
+        })
+        let coffeeID = try #require(coffee?.id)
+        let read = try #require(subject.store.categories.first { $0.name == "Read" })
+        await subject.scheduler.waitForPendingWork()
+        let walkToday = SuggestionNudgePlan.identifier(day: "2024-08-30", categoryID: subject.walk.id)
+        let walkHeadsUp = SuggestionNudgePlan.identifier(day: "2024-08-30", categoryID: subject.walk.id, kind: .worse)
+        let readToday = SuggestionNudgePlan.identifier(day: "2024-08-30", categoryID: read.id)
+        let coffeeToday = SuggestionNudgePlan.identifier(day: "2024-08-30", categoryID: coffeeID, kind: .worse)
+        await subject.center.setDelivered([walkToday, walkHeadsUp, readToday, coffeeToday])
+
+        await subject.scheduler.lessOften(categoryID: subject.walk.id, kind: .better)
+        #expect(await subject.center.delivered == [walkHeadsUp, readToday, coffeeToday])
+    }
+
     @Test("does not re-add nudges that are already scheduled correctly")
     func idempotent() async throws {
         let subject = try makeSubject()

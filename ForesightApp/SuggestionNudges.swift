@@ -154,6 +154,11 @@ enum SuggestionNudgePlan {
         return identifier.split(separator: ".").last.flatMap { UUID(uuidString: String($0)) }
     }
 
+    /// Delivered nudges of `kind` for one category, from any day.
+    static func delivered(_ delivered: [String], categoryID: UUID, kind: NudgeKind) -> [String] {
+        delivered.filter { $0.hasPrefix(kind.identifierPrefix) && Self.categoryID(fromIdentifier: $0) == categoryID }
+    }
+
     /// Delivered nudges of `kind` from an earlier day, or every one of them once that kind is off.
     static func staleDelivered(_ delivered: [String], today: String, enabled: Bool, kind: NudgeKind = .better) -> [String] {
         delivered.filter { identifier in
@@ -441,12 +446,19 @@ final class SuggestionNudgeScheduler {
     }
 
     /// "Less often": no nudges of `kind` for the category for two weeks, starting with any
-    /// already scheduled. Finishes rescheduling before it returns, since the app may only be
-    /// awake for this.
+    /// already scheduled, and its ones still in Notification Center go too. Finishes before it
+    /// returns, since the app may only be awake for this.
     func lessOften(categoryID: UUID, kind: NudgeKind) async {
         guard let ledger = ledgers[kind] else { return }
         ledger.mutedUntil[categoryID] = now().addingTimeInterval(SuggestionNudgePlan.muteInterval)
         resync()
+        let previous = syncTask
+        let center = self.center
+        syncTask = Task {
+            await previous?.value
+            let delivered = await center.deliveredIdentifiers()
+            await center.removeDelivered(SuggestionNudgePlan.delivered(delivered, categoryID: categoryID, kind: kind))
+        }
         await waitForPendingWork()
     }
 

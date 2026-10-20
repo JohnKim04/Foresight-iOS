@@ -64,9 +64,19 @@ struct CheckInFlowTests {
         #expect(LaterCheckInDefault.inTwoHours.option(in: afternoon)?.dueAt == date(9, 16))
         #expect(LaterCheckInDefault.tonight.option(in: afternoon)?.dueAt == date(9, 20))
         #expect(LaterCheckInDefault.morning.option(in: afternoon)?.dueAt == date(10, 9))
-        #expect(LaterCheckInDefault.none.option(in: afternoon) == nil)
+        #expect(LaterCheckInDefault.off.option(in: afternoon) == nil)
         let evening = CheckInLaterOption.options(now: date(9, 18), calendar: calendar)
         #expect(LaterCheckInDefault.tonight.option(in: evening)?.dueAt == date(10, 9))
+    }
+
+    @Test("a held reminder under a shortcut says tomorrow when it lands on the next day")
+    func shortcutReminderDay() {
+        let tonight = QuietHoursCopy.shortcutReminder(date(9, 23), now: date(9, 21), calendar: calendar)
+        #expect(tonight.hasPrefix("reminder at "))
+        let tomorrow = QuietHoursCopy.shortcutReminder(date(10, 8), now: date(9, 21), calendar: calendar)
+        #expect(tomorrow.hasPrefix("reminder tomorrow at "))
+        let later = QuietHoursCopy.shortcutReminder(date(11, 8), now: date(9, 21), calendar: calendar)
+        #expect(!later.contains("tomorrow"))
     }
 
     @Test("counts only pending later check-ins that are due")
