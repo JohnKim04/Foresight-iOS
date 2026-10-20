@@ -186,8 +186,8 @@ func outcomeChangeInsight(entries: [JournalEntry], checkIns: [OutcomeCheckIn], c
     return OutcomeChangeInsight(headline: "\(category.name)'s recent \(timing) responses were \(recentAverage > earlierAverage ? "more positive" : "more negative") than earlier in this period.", detail: "Recent: \(describeAverageOutcome(recentAverage)) (\(recent.count)) · Earlier: \(describeAverageOutcome(earlierAverage)) (\(earlier.count))", recentAverage: recentAverage, earlierAverage: earlierAverage, recentCount: recent.count, earlierCount: earlier.count)
 }
 
-func closestInsightProgress(entries: [JournalEntry], checkIns: [OutcomeCheckIn], categories: [JournalCategory], phase: OutcomePhase, range: OutcomeTrendRange, now: Date = .now) -> InsightProgress? {
-    let candidates = categories.map { category in (category, outcomeTrend(entries: entries, checkIns: checkIns, category: category, phase: phase, range: range, now: now)) }
+func closestInsightProgress(entries: [JournalEntry], checkIns: [OutcomeCheckIn], categories: [JournalCategory], phase: OutcomePhase, range: OutcomeTrendRange, now: Date = .now, calendar: Calendar = .current) -> InsightProgress? {
+    let candidates = categories.map { category in (category, outcomeTrend(entries: entries, checkIns: checkIns, category: category, phase: phase, range: range, now: now, calendar: calendar)) }
         .filter { $0.1.numericCount < minimumPatternResponses && $0.1.logCount > 0 }
         .sorted { $0.1.numericCount != $1.1.numericCount ? $0.1.numericCount > $1.1.numericCount : $0.0.name < $1.0.name }
     guard let candidate = candidates.first else { return nil }

@@ -22,7 +22,7 @@ struct JournalRootView: View {
     @State private var navigationPath: [UUID] = []
     @State private var suggestion: HelpSuggestion?
     /// Shown instead of a suggestion until the first one exists.
-    @State private var patternProgress: InsightProgress?
+    @State private var patternProgress: String?
     @AppStorage(JournalSuggestionState.hiddenKey) private var hiddenSuggestions = ""
     @State private var clock = Date.now
     @Environment(CheckInReminderRouter.self) private var router
@@ -116,7 +116,7 @@ struct JournalRootView: View {
             .onChange(of: HelpReportKey(store: store, now: clock), initial: true) {
                 let report = helpSuggestions(entries: store.entries, checkIns: store.checkIns, categories: store.categories, limit: .max)
                 suggestion = journalSuggestion(report)
-                patternProgress = report.progress
+                patternProgress = HelpSuggestionCopy.journalProgress(report)
             }
             // Keeps the card on today's suggestion, and brings back one hidden yesterday.
             .hourlyClock($clock)
@@ -134,7 +134,7 @@ struct JournalRootView: View {
             }
             .transition(.opacity)
         } else if let patternProgress, query.isEmpty {
-            JournalPatternProgressLine(progress: patternProgress)
+            JournalPatternProgressLine(text: patternProgress)
         }
     }
 
@@ -477,11 +477,11 @@ struct JournalSuggestionCard: View {
 
 /// A quiet line on Journal during the first weeks, when no suggestion exists yet.
 struct JournalPatternProgressLine: View {
-    let progress: InsightProgress
+    let text: String
 
     var body: some View {
         Label {
-            Text(HelpSuggestionCopy.journalProgress(progress))
+            Text(text)
                 .multilineTextAlignment(.leading)
                 .fixedSize(horizontal: false, vertical: true)
         } icon: {

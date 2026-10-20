@@ -91,10 +91,20 @@ enum HelpSuggestionCopy {
         return "Tag your logs and check in later. Foresight will show what has tended to be followed by feeling better."
     }
 
+    /// Journal's line once every logged category has enough later check-ins but none qualifies.
+    static let journalNoClearPattern = "No clear pattern yet. Foresight keeps looking as you check in."
+
     /// The Journal's line while there is no suggestion yet. It counts toward the same minimum the
     /// suggestions use, and doesn't promise a pattern, since five answers may still show none.
     static func journalProgress(_ progress: InsightProgress) -> String {
         "\(progress.category.name): \(progress.numericCount) of \(minimumPatternResponses) later check-ins before Foresight looks for a pattern"
+    }
+
+    /// What Journal shows in place of a suggestion, or nil when there is one or nothing is tagged yet.
+    static func journalProgress(_ report: HelpSuggestionReport) -> String? {
+        guard report.suggestions.isEmpty else { return nil }
+        if let progress = report.progress { return journalProgress(progress) }
+        return report.patternCount > 0 ? journalNoClearPattern : nil
     }
 }
 
@@ -180,7 +190,7 @@ func helpSuggestions(entries: [JournalEntry], checkIns: [OutcomeCheckIn], catego
     // Also once another category has a pattern that didn't qualify, so the Journal keeps
     // showing how close the rest are until the first suggestion.
     let progress = ranked.isEmpty
-        ? closestInsightProgress(entries: entries, checkIns: checkIns, categories: active, phase: .delayed, range: helpSuggestionRange, now: now)
+        ? closestInsightProgress(entries: entries, checkIns: checkIns, categories: active, phase: .delayed, range: helpSuggestionRange, now: now, calendar: calendar)
         : nil
     return HelpSuggestionReport(suggestions: Array(ranked), patternCount: patternCount, progress: progress, heldBackByBaseline: heldBackByBaseline && ranked.isEmpty)
 }
