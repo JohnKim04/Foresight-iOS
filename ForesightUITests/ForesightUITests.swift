@@ -122,7 +122,10 @@ final class ForesightUITests: XCTestCase {
         let confirm = app.alerts.buttons["Erase"]
         XCTAssertTrue(confirm.waitForExistence(timeout: 3))
         confirm.tap()
-        XCTAssertTrue(app.staticTexts["Your journal was erased."].waitForExistence(timeout: 3))
+        // The message appears in the row below the button, which can sit past the bottom edge.
+        let erased = app.staticTexts["Your journal was erased."]
+        scrollSettings(until: erased)
+        XCTAssertTrue(erased.waitForExistence(timeout: 3))
         app.buttons["Done"].tap()
         XCTAssertFalse(app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "A log to erase")).firstMatch.waitForExistence(timeout: 1))
     }
