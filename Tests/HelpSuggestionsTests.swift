@@ -39,7 +39,7 @@ struct HelpSuggestionsTests {
 
     /// `steady` adds `steadyLogs()` underneath, so each category is compared with a mostly neutral baseline.
     private func report(_ entries: [JournalEntry], _ checkIns: [OutcomeCheckIn], _ categories: [JournalCategory], limit: Int = 3, steady: Bool = false) -> HelpSuggestionReport {
-        let background = steady ? steadyLogs() : ([], [])
+        let background: (entries: [JournalEntry], checkIns: [OutcomeCheckIn]) = steady ? steadyLogs() : (entries: [], checkIns: [])
         return helpSuggestions(entries: entries + background.entries, checkIns: checkIns + background.checkIns, categories: categories, now: now, calendar: calendar, limit: limit)
     }
 
