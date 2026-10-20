@@ -151,11 +151,11 @@ struct SettingsView: View {
             }
             .tint(Color.foresightSwitch)
             Toggle(isOn: $nudgesEnabled) {
-                SettingLabel(title: "Pattern nudges", detail: "At most one a day, around the time you usually log something that has often been followed by feeling better.")
+                SettingLabel(title: "Pattern nudges", detail: "At most one a day, around the time you usually log something that has often been followed by feeling better. The same one comes at most every third day.")
             }
             .tint(Color.foresightSwitch)
             Toggle(isOn: $headsUpsEnabled) {
-                SettingLabel(title: "Feeling-worse heads-ups", detail: "At most one a day, an hour before the time you usually log something that has often been followed by feeling worse.")
+                SettingLabel(title: "Feeling-worse heads-ups", detail: "At most one a day, an hour before the time you usually log something that has often been followed by feeling worse. The same one comes at most every third day.")
             }
             .tint(Color.foresightSwitch)
         } header: {

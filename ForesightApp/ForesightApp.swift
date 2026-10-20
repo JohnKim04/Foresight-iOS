@@ -76,6 +76,7 @@ final class AppDatabase {
             quietHours: { preferences.quietHours }
         )
         router = CheckInReminderRouter(reminders: reminders)
+        router.nudges = nudges
         open(inMemory: inMemory)
     }
 
@@ -180,7 +181,7 @@ struct ForesightRootView: View {
     /// Advanced when the next check-in falls due, so the badge appears without any polling.
     @State private var badgeClock = Date.now
     @State private var checkInAnswerRequest: CheckInTarget?
-    @State private var newLogRequest = false
+    @State private var newLogRequest: EditorRequest?
     @State private var evidenceRequest: UUID?
     @Environment(\.scenePhase) private var scenePhase
 
@@ -237,7 +238,8 @@ struct ForesightRootView: View {
                     case .checkIns: tab = .checkIns
                     case .answer(let target): tab = .checkIns; checkInAnswerRequest = target
                     case .evidence(let categoryID): tab = .patterns; evidenceRequest = categoryID
-                    case .newLog: tab = .journal; newLogRequest = true
+                    case .newLog: tab = .journal; newLogRequest = EditorRequest(entryID: nil)
+                    case .newLogInCategory(let categoryID): tab = .journal; newLogRequest = EditorRequest(entryID: nil, categoryID: categoryID)
                     }
                     router.destination = nil
                     return

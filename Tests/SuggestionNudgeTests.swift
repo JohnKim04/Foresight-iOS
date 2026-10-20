@@ -5,24 +5,24 @@ import UserNotifications
 
 actor FakeNudgeCenter: NudgeNotificationCenter {
     private(set) var status: ReminderAuthorization
-    private(set) var pending: [String: (fireAt: Date, body: String)] = [:]
+    private(set) var pending: [String: (fireAt: Date, body: String, category: String?)] = [:]
     private(set) var delivered: [String] = []
     private(set) var addCount = 0
 
     init(status: ReminderAuthorization = .allowed) { self.status = status }
 
     func setStatus(_ status: ReminderAuthorization) { self.status = status }
-    func setPending(identifier: String, fireAt: Date) { pending[identifier] = (fireAt, "") }
+    func setPending(identifier: String, fireAt: Date) { pending[identifier] = (fireAt, "", nil) }
     func identifiers() -> [String] { pending.keys.sorted() }
     func setDelivered(_ identifiers: [String]) { delivered = identifiers }
 
     func authorization() -> ReminderAuthorization { status }
     func scheduledReminders() -> [ScheduledReminder] {
-        pending.map { ScheduledReminder(identifier: $0.key, fireAt: $0.value.fireAt, body: $0.value.body) }
+        pending.map { ScheduledReminder(identifier: $0.key, fireAt: $0.value.fireAt, body: $0.value.body, categoryIdentifier: $0.value.category) }
     }
     func addNudge(_ nudge: SuggestionNudge) {
         addCount += 1
-        pending[nudge.identifier] = (nudge.fireAt, nudge.body)
+        pending[nudge.identifier] = (nudge.fireAt, nudge.body, SuggestionNudgePlan.categoryIdentifier)
     }
     func removeScheduled(_ identifiers: [String]) { identifiers.forEach { pending[$0] = nil } }
     func deliveredIdentifiers() -> [String] { delivered }
@@ -30,7 +30,8 @@ actor FakeNudgeCenter: NudgeNotificationCenter {
 }
 
 final class MemoryNudgeLedger: NudgeLedger {
-    var fireTimes: [DateComponents] = []
+    var fires: [NudgeFire] = []
+    var mutedUntil: [UUID: Date] = [:]
 }
 
 private func calendar(_ zone: String) -> Calendar {
@@ -53,8 +54,8 @@ struct SuggestionNudgePlanTests {
         NudgeCandidate(categoryID: id, categoryName: name, usualHour: hour, matchingCount: 4, numericCount: 5, strength: strength, loggedToday: loggedToday, weekendsOnly: weekendsOnly, kind: kind)
     }
 
-    private func plan(_ candidates: [NudgeCandidate], now: Date = morning, calendar: Calendar = utc, quietHours: QuietHours = .standard, usedToday: Bool = false) -> [SuggestionNudge] {
-        SuggestionNudgePlan.nudges(for: candidates, now: now, calendar: calendar, quietHours: quietHours, usedToday: usedToday)
+    private func plan(_ candidates: [NudgeCandidate], now: Date = morning, calendar: Calendar = utc, quietHours: QuietHours = .standard, usedToday: Bool = false, lastNudged: [UUID: Date] = [:], muted: Set<UUID> = [], cooldownDays: Int = SuggestionNudgePlan.cooldownDays) -> [SuggestionNudge] {
+        SuggestionNudgePlan.nudges(for: candidates, now: now, calendar: calendar, quietHours: quietHours, usedToday: usedToday, lastNudged: lastNudged, muted: muted, cooldownDays: cooldownDays)
     }
 
     @Test("plans the usual hour in the local time zone")
@@ -71,21 +72,43 @@ struct SuggestionNudgePlanTests {
         #expect(nudges.first?.wallClock.timeZone == nil)
     }
 
-    @Test("schedules one nudge a day at the hour the pattern holds")
-    func oneADayAtUsualHour() {
+    @Test("schedules a nudge at the hour the pattern holds, then rests that category for three days")
+    func oneAtUsualHour() {
         let walk = candidate("Walk", hour: 18)
         let nudges = plan([walk])
-        #expect(nudges.map(\.fireAt) == [at(hour: 18), at(hour: 18, dayOffset: 1), at(hour: 18, dayOffset: 2)])
-        #expect(Set(nudges.map(\.identifier)).count == 3)
+        #expect(nudges.map(\.fireAt) == [at(hour: 18)])
         #expect(nudges.allSatisfy { $0.categoryID == walk.categoryID })
+        // Without the rest, the same category would come every day.
+        let daily = plan([walk], cooldownDays: 1)
+        #expect(daily.map(\.fireAt) == [at(hour: 18), at(hour: 18, dayOffset: 1), at(hour: 18, dayOffset: 2)])
+        #expect(Set(daily.map(\.identifier)).count == 3)
+    }
+
+    @Test("a category nudged on an earlier day waits until its third day")
+    func cooldownFromHistory() {
+        let walk = candidate("Walk", hour: 18)
+        #expect(plan([walk], lastNudged: [walk.categoryID: at(hour: 18, dayOffset: -1)]).map(\.fireAt) == [at(hour: 18, dayOffset: 2)])
+        #expect(plan([walk], lastNudged: [walk.categoryID: at(hour: 8, dayOffset: -2)]).map(\.fireAt) == [at(hour: 18, dayOffset: 1)])
+        #expect(plan([walk], lastNudged: [walk.categoryID: at(hour: 23, dayOffset: -3)]).map(\.fireAt) == [at(hour: 18)])
+        // Another category isn't held back by it.
+        let read = candidate("Read", hour: 20, strength: 0.5)
+        #expect(plan([walk, read], lastNudged: [walk.categoryID: at(hour: 8, dayOffset: -2)]).map(\.categoryID) == [read.categoryID, walk.categoryID])
+    }
+
+    @Test("a category turned down with Less often gets nothing while muted")
+    func mutedCategory() {
+        let walk = candidate("Walk", hour: 18, strength: 2)
+        let read = candidate("Read", hour: 20)
+        #expect(plan([walk, read], muted: [walk.categoryID]).map(\.categoryID) == [read.categoryID])
+        #expect(plan([walk], muted: [walk.categoryID]).isEmpty)
     }
 
     @Test("skips today when its hour has passed or a nudge already went out")
     func skipsToday() {
         let walk = candidate("Walk", hour: 8)
-        #expect(plan([walk]).map(\.fireAt) == [at(hour: 8, dayOffset: 1), at(hour: 8, dayOffset: 2)])
+        #expect(plan([walk]).map(\.fireAt) == [at(hour: 8, dayOffset: 1)])
         let evening = candidate("Read", hour: 20)
-        #expect(plan([evening], usedToday: true).map(\.fireAt) == [at(hour: 20, dayOffset: 1), at(hour: 20, dayOffset: 2)])
+        #expect(plan([evening], usedToday: true).map(\.fireAt) == [at(hour: 20, dayOffset: 1)])
     }
 
     @Test("skips today for a category already logged today")
@@ -93,7 +116,7 @@ struct SuggestionNudgePlanTests {
         let walk = candidate("Walk", hour: 18, strength: 2, loggedToday: true)
         let read = candidate("Read", hour: 20)
         let nudges = plan([walk, read])
-        #expect(nudges.map(\.categoryID) == [read.categoryID, walk.categoryID, read.categoryID])
+        #expect(nudges.map(\.categoryID) == [read.categoryID, walk.categoryID])
     }
 
     @Test("a pattern that held mostly on weekends is only nudged on weekends")
@@ -102,9 +125,9 @@ struct SuggestionNudgePlanTests {
         let hike = candidate("Hike", hour: 10, strength: 2, weekendsOnly: true)
         let walk = candidate("Walk", hour: 18)
         let nudges = plan([hike, walk])
-        #expect(nudges.map(\.categoryID) == [walk.categoryID, hike.categoryID, walk.categoryID])
-        #expect(nudges.map(\.fireAt) == [at(hour: 18), at(hour: 10, dayOffset: 1), at(hour: 18, dayOffset: 2)])
-        #expect(plan([hike]).map(\.fireAt) == [at(hour: 10, dayOffset: 1), at(hour: 10, dayOffset: 2)])
+        #expect(nudges.map(\.categoryID) == [walk.categoryID, hike.categoryID])
+        #expect(nudges.map(\.fireAt) == [at(hour: 18), at(hour: 10, dayOffset: 1)])
+        #expect(plan([hike], cooldownDays: 1).map(\.fireAt) == [at(hour: 10, dayOffset: 1), at(hour: 10, dayOffset: 2)])
     }
 
     @Test("never nudges during quiet hours")
@@ -125,8 +148,7 @@ struct SuggestionNudgePlanTests {
         let read = candidate("Read", hour: 20)
         let afternoon = QuietHours(start: 17, end: 19)
         let nudges = SuggestionNudgePlan.nudges(for: [walk, read], now: morning, calendar: utc, quietHours: afternoon, usedToday: false)
-        #expect(nudges.count == SuggestionNudgePlan.daysAhead)
-        #expect(nudges.allSatisfy { $0.categoryID == read.categoryID })
+        #expect(nudges.map(\.categoryID) == [read.categoryID])
         #expect(SuggestionNudgePlan.nudges(for: [walk, read], now: morning, calendar: utc, quietHours: .off, usedToday: false).contains { $0.categoryID == walk.categoryID })
     }
 
@@ -134,7 +156,7 @@ struct SuggestionNudgePlanTests {
     func headsUp() throws {
         let coffee = candidate("Coffee", hour: 15, kind: .worse)
         let nudges = plan([coffee])
-        #expect(nudges.map(\.fireAt) == [at(hour: 14), at(hour: 14, dayOffset: 1), at(hour: 14, dayOffset: 2)])
+        #expect(nudges.map(\.fireAt) == [at(hour: 14)])
         let first = try #require(nudges.first)
         #expect(first.kind == .worse)
         #expect(first.identifier == SuggestionNudgePlan.identifier(day: "2024-08-30", categoryID: coffee.categoryID, kind: .worse))
@@ -143,7 +165,7 @@ struct SuggestionNudgePlanTests {
         #expect(first.body == "Coffee has often been followed by feeling worse later: worse or much worse in 4 of 5 later check-ins. Something to weigh if it’s coming up.")
         // Quiet hours apply to when it arrives: 08:00 is after quiet hours, but its heads-up at 07:00 isn't.
         #expect(plan([candidate("Coffee", hour: 8, kind: .worse)]).isEmpty)
-        #expect(plan([candidate("Coffee", hour: 9, kind: .worse)]).map(\.fireAt) == [at(hour: 8, dayOffset: 1), at(hour: 8, dayOffset: 2)])
+        #expect(plan([candidate("Coffee", hour: 9, kind: .worse)]).map(\.fireAt) == [at(hour: 8, dayOffset: 1)])
         // Heads-ups group apart from feel-better nudges.
         #expect(SuggestionNudgePlan.threadIdentifier(for: .worse) != SuggestionNudgePlan.threadIdentifier(for: .better))
     }
@@ -153,21 +175,23 @@ struct SuggestionNudgePlanTests {
         let late = candidate("Late snack", hour: 0, kind: .worse)
         #expect(plan([late], quietHours: .off).isEmpty)
         // A feel-better nudge at midnight is still planned when quiet hours allow it.
-        #expect(plan([candidate("Late walk", hour: 0)], quietHours: .off).count == 2)
+        #expect(plan([candidate("Late walk", hour: 0)], quietHours: .off).map(\.fireAt) == [at(hour: 0, dayOffset: 1)])
     }
 
     @Test("a heads-up for a weekend pattern only comes on weekends")
     func weekendHeadsUp() {
         // `morning` is a Friday, so the three days ahead are Friday, Saturday and Sunday.
         let brunch = candidate("Brunch", hour: 11, weekendsOnly: true, kind: .worse)
-        #expect(plan([brunch]).map(\.fireAt) == [at(hour: 10, dayOffset: 1), at(hour: 10, dayOffset: 2)])
+        #expect(plan([brunch]).map(\.fireAt) == [at(hour: 10, dayOffset: 1)])
     }
 
-    @Test("prefers the strongest pattern but alternates days when there is another")
+    @Test("prefers the strongest pattern, then the next while the first rests")
     func alternates() {
         let walk = candidate("Walk", hour: 18, strength: 3)
         let read = candidate("Read", hour: 20, strength: 1)
-        #expect(plan([read, walk]).map(\.categoryID) == [walk.categoryID, read.categoryID, walk.categoryID])
+        let fold = candidate("Fold", hour: 19, strength: 0.5)
+        #expect(plan([read, walk]).map(\.categoryID) == [walk.categoryID, read.categoryID])
+        #expect(plan([read, walk, fold]).map(\.categoryID) == [walk.categoryID, read.categoryID, fold.categoryID])
     }
 
     @Test("identifiers carry the category and leave check-in reminders alone")
@@ -177,14 +201,17 @@ struct SuggestionNudgePlanTests {
         #expect(SuggestionNudgePlan.categoryID(fromIdentifier: identifier) == id)
         #expect(SuggestionNudgePlan.categoryID(fromIdentifier: CheckInReminderPlan.identifier(for: id)) == nil)
 
-        let nudges = plan([candidate("Walk", hour: 18)])
+        let nudges = plan([candidate("Walk", hour: 18)], cooldownDays: 1)
         let checkIn = ScheduledReminder(identifier: CheckInReminderPlan.identifier(for: UUID()), fireAt: morning, body: "Run")
-        let kept = ScheduledReminder(identifier: nudges[0].identifier, fireAt: nudges[0].fireAt, body: nudges[0].body)
-        let edited = ScheduledReminder(identifier: nudges[1].identifier, fireAt: nudges[1].fireAt, body: "old")
+        let kept = ScheduledReminder(identifier: nudges[0].identifier, fireAt: nudges[0].fireAt, body: nudges[0].body, categoryIdentifier: SuggestionNudgePlan.categoryIdentifier)
+        let edited = ScheduledReminder(identifier: nudges[1].identifier, fireAt: nudges[1].fireAt, body: "old", categoryIdentifier: SuggestionNudgePlan.categoryIdentifier)
         let stale = ScheduledReminder(identifier: SuggestionNudgePlan.identifier(day: "2024-08-29", categoryID: id), fireAt: morning, body: "")
         let changes = SuggestionNudgePlan.changes(desired: nudges, scheduled: [checkIn, kept, edited, stale])
         #expect(changes.toAdd.map(\.identifier) == [nudges[1].identifier, nudges[2].identifier])
         #expect(changes.toRemove == [stale.identifier])
+        // One scheduled before nudges had buttons is replaced so it gets them.
+        let withoutButtons = ScheduledReminder(identifier: nudges[0].identifier, fireAt: nudges[0].fireAt, body: nudges[0].body)
+        #expect(SuggestionNudgePlan.changes(desired: [nudges[0]], scheduled: [withoutButtons]).toAdd.map(\.identifier) == [nudges[0].identifier])
     }
 
     @Test("a real trigger built from a nudge's wall-clock time fires at its planned instant")
@@ -201,8 +228,15 @@ struct SuggestionNudgePlanTests {
         let id = UUID()
         let headsUp = SuggestionNudgePlan.identifier(day: "2024-08-30", categoryID: id, kind: .worse)
         #expect(NudgeResponse(requestIdentifier: headsUp, actionIdentifier: UNNotificationDefaultActionIdentifier)?.categoryID == id)
+        #expect(NudgeResponse(requestIdentifier: headsUp, actionIdentifier: SuggestionNudgePlan.lessOftenActionIdentifier)?.kind == .worse)
         let identifier = SuggestionNudgePlan.identifier(day: "2024-08-30", categoryID: id)
         #expect(NudgeResponse(requestIdentifier: identifier, actionIdentifier: UNNotificationDefaultActionIdentifier)?.categoryID == id)
+        #expect(NudgeResponse(requestIdentifier: identifier, actionIdentifier: UNNotificationDefaultActionIdentifier)?.action == .open)
+        #expect(NudgeResponse(requestIdentifier: identifier, actionIdentifier: SuggestionNudgePlan.logActionIdentifier)?.action == .logIt)
+        #expect(NudgeResponse(requestIdentifier: identifier, actionIdentifier: SuggestionNudgePlan.lessOftenActionIdentifier)?.action == .lessOften)
+        #expect(NudgeResponse(requestIdentifier: identifier, actionIdentifier: SuggestionNudgePlan.lessOftenActionIdentifier)?.kind == .better)
+        // A check-in reminder's answer button means nothing on a nudge.
+        #expect(NudgeResponse(requestIdentifier: identifier, actionIdentifier: CheckInReminderPlan.snoozeActionIdentifier) == nil)
         #expect(NudgeResponse(requestIdentifier: identifier, actionIdentifier: UNNotificationDismissActionIdentifier) == nil)
         #expect(NudgeResponse(requestIdentifier: CheckInReminderPlan.identifier(for: id), actionIdentifier: UNNotificationDefaultActionIdentifier) == nil)
     }
@@ -211,8 +245,9 @@ struct SuggestionNudgePlanTests {
     func sharesPendingLimit() {
         let sources = (1...80).map { ReminderSource(checkInID: UUID(), dueAt: morning.addingTimeInterval(TimeInterval($0) * 60), entryBody: "Run") }
         let reminders = CheckInReminderPlan.reminders(for: sources, now: morning)
-        let nudges = plan([candidate("Walk", hour: 18), candidate("Read", hour: 20)])
-        let headsUps = plan([candidate("Coffee", hour: 15, kind: .worse)])
+        // The most either kind can plan: one every day.
+        let nudges = plan([candidate("Walk", hour: 18), candidate("Read", hour: 20), candidate("Fold", hour: 19)])
+        let headsUps = plan([candidate("Coffee", hour: 15, kind: .worse)], cooldownDays: 1)
         #expect(nudges.count == SuggestionNudgePlan.daysAhead)
         #expect(headsUps.count == SuggestionNudgePlan.daysAhead)
         #expect(reminders.count + nudges.count + headsUps.count == 64)
@@ -314,7 +349,7 @@ struct SuggestionNudgeSchedulerTests {
     func schedules() async throws {
         let subject = try makeSubject()
         await subject.scheduler.waitForPendingWork()
-        #expect(await fireDates(subject.center) == [at(hour: 18), at(hour: 18, dayOffset: 1), at(hour: 18, dayOffset: 2)])
+        #expect(await fireDates(subject.center) == [at(hour: 18)])
         let body = try #require(await subject.center.scheduledReminders().first?.body)
         #expect(body == SuggestionNudgeCopy.body(categoryName: "Walk", betterCount: 5, numericCount: 5))
     }
@@ -324,7 +359,7 @@ struct SuggestionNudgeSchedulerTests {
         let subject = try makeSubject()
         _ = try subject.store.saveLog(body: "Morning walk", eventAt: morning, categoryIDs: [subject.walk.id])
         await subject.scheduler.waitForPendingWork()
-        #expect(await fireDates(subject.center) == [at(hour: 18, dayOffset: 1), at(hour: 18, dayOffset: 2)])
+        #expect(await fireDates(subject.center) == [at(hour: 18, dayOffset: 1)])
     }
 
     @Test("sends no second nudge on a day one already went out")
@@ -337,9 +372,21 @@ struct SuggestionNudgeSchedulerTests {
         await subject.center.removeScheduled([SuggestionNudgePlan.identifier(day: "2024-08-30", categoryID: subject.walk.id)])
         subject.scheduler.resync()
         await subject.scheduler.waitForPendingWork()
-        let dates = await fireDates(subject.center)
-        #expect(dates.count == 2)
-        #expect(dates.allSatisfy { !utc.isDate($0, inSameDayAs: morning) })
+        // Reading moves to tomorrow, and walking rests until its third day.
+        #expect(await fireDates(subject.center) == [at(hour: 21, dayOffset: 1)])
+    }
+
+    @Test("the next day, a category nudged yesterday waits while another takes the day")
+    func cooldownAcrossDays() async throws {
+        let subject = try makeSubject(alsoRead: true)
+        await subject.scheduler.waitForPendingWork()
+        // Walk went out at 18:00 today; tomorrow morning the app opens again.
+        subject.clock.now = at(hour: 9, dayOffset: 1)
+        await subject.center.removeScheduled([SuggestionNudgePlan.identifier(day: "2024-08-30", categoryID: subject.walk.id)])
+        subject.scheduler.resync()
+        await subject.scheduler.waitForPendingWork()
+        #expect(await fireDates(subject.center) == [at(hour: 21, dayOffset: 1), at(hour: 18, dayOffset: 3)])
+        #expect(subject.ledger.fires.contains { $0.categoryID == subject.walk.id && $0.wallClock.day == 30 })
     }
 
     @Test("schedules a heads-up for a pattern often followed by feeling worse, on its own daily budget")
@@ -354,19 +401,19 @@ struct SuggestionNudgeSchedulerTests {
         let pending = await subject.center.scheduledReminders()
         let headsUps = pending.filter { $0.identifier.hasPrefix("heads-up.") }
         // Walk's feel-better nudge still goes out every day alongside the heads-up.
-        #expect(pending.filter { $0.identifier.hasPrefix("nudge.") }.compactMap(\.fireAt).sorted() == [at(hour: 18), at(hour: 18, dayOffset: 1), at(hour: 18, dayOffset: 2)])
-        #expect(headsUps.compactMap(\.fireAt).sorted() == [at(hour: 14), at(hour: 14, dayOffset: 1), at(hour: 14, dayOffset: 2)])
+        #expect(pending.filter { $0.identifier.hasPrefix("nudge.") }.compactMap(\.fireAt).sorted() == [at(hour: 18)])
+        #expect(headsUps.compactMap(\.fireAt).sorted() == [at(hour: 14)])
         #expect(headsUps.allSatisfy { SuggestionNudgePlan.categoryID(fromIdentifier: $0.identifier) == coffeeID })
         #expect(headsUps.first?.body == SuggestionNudgeCopy.headsUpBody(categoryName: "Coffee", worseCount: 5, numericCount: 5))
-        #expect(headsUpLedger.fireTimes.count == 3)
-        #expect(subject.ledger.fireTimes.count == 3)
+        #expect(headsUpLedger.fires.map(\.categoryID) == [coffeeID])
+        #expect(subject.ledger.fires.map(\.categoryID) == [subject.walk.id])
 
         // Turning heads-ups off leaves the feel-better nudges alone.
         subject.clock.headsUpsEnabled = false
         subject.scheduler.resync()
         await subject.scheduler.waitForPendingWork()
         #expect(await subject.center.identifiers().allSatisfy { $0.hasPrefix("nudge.") })
-        #expect(await subject.center.identifiers().count == 3)
+        #expect(await subject.center.identifiers().count == 1)
     }
 
     @Test("schedules nothing and clears nudges when notifications are off")
@@ -377,7 +424,7 @@ struct SuggestionNudgeSchedulerTests {
         subject.scheduler.resync()
         await subject.scheduler.waitForPendingWork()
         #expect(await subject.center.identifiers().isEmpty)
-        #expect(subject.ledger.fireTimes.isEmpty)
+        #expect(subject.ledger.fires.isEmpty)
     }
 
     @Test("a preference can turn nudges off without touching check-in reminders")
@@ -394,7 +441,7 @@ struct SuggestionNudgeSchedulerTests {
     func turningOffClears() async throws {
         let subject = try makeSubject()
         await subject.scheduler.waitForPendingWork()
-        #expect(await subject.center.identifiers().count == 3)
+        #expect(await subject.center.identifiers().count == 1)
         await subject.center.setDelivered([SuggestionNudgePlan.identifier(day: "2024-08-30", categoryID: subject.walk.id)])
         subject.clock.enabled = false
         subject.scheduler.resync()
@@ -426,7 +473,11 @@ struct SuggestionNudgeSchedulerTests {
     @Test("a nudge that fired early after travelling east still counts toward the one a day")
     func firedAfterTravellingEastCounts() async throws {
         // Walks at 18:00 UTC are 14:00 in New York, so today's nudge is planned for 14:00 there.
-        let subject = try makeSubject(setUp: { _, clock in clock.calendar = calendar("America/New_York") })
+        // Folding at 16:00 UTC is a weaker pattern: 12:00 in New York, 17:00 in London.
+        let subject = try makeSubject(setUp: { store, clock in
+            _ = try addPattern("Fold", hour: 16, responses: [.aLittleBetter, .aLittleBetter, .aLittleBetter, .aLittleBetter, .same], store: store, clock: clock)
+            clock.calendar = calendar("America/New_York")
+        })
         await subject.scheduler.waitForPendingWork()
         let today = SuggestionNudgePlan.identifier(day: "2024-08-30", categoryID: subject.walk.id)
         #expect(await subject.center.scheduledReminders().first { $0.identifier == today }?.fireAt == at(hour: 18))
@@ -438,13 +489,11 @@ struct SuggestionNudgeSchedulerTests {
         await subject.center.removeScheduled([today])
         subject.scheduler.resync()
         await subject.scheduler.waitForPendingWork()
-        let london = calendar("Europe/London")
-        let dates = await fireDates(subject.center)
-        #expect(dates.count == 2)
-        #expect(dates.allSatisfy { !london.isDate($0, inSameDayAs: subject.clock.now) })
+        // Folding at 17:00 London is still ahead today, but waits for tomorrow.
+        #expect(await fireDates(subject.center) == [at(hour: 16, dayOffset: 1)])
     }
 
-    @Test("the stored ledger keeps wall-clock times, and upgrades the old instants")
+    @Test("the stored ledger keeps wall-clock times with their categories, and upgrades the old formats")
     func ledgerRoundTrip() throws {
         let suite = "SuggestionNudgeTests.ledger"
         UserDefaults.standard.removePersistentDomain(forName: suite)
@@ -453,44 +502,62 @@ struct SuggestionNudgeSchedulerTests {
         let instant = Date(timeIntervalSinceReferenceDate: 800_000_000)
         defaults.set([instant.timeIntervalSinceReferenceDate], forKey: "suggestionNudgeFireDates")
         let ledger = UserDefaultsNudgeLedger(defaults: defaults)
-        let upgraded = try #require(ledger.fireTimes.first)
-        #expect(Calendar.autoupdatingCurrent.date(from: upgraded) == instant)
+        let upgraded = try #require(ledger.fires.first)
+        #expect(Calendar.autoupdatingCurrent.date(from: upgraded.wallClock) == instant)
+        #expect(upgraded.categoryID == nil)
 
+        // Wall-clock times from before categories were kept still count toward the one a day.
         let time = DateComponents(year: 2024, month: 8, day: 30, hour: 18, minute: 0, second: 0)
-        ledger.fireTimes = [time]
-        #expect(UserDefaultsNudgeLedger(defaults: defaults).fireTimes == [time])
+        defaults.set([[2024, 8, 30, 18, 0, 0]], forKey: "suggestionNudgeWallClockTimes")
+        #expect(ledger.fires == [NudgeFire(wallClock: time)])
+        let headsUps = UserDefaultsNudgeLedger.headsUps(defaults: defaults)
+        defaults.set([[2024, 8, 30, 14, 0, 0]], forKey: "headsUpWallClockTimes")
+        #expect(headsUps.fires.map(\.wallClock.hour) == [14])
+
+        let id = UUID()
+        ledger.fires = [NudgeFire(wallClock: time, categoryID: id), NudgeFire(wallClock: time)]
+        #expect(UserDefaultsNudgeLedger(defaults: defaults).fires == [NudgeFire(wallClock: time, categoryID: id), NudgeFire(wallClock: time)])
         #expect(defaults.object(forKey: "suggestionNudgeFireDates") == nil)
+        #expect(defaults.object(forKey: "suggestionNudgeWallClockTimes") == nil)
+
+        let until = Date(timeIntervalSinceReferenceDate: 800_000_000)
+        headsUps.mutedUntil = [id: until]
+        #expect(UserDefaultsNudgeLedger.headsUps(defaults: defaults).mutedUntil == [id: until])
+        #expect(UserDefaultsNudgeLedger(defaults: defaults).mutedUntil.isEmpty)
     }
 
     @Test("erasing the journal clears scheduled and delivered nudges and the ledger")
     func eraseClearsNudges() async throws {
         let subject = try makeSubject()
         await subject.scheduler.waitForPendingWork()
-        #expect(await subject.center.identifiers().count == 3)
-        #expect(!subject.ledger.fireTimes.isEmpty)
+        #expect(await subject.center.identifiers().count == 1)
+        #expect(!subject.ledger.fires.isEmpty)
+        subject.ledger.mutedUntil = [UUID(): at(hour: 9, dayOffset: 7)]
         let reminder = CheckInReminderPlan.identifier(for: UUID())
         await subject.center.setDelivered([SuggestionNudgePlan.identifier(day: "2024-08-30", categoryID: subject.walk.id), reminder])
         // A nudge that already went out at 08:00 today, which an ordinary resync would keep.
-        subject.ledger.fireTimes.append(DateComponents(year: 2024, month: 8, day: 30, hour: 8, minute: 0, second: 0))
+        subject.ledger.fires.append(NudgeFire(wallClock: DateComponents(year: 2024, month: 8, day: 30, hour: 8, minute: 0, second: 0), categoryID: subject.walk.id))
         subject.store.resetStore()
         await subject.scheduler.waitForPendingWork()
         #expect(await subject.center.identifiers().isEmpty)
         #expect(await subject.center.delivered == [reminder])
-        #expect(subject.ledger.fireTimes.isEmpty)
+        #expect(subject.ledger.fires.isEmpty)
+        #expect(subject.ledger.mutedUntil.isEmpty)
     }
 
     @Test("a nudge already delivered today counts toward the one a day, even without a ledger entry")
     func deliveredTodayCounts() async throws {
-        let subject = try makeSubject(setUp: { _, _ in })
+        let subject = try makeSubject(alsoRead: true)
         await subject.scheduler.waitForPendingWork()
         let today = SuggestionNudgePlan.identifier(day: "2024-08-30", categoryID: subject.walk.id)
         await subject.center.removeScheduled(await subject.center.identifiers())
         await subject.center.setDelivered([today])
-        subject.ledger.fireTimes = []
+        subject.ledger.fires = []
         subject.scheduler.resync()
         await subject.scheduler.waitForPendingWork()
+        // Reading at 21:00 would otherwise go out today; walking rests after today's delivery.
         let dates = await fireDates(subject.center)
-        #expect(dates == [at(hour: 18, dayOffset: 1), at(hour: 18, dayOffset: 2)])
+        #expect(dates == [at(hour: 21, dayOffset: 1)])
         #expect(await subject.center.delivered == [today])
     }
 
@@ -511,6 +578,40 @@ struct SuggestionNudgeSchedulerTests {
         let id = UUID()
         await delegate.handle(requestIdentifier: SuggestionNudgePlan.identifier(day: "2024-08-30", categoryID: id), actionIdentifier: UNNotificationDefaultActionIdentifier, body: "")
         #expect(router.destination == .evidence(id))
+        await delegate.handle(requestIdentifier: SuggestionNudgePlan.identifier(day: "2024-08-30", categoryID: id, kind: .worse), actionIdentifier: SuggestionNudgePlan.logActionIdentifier, body: "")
+        #expect(router.destination == .newLogInCategory(id))
+    }
+
+    @Test("Less often mutes that category's nudges for two weeks, and only that kind")
+    func lessOften() async throws {
+        var coffee: JournalCategory?
+        let subject = try makeSubject(alsoRead: true, setUp: { store, clock in
+            coffee = try addPattern("Coffee", hour: 15, responses: [.aLittleWorse], store: store, clock: clock)
+        })
+        let coffeeID = try #require(coffee?.id)
+        let router = CheckInReminderRouter(reminders: CheckInReminderScheduler(center: InertReminderNotificationCenter()))
+        router.nudges = subject.scheduler
+        let delegate = CheckInReminderNotificationDelegate { router }
+        await subject.scheduler.waitForPendingWork()
+        let walkToday = SuggestionNudgePlan.identifier(day: "2024-08-30", categoryID: subject.walk.id)
+        #expect(await subject.center.identifiers().contains(walkToday))
+
+        await delegate.handle(requestIdentifier: walkToday, actionIdentifier: SuggestionNudgePlan.lessOftenActionIdentifier, body: "")
+        let walkID = subject.walk.id
+        let pending = await subject.center.identifiers()
+        #expect(!pending.contains { SuggestionNudgePlan.categoryID(fromIdentifier: $0) == walkID })
+        // Reading takes today, and Coffee's heads-up is untouched.
+        let read = try #require(subject.store.categories.first { $0.name == "Read" })
+        #expect(pending.contains(SuggestionNudgePlan.identifier(day: "2024-08-30", categoryID: read.id)))
+        #expect(pending.contains(SuggestionNudgePlan.identifier(day: "2024-08-30", categoryID: coffeeID, kind: .worse)))
+        #expect(router.destination == nil)
+
+        // Two weeks on, the mute has lapsed and is forgotten.
+        subject.clock.now = at(hour: 9, dayOffset: 15)
+        subject.scheduler.resync()
+        await subject.scheduler.waitForPendingWork()
+        #expect(await subject.center.identifiers().contains { SuggestionNudgePlan.categoryID(fromIdentifier: $0) == walkID })
+        #expect(subject.ledger.mutedUntil.isEmpty)
     }
 
     @Test("does not re-add nudges that are already scheduled correctly")
@@ -523,12 +624,23 @@ struct SuggestionNudgeSchedulerTests {
         #expect(await subject.center.addCount == added)
     }
 
-    @Test("tapping a nudge opens that category's evidence on Patterns")
-    func tapOpensEvidence() {
+    @Test("tapping a nudge opens that category's evidence on Patterns, and Log it opens a new log in it")
+    func tapOpensEvidence() async {
         let reminders = CheckInReminderScheduler(center: InertReminderNotificationCenter())
         let router = CheckInReminderRouter(reminders: reminders)
         let id = UUID()
-        router.handle(NudgeResponse(requestIdentifier: SuggestionNudgePlan.identifier(day: "2024-08-30", categoryID: id), actionIdentifier: UNNotificationDefaultActionIdentifier)!)
+        await router.handle(NudgeResponse(requestIdentifier: SuggestionNudgePlan.identifier(day: "2024-08-30", categoryID: id), actionIdentifier: UNNotificationDefaultActionIdentifier)!)
         #expect(router.destination == .evidence(id))
+        await router.handle(NudgeResponse(requestIdentifier: SuggestionNudgePlan.identifier(day: "2024-08-30", categoryID: id), actionIdentifier: SuggestionNudgePlan.logActionIdentifier)!)
+        #expect(router.destination == .newLogInCategory(id))
+    }
+
+    @Test("nudges carry the Log it and Less often actions")
+    func nudgeActions() {
+        let category = SystemReminderNotificationCenter.nudgeCategory
+        #expect(category.identifier == SuggestionNudgePlan.categoryIdentifier)
+        #expect(category.actions.map(\.title) == ["Log it", "Less often"])
+        #expect(category.actions.first?.options.contains(.foreground) == true)
+        #expect(category.actions.last?.options.contains(.foreground) == false)
     }
 }

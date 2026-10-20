@@ -5,8 +5,8 @@ enum JournalDateScope: String, CaseIterable, Identifiable { case recent, all, cu
 
 struct JournalRootView: View {
     let store: JournalStore
-    /// Set by the widget's Log button; opens a new log.
-    @Binding var newLogRequest: Bool
+    /// Set by the widget's Log button or a nudge's "Log it"; opens a new log.
+    @Binding var newLogRequest: EditorRequest?
     let openSettings: () -> Void
     @State private var query = ""
     @State private var categoryID: UUID?
@@ -103,9 +103,9 @@ struct JournalRootView: View {
                 )
             }
             .onChange(of: newLogRequest, initial: true) { _, requested in
-                guard requested else { return }
-                editor = EditorRequest(entryID: nil)
-                newLogRequest = false
+                guard let requested else { return }
+                editor = requested
+                newLogRequest = nil
             }
             // A filter on a category that no longer exists would hide every log with no chip to clear it.
             .onChange(of: store.categories.map(\.id)) { _, ids in
