@@ -49,6 +49,11 @@ struct CheckInReminderPlanTests {
         ReminderSource(checkInID: id, dueAt: now.addingTimeInterval(seconds), entryBody: body)
     }
 
+    @Test("asks compared with before, as the in-app check-in does")
+    func titleCarriesTheAnchor() {
+        #expect(CheckInReminderPlan.title == "Compared with before, how do you feel now?")
+    }
+
     @Test("schedules only future check-ins, soonest first")
     func futureOnlySorted() {
         let late = source(in: 7_200)
