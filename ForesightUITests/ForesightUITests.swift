@@ -164,6 +164,11 @@ final class ForesightUITests: XCTestCase {
         openLog(named: "A tagged test")
         app.buttons["Check in now"].tap()
         app.buttons["Much better"].tap()
+        // The note and the leave-out switch stay folded until asked for.
+        let leaveOut = app.switches["Leave out of pattern summaries"]
+        XCTAssertFalse(leaveOut.exists)
+        app.buttons["check-in.more"].tap()
+        XCTAssertTrue(leaveOut.waitForExistence(timeout: 2))
         app.buttons["Save"].firstMatch.tap()
         XCTAssertTrue(app.staticTexts["Much better"].firstMatch.waitForExistence(timeout: 3))
     }
@@ -357,6 +362,13 @@ final class ForesightUITests: XCTestCase {
         app.buttons["Workout"].tap()
         XCTAssertEqual(category.value as? String, "Workout")
         XCTAssertTrue(app.staticTexts["Workout logs per week"].waitForExistence(timeout: 3))
+
+        // Later check-ins over 90 days is the default view; the switches are folded away.
+        XCTAssertFalse(app.buttons["30 days"].exists)
+        app.buttons["patterns.view-options"].tap()
+        let thirtyDays = app.buttons["30 days"]
+        XCTAssertTrue(thirtyDays.waitForExistence(timeout: 2))
+        XCTAssertTrue(app.buttons["Right after"].exists)
     }
 
     func testCheckInSourceLogDoesNotOpenFromOutsideCard() {

@@ -116,8 +116,7 @@ func groupEntriesByDay(_ entries: [JournalEntry], calendar: Calendar = .current)
 
 func calendarDays(month: Date, entries: [JournalEntry], calendar: Calendar = .current) -> [CalendarDay] {
     let first = calendar.date(from: calendar.dateComponents([.year, .month], from: month))!
-    let weekday = calendar.component(.weekday, from: first)
-    let gridStart = calendar.date(byAdding: .day, value: -((weekday - 1 + 7) % 7), to: first)!
+    let gridStart = calendar.date(byAdding: .day, value: -daysSinceWeekStart(first, calendar: calendar), to: first)!
     let counts = Dictionary(grouping: entries, by: { localDayKey($0.eventAt, calendar: calendar) }).mapValues(\.count)
     return (0..<42).compactMap { offset in
         guard let date = calendar.date(byAdding: .day, value: offset, to: gridStart) else { return nil }
@@ -175,9 +174,19 @@ struct ActivityBucket: Identifiable { let date: Date; let label: String; let cou
 func startOfPeriod(_ date: Date, granularity: TrendGranularity, calendar: Calendar = .current) -> Date {
     let day = startOfDay(date, calendar: calendar)
     if granularity == .month { return calendar.date(from: calendar.dateComponents([.year, .month], from: day))! }
-    let weekday = calendar.component(.weekday, from: day)
-    let offset = (weekday + 5) % 7
-    return calendar.date(byAdding: .day, value: -offset, to: day)!
+    return calendar.date(byAdding: .day, value: -daysSinceWeekStart(day, calendar: calendar), to: day)!
+}
+
+/// Days since the start of the week, which begins on the calendar's own first weekday (Sunday or Monday, by region).
+func daysSinceWeekStart(_ date: Date, calendar: Calendar = .current) -> Int {
+    (calendar.component(.weekday, from: date) - calendar.firstWeekday + 7) % 7
+}
+
+/// Short weekday names in the order the calendar's weeks run.
+func orderedShortWeekdaySymbols(calendar: Calendar = .current) -> [String] {
+    let symbols = calendar.shortWeekdaySymbols
+    let start = calendar.firstWeekday - 1
+    return Array(symbols[start...] + symbols[..<start])
 }
 
 func shiftPeriod(_ date: Date, by amount: Int, granularity: TrendGranularity, calendar: Calendar = .current) -> Date {

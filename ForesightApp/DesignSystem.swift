@@ -236,6 +236,40 @@ struct ForesightSegmentedPicker<Value: Hashable>: View {
     }
 }
 
+/// A collapsed row for controls most people never need, with a summary of what they're set to.
+struct ForesightDisclosure<Content: View>: View {
+    let id: String
+    let title: String
+    var summary: String?
+    @Binding var isExpanded: Bool
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Button {
+                withAnimation(.snappy(duration: 0.2)) { isExpanded.toggle() }
+            } label: {
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(title).font(.subheadline.weight(.semibold)).foregroundStyle(Color.foresightInk)
+                        if let summary { Text(summary).font(.caption).foregroundStyle(Color.foresightMuted) }
+                    }
+                    Spacer()
+                    Image(systemName: "chevron.down")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(Color.foresightMuted)
+                        .rotationEffect(.degrees(isExpanded ? 180 : 0))
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier(id)
+            .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
+            if isExpanded { content }
+        }
+    }
+}
+
 // MARK: - Anchored dropdowns
 
 /// The data shown by a Foresight dropdown. `ID` is intentionally separate from

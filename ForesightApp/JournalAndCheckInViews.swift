@@ -278,7 +278,7 @@ struct JournalRootView: View {
                         Spacer()
                         Button { moveMonth(1) } label: { Image(systemName: "chevron.right") }.buttonStyle(ForesightSecondaryButtonStyle())
                     }
-                    HStack { ForEach(["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], id: \.self) { Text($0).font(.caption2.weight(.bold)).foregroundStyle(.secondary).frame(maxWidth: .infinity) } }
+                    HStack { ForEach(orderedShortWeekdaySymbols(), id: \.self) { Text($0).font(.caption2.weight(.bold)).foregroundStyle(.secondary).frame(maxWidth: .infinity) } }
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 3), count: 7), spacing: 4) {
                         ForEach(days) { day in
                             Button {
@@ -514,36 +514,10 @@ struct JournalEntryRow: View {
     }
 }
 
-enum QueueFilter: String, CaseIterable, Identifiable {
-    case all, due, upcoming, recent
-    var id: String { rawValue }
-    var title: String { rawValue.capitalized }
-    func title(count: Int) -> String { self == .all || count == 0 ? title : "\(title) \(count)" }
-
-    var emptyTitle: String {
-        switch self {
-        case .all: "Nothing here yet"
-        case .due: "Nothing due"
-        case .upcoming: "Nothing upcoming"
-        case .recent: "No answers yet"
-        }
-    }
-
-    var emptyDetail: String {
-        switch self {
-        case .all: "Check-ins you schedule will show up here."
-        case .due: "You're caught up. Upcoming check-ins appear here when their time comes."
-        case .upcoming: "Pick a later time after you save a log and it will wait here."
-        case .recent: "Check-ins you answer or skip show up here, so you can change them."
-        }
-    }
-}
-
 struct CheckInRootView: View {
     let store: JournalStore
     /// Set when a reminder is tapped; opens that check-in's answer sheet.
     @Binding var answerRequest: CheckInTarget?
-    @State private var filter: QueueFilter = .all
     @State private var answerTarget: CheckInTarget?
     @State private var scheduleTarget: CheckInTarget?
     @State private var checkInToSkip: OutcomeCheckIn?
@@ -565,12 +539,6 @@ struct CheckInRootView: View {
                                 title: "How did it go?",
                                 subtitle: "Rate how you feel a while after each log. Patterns builds on these answers."
                             )
-                            if !queue.isEmpty || !recent.isEmpty {
-                                ForesightSegmentedPicker(
-                                    selection: $filter,
-                                    options: QueueFilter.allCases.map { ($0, $0.title(count: count(for: $0))) }
-                                )
-                            }
                             if let message { Text(message).font(.footnote).foregroundStyle(Color.foresightSage) }
                             queueContent
                         }
@@ -601,9 +569,9 @@ struct CheckInRootView: View {
     }
 
     @ViewBuilder private var queueContent: some View {
-        if (filter == .all || filter == .due) && !due.isEmpty { QueueGroup(title: "Due · \(due.count)", items: due, store: store, onAnswer: { answerTarget = CheckInTarget(entryID: $0.entry.id, checkInID: $0.checkIn.id) }, onReschedule: { scheduleTarget = CheckInTarget(entryID: $0.entry.id, checkInID: $0.checkIn.id) }, onSkip: { checkInToSkip = $0.checkIn }) }
-        if (filter == .all || filter == .upcoming) && !upcoming.isEmpty { QueueGroup(title: "Upcoming · \(upcoming.count)", items: upcoming, store: store, onAnswer: { answerTarget = CheckInTarget(entryID: $0.entry.id, checkInID: $0.checkIn.id) }, onReschedule: { scheduleTarget = CheckInTarget(entryID: $0.entry.id, checkInID: $0.checkIn.id) }, onSkip: { checkInToSkip = $0.checkIn }) }
-        if (filter == .all || filter == .recent) && !recent.isEmpty {
+        if !due.isEmpty { QueueGroup(title: "Due · \(due.count)", items: due, store: store, onAnswer: { answerTarget = CheckInTarget(entryID: $0.entry.id, checkInID: $0.checkIn.id) }, onReschedule: { scheduleTarget = CheckInTarget(entryID: $0.entry.id, checkInID: $0.checkIn.id) }, onSkip: { checkInToSkip = $0.checkIn }) }
+        if !upcoming.isEmpty { QueueGroup(title: "Upcoming · \(upcoming.count)", items: upcoming, store: store, onAnswer: { answerTarget = CheckInTarget(entryID: $0.entry.id, checkInID: $0.checkIn.id) }, onReschedule: { scheduleTarget = CheckInTarget(entryID: $0.entry.id, checkInID: $0.checkIn.id) }, onSkip: { checkInToSkip = $0.checkIn }) }
+        if !recent.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
                 SectionKicker(text: "Recent · \(recent.count)")
                 ForEach(recent) { item in
@@ -620,17 +588,6 @@ struct CheckInRootView: View {
         }
         if queue.isEmpty && recent.isEmpty {
             EmptyState(title: "Nothing to check in on yet", detail: "After you save a log, pick a time to check in later. It will wait here, and Foresight can remind you.")
-        } else if count(for: filter) == 0 {
-            EmptyState(title: filter.emptyTitle, detail: filter.emptyDetail)
-        }
-    }
-
-    private func count(for filter: QueueFilter) -> Int {
-        switch filter {
-        case .all: queue.count + recent.count
-        case .due: due.count
-        case .upcoming: upcoming.count
-        case .recent: recent.count
         }
     }
 }

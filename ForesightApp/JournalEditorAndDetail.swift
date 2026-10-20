@@ -76,7 +76,9 @@ struct JournalEditorView: View {
                                 }
                                 VStack(alignment: .leading, spacing: 8) {
                                     Text("When did it happen?").font(.headline).foregroundStyle(Color.foresightInk)
-                                    DatePicker("Event time", selection: $eventAt, displayedComponents: [.date, .hourAndMinute])
+                                    // No future times: a log dated tomorrow could be rated "right after" before it happened.
+                                    // An older log already dated ahead keeps its time selectable.
+                                    DatePicker("Event time", selection: $eventAt, in: ...max(.now, entry?.eventAt ?? .now), displayedComponents: [.date, .hourAndMinute])
                                         .datePickerStyle(.compact)
                                         .accessibilityLabel("Event time")
                                 }
@@ -331,6 +333,7 @@ struct OutcomeAnswerSheet: View {
     @State private var notSure: Bool
     @State private var note: String
     @State private var excluded: Bool
+    @State private var showsMore: Bool
     @State private var message: String?
     @State private var discardConfirmation = false
 
@@ -342,6 +345,8 @@ struct OutcomeAnswerSheet: View {
         _notSure = State(initialValue: checkIn?.status == .notSure)
         _note = State(initialValue: checkIn?.note ?? "")
         _excluded = State(initialValue: checkIn?.excludedFromAnalysis ?? false)
+        // Opens folded unless this check-in already uses something inside it.
+        _showsMore = State(initialValue: !(checkIn?.note ?? "").isEmpty || checkIn?.excludedFromAnalysis == true)
     }
 
     private var entry: JournalEntry? { store.entries.first { $0.id == target.entryID } }
@@ -351,6 +356,10 @@ struct OutcomeAnswerSheet: View {
             repeating: GridItem(.flexible(minimum: 0), spacing: 6),
             count: OutcomeValue.allCases.count
         )
+    }
+    private var moreSummary: String {
+        let parts = [note.isEmpty ? nil : "Note added", excluded ? "Left out of patterns" : nil].compactMap { $0 }
+        return parts.isEmpty ? "Add a note, or leave this out of patterns" : parts.joined(separator: " · ")
     }
     private var ratingDescription: String {
         if notSure { return "Not sure yet" }
@@ -404,14 +413,17 @@ struct OutcomeAnswerSheet: View {
                                         .frame(maxWidth: .infinity)
                                     Toggle("Not sure yet", isOn: $notSure)
                                         .onChange(of: notSure) { _, active in if active { selectedValue = nil } }
-                                    VStack(alignment: .leading, spacing: 8) {
-                                        Text("Note (optional)").font(.headline)
-                                        TextField("What else was going on?", text: $note, axis: .vertical)
-                                            .onChange(of: note) { _, _ in limitNoteText() }
-                                            .lineLimit(3...7).textFieldStyle(.roundedBorder)
-                                        Text("\(note.count) of 5,000 characters").font(.caption).foregroundStyle(note.count > 5_000 ? .red : .secondary)
+                                    ForesightDisclosure(id: "check-in.more", title: "More", summary: moreSummary, isExpanded: $showsMore) {
+                                        VStack(alignment: .leading, spacing: 8) {
+                                            Text("Note (optional)").font(.headline)
+                                            TextField("What else was going on?", text: $note, axis: .vertical)
+                                                .onChange(of: note) { _, _ in limitNoteText() }
+                                                .lineLimit(3...7).textFieldStyle(.roundedBorder)
+                                            // Only worth reading near the limit.
+                                            if note.count >= 4_000 { Text("\(note.count) of 5,000 characters").font(.caption).foregroundStyle(note.count >= 5_000 ? Color.foresightWarning : Color.foresightMuted) }
+                                        }
+                                        Toggle("Leave out of pattern summaries", isOn: $excluded)
                                     }
-                                    Toggle("Leave out of pattern summaries", isOn: $excluded)
                                 }
                                 .tint(Color.foresightSwitch)
                             }
