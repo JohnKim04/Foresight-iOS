@@ -610,7 +610,7 @@ struct JournalBackupTests {
         #expect(try JournalRecovery.moveAside(storeAt: storeURL, date: now) == nil)
     }
 
-    @Test("a journal moved aside outlasts restores and erases, and daily backups for a month")
+    @Test("a journal moved aside is never pruned and never takes a backup's place")
     func movedAsideIsKept() async throws {
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         try Data("not a journal".utf8).write(to: storeURL)
@@ -628,16 +628,15 @@ struct JournalBackupTests {
         clock = now.addingTimeInterval(600)
         #expect(store.resetStore() != nil)
         #expect(exists(aside))
-        #expect(SharedJournal.backups(in: root).count == SharedJournal.backupLimit)
+        #expect(SharedJournal.backups(in: root).count == SharedJournal.backupLimit + 1)
 
-        clock = now.addingTimeInterval(10 * 86_400)
         _ = try store.saveLog(body: "Fresh start", eventAt: clock, categoryIDs: [])
-        #expect(await store.takeAutomaticBackupIfDue() != nil)
-        #expect(exists(aside))
-
-        clock = now.addingTimeInterval(31 * 86_400)
-        #expect(await store.takeAutomaticBackupIfDue() != nil)
-        #expect(!exists(aside))
+        for day in [10, 31, 400] {
+            clock = now.addingTimeInterval(TimeInterval(day * 86_400))
+            #expect(await store.takeAutomaticBackupIfDue() != nil)
+            #expect(exists(aside))
+            #expect(SharedJournal.backups(in: root).count == SharedJournal.backupLimit + 1)
+        }
     }
 
     @Test("restoring from the recovery screen replaces the journal that won't open, and keeps it")

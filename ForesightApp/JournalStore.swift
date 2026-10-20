@@ -331,7 +331,7 @@ enum JournalImportError: LocalizedError, Equatable {
 /// deletes it: it is moved aside as a backup, where Settings lists it once a journal opens.
 enum JournalRecovery {
     /// Moves the store at `url` aside as a backup, if there's one there, and returns where it went.
-    /// Other backups are left alone, and it is kept longer than other backups (see `SharedJournal.movedAsideSuffix`).
+    /// Other backups are left alone, and the app never deletes it (see `SharedJournal.movedAsideSuffix`).
     @discardableResult
     static func moveAside(storeAt url: URL, date: Date = .now) throws -> URL? {
         guard SharedJournal.storeFileSuffixes.contains(where: { FileManager.default.fileExists(atPath: url.path + $0) }) else { return nil }
@@ -439,7 +439,7 @@ extension JournalStore {
     /// The backups in `backups` (newest first) that pruning deletes after restoring `restored`:
     /// the new copy and `restored` are kept, then the newest of the rest up to the limit.
     nonisolated static func backupsRemovedByRestoring(_ restored: JournalBackup, from backups: [JournalBackup]) -> [JournalBackup] {
-        Array(backups.filter { $0.id != restored.id }.dropFirst(max(0, SharedJournal.backupLimit - 2)))
+        Array(backups.filter { $0.id != restored.id && !$0.isMovedAside }.dropFirst(max(0, SharedJournal.backupLimit - 2)))
     }
 
     /// Replaces the journal with the backup at `url`, after saving the journal as it is now as a

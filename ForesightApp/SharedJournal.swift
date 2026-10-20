@@ -23,11 +23,10 @@ enum SharedJournal {
     static let backupLimit = 3
     /// Ends the name of a backup the app took on its own, before ".store".
     static let automaticBackupSuffix = "-auto"
-    /// Ends the name of a journal the recovery screen moved aside because it wouldn't open. A later
-    /// version of the app may be able to read it, so restores, imports and erases never prune one,
-    /// and a daily backup replaces one only once it is `movedAsideProtection` old.
+    /// Ends the name of a journal the recovery screen moved aside because it wouldn't open. It may
+    /// be the only copy of someone's history and a later version may read it, so it never counts
+    /// toward `backupLimit` and nothing the app does on its own deletes it.
     static let movedAsideSuffix = "-unopened"
-    static let movedAsideProtection: TimeInterval = 30 * 24 * 60 * 60
     /// The app takes an automatic backup when the newest one is at least this old.
     static let automaticBackupInterval: TimeInterval = 24 * 60 * 60
     /// An automatic backup never removes a backup made another way (a restore's safety copy, or a
@@ -214,13 +213,12 @@ enum SharedJournal {
 
     /// The backups (from `backups`, newest first) to delete so one more fits within `keeping`,
     /// or nil when it can't fit. Only automatic backups, and others at least `protectedBackupAge`
-    /// old (`movedAsideProtection` for a journal moved aside), may go, oldest first.
+    /// old, may go, oldest first. Journals moved aside neither count nor go.
     static func backupsRemovedForAutomaticBackup(from backups: [Backup], now: Date, keeping: Int = backupLimit) -> [Backup]? {
-        let excess = backups.count + 1 - keeping
+        let counted = backups.filter { !$0.isMovedAside }
+        let excess = counted.count + 1 - keeping
         guard excess > 0 else { return [] }
-        let removable = backups.reversed().filter {
-            $0.isAutomatic || now.timeIntervalSince($0.date) >= ($0.isMovedAside ? movedAsideProtection : protectedBackupAge)
-        }
+        let removable = counted.reversed().filter { $0.isAutomatic || now.timeIntervalSince($0.date) >= protectedBackupAge }
         guard removable.count >= excess else { return nil }
         return Array(removable.prefix(excess))
     }
@@ -275,12 +273,12 @@ enum SharedJournal {
     }
 
     /// Deletes all but the newest `keeping` backups in `directory`, newest by the time in their names.
-    /// `sparing` (say, the backup just made) and journals moved aside by the recovery screen are
-    /// always kept and count toward `keeping`, even if a clock that moved backward gave them older
-    /// names than the rest.
+    /// `sparing` (say, the backup just made) are always kept and count toward `keeping`, even if a
+    /// clock that moved backward gave them older names than the rest. Journals moved aside by the
+    /// recovery screen are always kept and don't count.
     static func pruneBackups(in directory: URL, keeping: Int = backupLimit, sparing spared: [URL] = [], fileManager: FileManager = .default) {
-        let names = sortedBackupNames(in: directory, fileManager: fileManager)
-        let sparedNames = Set(spared.map { $0.lastPathComponent } + names.filter { backupStamp(of: $0).movedAside })
+        let sparedNames = Set(spared.map { $0.lastPathComponent })
+        let names = sortedBackupNames(in: directory, fileManager: fileManager).filter { !backupStamp(of: $0).movedAside }
         let sparedCount = names.filter { sparedNames.contains($0) }.count
         for name in names.filter({ !sparedNames.contains($0) }).dropFirst(max(0, keeping - sparedCount)) {
             removeStore(at: directory.appending(path: name), fileManager: fileManager)
