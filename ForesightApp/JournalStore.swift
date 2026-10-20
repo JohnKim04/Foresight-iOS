@@ -381,7 +381,9 @@ extension JournalStore {
     /// Adds the logs and check-ins in an exported journal to this one, after saving this one as a
     /// backup. Records it already has stay as they are unless the file's copy was changed more
     /// recently, so importing the same file twice changes nothing. Categories are matched by name,
-    /// since every install starts its own copies of the starter ones.
+    /// since every install starts its own copies of the starter ones. Where the file and this
+    /// journal each hold a log's check-in right after, or its waiting later one, only the more
+    /// recently changed of the two stays.
     @discardableResult
     func importJournal(_ export: JournalExport) throws -> JournalImport {
         let current = try JournalArchive(context: modelContext)
@@ -544,6 +546,7 @@ struct JournalArchive: Sendable {
 
         var entryIndex = Dictionary(merged.entries.enumerated().map { ($0.element.id, $0.offset) }, uniquingKeysWith: { first, _ in first })
         var checkInIndex = Dictionary(merged.checkIns.enumerated().map { ($0.element.id, $0.offset) }, uniquingKeysWith: { first, _ in first })
+        var addedCheckInIDs = Set<UUID>()
         for entry in export.entries {
             let body = entry.body.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !body.isEmpty else { continue }
@@ -575,10 +578,31 @@ struct JournalArchive: Sendable {
                 } else {
                     checkInIndex[checkIn.id] = merged.checkIns.count
                     merged.checkIns.append(item)
+                    addedCheckInIDs.insert(checkIn.id)
                     result.addedCheckIns += 1
                 }
             }
         }
+
+        // A log holds at most one check-in right after and one waiting later one, as
+        // createCheckIn requires. Copies that went separate ways on two phones can each have
+        // their own, with different IDs, so the one changed more recently is kept.
+        struct Slot: Hashable { let entryID: UUID; let phase: OutcomePhase }
+        var kept: [Slot: Int] = [:]
+        var dropped = Set<Int>()
+        for (index, checkIn) in merged.checkIns.enumerated() {
+            guard let entryID = checkIn.entryID, checkIn.phase == .immediate || checkIn.status == .pending else { continue }
+            let slot = Slot(entryID: entryID, phase: checkIn.phase)
+            guard let other = kept[slot] else { kept[slot] = index; continue }
+            if checkIn.updatedAt > merged.checkIns[other].updatedAt {
+                dropped.insert(other)
+                kept[slot] = index
+            } else {
+                dropped.insert(index)
+            }
+        }
+        for index in dropped where addedCheckInIDs.contains(merged.checkIns[index].id) { result.addedCheckIns -= 1 }
+        merged.checkIns = merged.checkIns.enumerated().filter { !dropped.contains($0.offset) }.map(\.element)
         return (merged, result)
     }
 

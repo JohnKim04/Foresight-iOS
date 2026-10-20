@@ -284,7 +284,7 @@ struct JournalRootView: View {
                         Spacer()
                         Button { moveMonth(1) } label: { Image(systemName: "chevron.right") }.buttonStyle(ForesightSecondaryButtonStyle())
                     }
-                    HStack { ForEach(orderedShortWeekdaySymbols(), id: \.self) { Text($0).font(.caption2.weight(.bold)).foregroundStyle(.secondary).frame(maxWidth: .infinity) } }
+                    HStack { ForEach(Array(orderedShortWeekdaySymbols().enumerated()), id: \.offset) { Text($0.element).font(.caption2.weight(.bold)).foregroundStyle(.secondary).frame(maxWidth: .infinity) } }
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 3), count: 7), spacing: 4) {
                         ForEach(days) { day in
                             Button {

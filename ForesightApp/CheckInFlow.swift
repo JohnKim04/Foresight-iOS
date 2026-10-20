@@ -45,7 +45,9 @@ struct CheckInLaterOption: Identifiable, Equatable {
 /// Which later check-in the post-log step sets before you tap anything, chosen in Settings.
 /// Predictions learn only from later check-ins, so one is set unless you turn this off.
 enum LaterCheckInDefault: String, CaseIterable, Identifiable, Sendable {
-    case inTwoHours, tonight, morning, none
+    // Stored as "none" so a choice saved before the rename still reads back.
+    case inTwoHours, tonight, morning
+    case off = "none"
 
     static let standard = LaterCheckInDefault.inTwoHours
 
@@ -56,7 +58,7 @@ enum LaterCheckInDefault: String, CaseIterable, Identifiable, Sendable {
         case .inTwoHours: "In 2 hours"
         case .tonight: "Tonight"
         case .morning: "Next morning"
-        case .none: "Don't schedule"
+        case .off: "Don't schedule"
         }
     }
 
@@ -72,6 +74,20 @@ enum LaterCheckInDefault: String, CaseIterable, Identifiable, Sendable {
 enum QuietHoursCopy {
     static func reminderNote(_ fireAt: Date) -> String {
         "Quiet hours hold the reminder until \(ForesightFormat.detailDate(fireAt))."
+    }
+
+    /// The short form under a later-time shortcut. Says the day when quiet hours push the
+    /// reminder past today, so "8:00 AM" never reads as this morning.
+    static func shortcutReminder(_ fireAt: Date, now: Date, calendar: Calendar = .current) -> String {
+        var style = Date.FormatStyle(date: .omitted, time: .shortened)
+        style.calendar = calendar
+        style.timeZone = calendar.timeZone
+        let time = fireAt.formatted(style)
+        if calendar.isDate(fireAt, inSameDayAs: now) { return "reminder at \(time)" }
+        if let tomorrow = calendar.date(byAdding: .day, value: 1, to: now), calendar.isDate(fireAt, inSameDayAs: tomorrow) {
+            return "reminder tomorrow at \(time)"
+        }
+        return "reminder \(ForesightFormat.detailDate(fireAt, now: now, calendar: calendar))"
     }
 }
 

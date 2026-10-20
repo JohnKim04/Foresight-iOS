@@ -207,8 +207,9 @@ struct NotificationPreferencesTests {
     @Test("stores the later check-in default, and reads an unknown value as the standard one")
     func laterDefault() throws {
         let (preferences, defaults) = try makePreferences()
-        preferences.laterCheckInDefault = .none
-        #expect(NotificationPreferences(defaults: defaults).laterCheckInDefault == .none)
+        preferences.laterCheckInDefault = .off
+        #expect(NotificationPreferences(defaults: defaults).laterCheckInDefault == .off)
+        #expect(defaults.string(forKey: NotificationPreferences.laterCheckInDefaultKey) == "none")
         defaults.set("someday", forKey: NotificationPreferences.laterCheckInDefaultKey)
         #expect(preferences.laterCheckInDefault == .standard)
     }

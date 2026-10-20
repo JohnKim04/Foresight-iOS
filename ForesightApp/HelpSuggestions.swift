@@ -286,7 +286,8 @@ struct LaterBaseline: Equatable {
     let worseCount: Int
 
     /// Fewer than five responses give no usual rate to compare with.
-    var isComparable: Bool { numericCount >= minimumPatternResponses }
+    static func isComparable(trials: Int) -> Bool { trials >= minimumPatternResponses }
+    var isComparable: Bool { Self.isComparable(trials: numericCount) }
 }
 
 func laterBaseline(entries: [JournalEntry], checkIns: [OutcomeCheckIn], excluding category: JournalCategory, range: OutcomeTrendRange = helpSuggestionRange, now: Date = .now, calendar: Calendar = .current) -> LaterBaseline {
@@ -308,7 +309,7 @@ let baselineRateCap = 0.7
 /// one place to tune the comparison once there is real data. With no comparable baseline yet,
 /// the absolute bar decides on its own.
 func beatsBaseline(successes: Int, trials: Int, baselineSuccesses: Int, baselineTrials: Int) -> Bool {
-    guard baselineTrials >= minimumPatternResponses else { return true }
+    guard LaterBaseline.isComparable(trials: baselineTrials) else { return true }
     let bar = min(Double(baselineSuccesses) / Double(baselineTrials), baselineRateCap)
     return wilsonLowerBound(successes: successes, trials: trials) > bar
 }
